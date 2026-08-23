@@ -39,7 +39,7 @@ class TestReloadWritesInFlightSentinel(unittest.TestCase):
     file BEFORE calling _spawn_reload_watcher.
 
     Asserts:
-    - sentinel path = /tmp/cozempic_reload_<sid12>.in-flight
+    - sentinel path = /tmp/winnow_reload_<sid12>.in-flight
     - sentinel exists and contains old_claude_pid and an ISO timestamp
     - sentinel is written BEFORE _spawn_reload_watcher is invoked
     (we verify order by checking write precedes the watcher call via a side_effect)
@@ -49,7 +49,7 @@ class TestReloadWritesInFlightSentinel(unittest.TestCase):
         self.sid = "abcdef012345678901234567890abcde"  # 32 hex chars
         self.sid12 = self.sid[:12]  # "abcdef012345"
         self.old_claude_pid = 89113
-        self.sentinel_path = Path(f"/tmp/cozempic_reload_{self.sid12}.in-flight")
+        self.sentinel_path = Path(f"/tmp/winnow_reload_{self.sid12}.in-flight")
         self.sentinel_path.unlink(missing_ok=True)
         self.addCleanup(self.sentinel_path.unlink, missing_ok=True)
 
@@ -124,7 +124,7 @@ class TestNoResurrectionWhenClaudeAlreadyDead(unittest.TestCase):
     and the reload — the function must NOT write a sentinel or spawn the resume
     watcher. The watcher resumes UNCONDITIONALLY once claude_pid dies
     (`while kill -0 …; do sleep; done; <resume_cmd>`), so without the entry gate
-    a dead PID reopens a session the user intentionally closed — the cozempic
+    a dead PID reopens a session the user intentionally closed — the winnow
     reload-resurrection incident class. PR #94's per-block checks only guard the
     SIGTERM, not the watcher spawn, so the entry gate is load-bearing here.
     """
@@ -149,7 +149,7 @@ class TestNoResurrectionWhenClaudeAlreadyDead(unittest.TestCase):
 
 class TestNoResurrectionDespiteFreshJSONLMtime(unittest.TestCase):
     """Mtime-immune liveness gate. A Claude that died during the prune window
-    must NOT be resurrected even though cozempic's own save_messages just
+    must NOT be resurrected even though winnow's own save_messages just
     refreshed the session JSONL — which `_is_claude_process`'s mtime fallback
     misreads as a live Claude. Drives the REAL `_is_claude_process` (only the
     resume watcher is mocked), so it exercises the actual invariant rather than
@@ -166,7 +166,7 @@ class TestNoResurrectionDespiteFreshJSONLMtime(unittest.TestCase):
             jsonl = Path(td) / "session.jsonl"
             jsonl.write_text("{}\n")  # mtime = now — mimics save_messages' fresh write
             sid = "ddddddddffff1111222233334444dddd"
-            sentinel = Path(f"/tmp/cozempic_reload_{sid[:12]}.in-flight")
+            sentinel = Path(f"/tmp/winnow_reload_{sid[:12]}.in-flight")
             sentinel.unlink(missing_ok=True)
             self.addCleanup(sentinel.unlink, missing_ok=True)
 
@@ -189,27 +189,27 @@ class TestNoResurrectionDespiteFreshJSONLMtime(unittest.TestCase):
 # ---------------------------------------------------------------------------
 class TestSessionStartHookSkipsSpawnDuringSentinel(unittest.TestCase):
     """Option (c) fix: the SessionStart hook bash command must NOT invoke
-    `cozempic guard --daemon` when the in-flight sentinel file exists.
+    `winnow guard --daemon` when the in-flight sentinel file exists.
 
-    Strategy: plant the sentinel, run the hook bash with a stub cozempic
+    Strategy: plant the sentinel, run the hook bash with a stub winnow
     binary, assert guard --daemon was never invoked.
     """
 
     def setUp(self):
-        self.tmpdir = Path(tempfile.mkdtemp(prefix="cozempic_sentinel_test_"))
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="winnow_sentinel_test_"))
         self.sid = "bbbbbbbbbbbb1234567890abcdefbbbb"
         self.sid12 = self.sid[:12]
-        self.sentinel_path = Path(f"/tmp/cozempic_reload_{self.sid12}.in-flight")
+        self.sentinel_path = Path(f"/tmp/winnow_reload_{self.sid12}.in-flight")
         # Plant a fresh sentinel
         self.sentinel_path.write_text(f"89113\n{__import__('datetime').datetime.now().isoformat()}\n")
         self.addCleanup(self.sentinel_path.unlink, missing_ok=True)
         self.addCleanup(__import__("shutil").rmtree, self.tmpdir, True)
 
-        # Build stub cozempic that logs invocations
+        # Build stub winnow that logs invocations
         self.invocation_log = self.tmpdir / "invocations.log"
         stub_dir = self.tmpdir / "bin"
         stub_dir.mkdir()
-        stub = stub_dir / "cozempic"
+        stub = stub_dir / "winnow"
         stub.write_text(textwrap.dedent(f"""\
             #!/bin/sh
             echo "$@" >> {self.invocation_log}
@@ -271,7 +271,7 @@ class TestWatcherUnlinksSentinelAfterOsascript(unittest.TestCase):
     def setUp(self):
         self.sid = "cccccccccccc5678901234abcdefcccc"
         self.sid12 = self.sid[:12]
-        self.sentinel_path = Path(f"/tmp/cozempic_reload_{self.sid12}.in-flight")
+        self.sentinel_path = Path(f"/tmp/winnow_reload_{self.sid12}.in-flight")
         self.sentinel_path.write_text(f"89113\n{__import__('datetime').datetime.now().isoformat()}\n")
         self.addCleanup(self.sentinel_path.unlink, missing_ok=True)
 
@@ -367,7 +367,7 @@ class TestSentinelMtimeGCAfterStaleWindow(unittest.TestCase):
     def setUp(self):
         self.sid = "dddddddddddd567890abcdef12345ddd"
         self.sid12 = self.sid[:12]
-        self.sentinel_path = Path(f"/tmp/cozempic_reload_{self.sid12}.in-flight")
+        self.sentinel_path = Path(f"/tmp/winnow_reload_{self.sid12}.in-flight")
         self.addCleanup(self.sentinel_path.unlink, missing_ok=True)
 
     def test_sentinel_mtime_gc_after_stale_window(self):
@@ -507,8 +507,8 @@ class TestReproducer86cb258bNoTransientUnprotectedState(unittest.TestCase):
         self.sid12 = self.sid[:12]
         self.old_claude_pid = 89113
         self.new_claude_pid = 94466
-        self.pid_path = Path(f"/tmp/cozempic_guard_{self.sid12}.pid")
-        self.sentinel_path = Path(f"/tmp/cozempic_reload_{self.sid12}.in-flight")
+        self.pid_path = Path(f"/tmp/winnow_guard_{self.sid12}.pid")
+        self.sentinel_path = Path(f"/tmp/winnow_reload_{self.sid12}.in-flight")
         self.pid_path.unlink(missing_ok=True)
         self.sentinel_path.unlink(missing_ok=True)
         self.addCleanup(self.pid_path.unlink, missing_ok=True)
@@ -633,11 +633,11 @@ class TestRaceUnderContention(unittest.TestCase):
     """
 
     def setUp(self):
-        self.tmpdir = Path(tempfile.mkdtemp(prefix="cozempic_race_"))
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="winnow_race_"))
         self.sid = "eeeeeeeeeeee789012345abcdefeeee0"
         self.sid12 = self.sid[:12]
-        self.pid_path = Path(f"/tmp/cozempic_guard_{self.sid12}.pid")
-        self.sentinel_path = Path(f"/tmp/cozempic_reload_{self.sid12}.in-flight")
+        self.pid_path = Path(f"/tmp/winnow_guard_{self.sid12}.pid")
+        self.sentinel_path = Path(f"/tmp/winnow_reload_{self.sid12}.in-flight")
         self.pid_path.unlink(missing_ok=True)
         self.sentinel_path.unlink(missing_ok=True)
         self.addCleanup(self.pid_path.unlink, missing_ok=True)
@@ -778,7 +778,7 @@ class TestSentinelNotWrittenOnEarlyReturns(unittest.TestCase):
     def setUp(self):
         self.sid = "fedcba987654321098765432abcdef01"
         self.sid12 = self.sid[:12]
-        self.sentinel_path = Path(f"/tmp/cozempic_reload_{self.sid12}.in-flight")
+        self.sentinel_path = Path(f"/tmp/winnow_reload_{self.sid12}.in-flight")
         self.sentinel_path.unlink(missing_ok=True)
         self.addCleanup(self.sentinel_path.unlink, missing_ok=True)
 

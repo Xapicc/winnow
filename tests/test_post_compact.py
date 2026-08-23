@@ -363,7 +363,7 @@ class TestCmdPostCompact(unittest.TestCase):
 
 class TestInitHooksIncludePostCompact(unittest.TestCase):
 
-    def test_post_compact_in_cozempic_hooks(self):
+    def test_post_compact_in_winnow_hooks(self):
         self.assertIn("PostCompact", WINNOW_HOOKS)
 
     def test_post_compact_hook_command_correct(self):
@@ -374,7 +374,9 @@ class TestInitHooksIncludePostCompact(unittest.TestCase):
         self.assertEqual(len(hooks), 1)
 
         command = hooks[0]["command"]
-        self.assertIn("cozempic post-compact", command)
+        # `team`, because the inherited top-level checkpoint/post-compact pair
+        # collided with `winnow safe`'s and moved into a group (FORK.md §2.1).
+        self.assertIn("winnow team post-compact", command)
 
     def test_pre_compact_still_exists(self):
         """Ensure PreCompact wasn't accidentally removed."""

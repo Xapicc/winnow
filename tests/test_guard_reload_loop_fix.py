@@ -34,9 +34,9 @@ def _make_session_file(tmpdir: Path, size_bytes: int = 100_000) -> Path:
 
 class TestPostPruneTokenProgressGate(unittest.TestCase):
     def setUp(self):
-        self.tmpdir = Path(tempfile.mkdtemp(prefix="cozempic_loopfix_"))
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="winnow_loopfix_"))
         self.session_path = _make_session_file(self.tmpdir, 100_000)
-        self.scratch = Path(tempfile.mkdtemp(prefix="cozempic_tmproot_"))
+        self.scratch = Path(tempfile.mkdtemp(prefix="winnow_tmproot_"))
 
     def tearDown(self):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
@@ -105,7 +105,7 @@ class TestPostPruneTokenProgressGate(unittest.TestCase):
 class TestReloadRateLedger(unittest.TestCase):
     def test_helper_caps_after_max_in_window(self):
         from winnow.legacy.guard import _reload_rate_exceeded
-        d = Path(tempfile.mkdtemp(prefix="cozempic_ledger_"))
+        d = Path(tempfile.mkdtemp(prefix="winnow_ledger_"))
         try:
             p = d / "h.json"
             for i in range(3):
@@ -123,7 +123,7 @@ class TestReloadRateLedger(unittest.TestCase):
         # "respawn" = fresh _reload_rate_exceeded calls against the SAME on-disk
         # path. The 4th within the window must cap from persisted state.
         from winnow.legacy.guard import _reload_rate_exceeded
-        d = Path(tempfile.mkdtemp(prefix="cozempic_ledger_"))
+        d = Path(tempfile.mkdtemp(prefix="winnow_ledger_"))
         try:
             p = d / "h.json"
             caps = [_reload_rate_exceeded(p, now=2000.0 + i)[0] for i in range(4)]
@@ -133,7 +133,7 @@ class TestReloadRateLedger(unittest.TestCase):
 
     def test_corrupt_ledger_degrades_open(self):
         from winnow.legacy.guard import _reload_rate_exceeded
-        d = Path(tempfile.mkdtemp(prefix="cozempic_ledger_"))
+        d = Path(tempfile.mkdtemp(prefix="winnow_ledger_"))
         try:
             p = d / "h.json"
             p.write_text("{not json")
@@ -144,22 +144,22 @@ class TestReloadRateLedger(unittest.TestCase):
 
     def test_malicious_session_id_confined(self):
         from winnow.legacy.guard import _reload_ledger_path
-        scratch = Path(tempfile.mkdtemp(prefix="cozempic_tmproot_"))
+        scratch = Path(tempfile.mkdtemp(prefix="winnow_tmproot_"))
         try:
             with patch("winnow.legacy.guard._guard_tmp_root", return_value=scratch):
                 p = _reload_ledger_path("../../etc/passwd", Path("/x/s.jsonl"))
                 # must stay inside the tmp root, sanitized
                 self.assertEqual(p.parent, scratch)
                 self.assertNotIn("..", p.name)
-                self.assertNotIn("/", p.name.replace("cozempic_reload_", ""))
+                self.assertNotIn("/", p.name.replace("winnow_reload_", ""))
         finally:
             shutil.rmtree(scratch, ignore_errors=True)
 
     def test_guard_cycle_caps_reload_when_ledger_full(self):
         from winnow.legacy.team import TeamState
         from winnow.legacy.guard import guard_prune_cycle, _reload_ledger_path, _reload_rate_exceeded
-        tmpdir = Path(tempfile.mkdtemp(prefix="cozempic_loopfix2_"))
-        scratch = Path(tempfile.mkdtemp(prefix="cozempic_tmproot_"))
+        tmpdir = Path(tempfile.mkdtemp(prefix="winnow_loopfix2_"))
+        scratch = Path(tempfile.mkdtemp(prefix="winnow_tmproot_"))
         try:
             session_path = _make_session_file(tmpdir, 100_000)
             sid = "fedcba987654"

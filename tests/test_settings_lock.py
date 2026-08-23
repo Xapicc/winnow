@@ -1,6 +1,6 @@
 """Tests for _SettingsLock cross-platform behavior.
 
-The lock is exercised by `wire_hooks` / `uninstall_hooks` during `cozempic
+The lock is exercised by `wire_hooks` / `uninstall_hooks` during `winnow
 init`. Until the v1.8.x cross-platform fix it degraded to a silent no-op
 on Windows because `import fcntl` raised ImportError. This file pins the
 new behavior:
@@ -37,7 +37,7 @@ from winnow.legacy.init import _SettingsLock
 
 @pytest.fixture
 def settings_path(tmp_path: Path) -> Path:
-    """A settings.json path; the lock sibling lives at .cozempic-init.lock."""
+    """A settings.json path; the lock sibling lives at .winnow-init.lock."""
     return tmp_path / "settings.json"
 
 
@@ -62,7 +62,7 @@ def test_posix_acquires_fcntl_lockf(settings_path: Path) -> None:
 def test_posix_real_lockfile_created(settings_path: Path) -> None:
     """The actual lock file lands alongside settings.json."""
     with _SettingsLock(settings_path):
-        assert (settings_path.parent / ".cozempic-init.lock").exists()
+        assert (settings_path.parent / ".winnow-init.lock").exists()
 
 
 # ─── Windows path (exercised via fake msvcrt on POSIX) ───────────────────────
@@ -168,7 +168,7 @@ def test_windows_acquire_position_normalized_on_stale_lock_file(monkeypatch, set
     Asserted by recording the file position at each msvcrt.locking call.
     """
     # Pre-populate the lock file so EOF > 0.
-    lock_path = settings_path.parent / ".cozempic-init.lock"
+    lock_path = settings_path.parent / ".winnow-init.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     lock_path.write_text("stale content from prior crashed run\n")
     assert lock_path.stat().st_size > 0

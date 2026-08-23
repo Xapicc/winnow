@@ -48,7 +48,7 @@ def _race_worker(
     def _fake_popen(cmd_parts, **kwargs):
         # Fake ONLY the daemon-spawn Popen (python -m winnow.legacy.cli guard).
         # Every other subprocess use — notably the `ps` identity probe inside
-        # _is_cozempic_guard_process, which subprocess.run drives via
+        # _is_winnow_guard_process, which subprocess.run drives via
         # `with Popen(...) as p: p.communicate()` — must run for real; the
         # global Popen patch otherwise hands `ps` a _DummyProc with no
         # __enter__/communicate, raising AttributeError and turning every
@@ -56,7 +56,7 @@ def _race_worker(
         # gate this test is supposed to be).
         parts = cmd_parts if isinstance(cmd_parts, (list, tuple)) else [cmd_parts]
         is_daemon_spawn = any("winnow.legacy.cli" in str(p) for p in parts) or (
-            any("cozempic" in str(p) for p in parts) and any(str(p) == "guard" for p in parts)
+            any("winnow" in str(p) for p in parts) and any(str(p) == "guard" for p in parts)
         )
         if is_daemon_spawn:
             return _DummyProc(900_000 + worker_index)
@@ -437,7 +437,7 @@ class TestSymlinkDefense(unittest.TestCase):
     """Round-3 C1 regression test: the post-Popen ``.pid.tmp`` write must
     NOT follow symlinks. A local user with write access to ``/tmp`` (a
     real condition on shared dev boxes / CI runners) could pre-plant
-    ``/tmp/cozempic_guard_<sid12>.pid.tmp`` as a symlink to ``~/.zshrc``
+    ``/tmp/winnow_guard_<sid12>.pid.tmp`` as a symlink to ``~/.zshrc``
     or ``~/.ssh/authorized_keys``; the prior ``Path.write_text`` followed
     the symlink and overwrote the target with the PID number.
 
@@ -468,7 +468,7 @@ class TestSymlinkDefense(unittest.TestCase):
         # depend on any real file in /tmp.
         import tempfile
 
-        self.tmpdir = Path(tempfile.mkdtemp(prefix="cozempic_symlink_test_"))
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="winnow_symlink_test_"))
         self.victim = self.tmpdir / "victim.txt"
         self.victim.write_text("ORIGINAL\n", encoding="utf-8")
 
@@ -613,7 +613,7 @@ class TestDaemonSpawnLockUnit(unittest.TestCase):
         sid = "deadbeef-1234-5678-9abc-de00deadbeef"
         with daemon_spawn_lock(sid) as lock_path:
             self.assertIsInstance(lock_path, Path)
-            self.assertIn("cozempic_guard_", lock_path.name)
+            self.assertIn("winnow_guard_", lock_path.name)
             self.assertTrue(
                 lock_path.name.endswith(".pid"),
                 f"V4 rework: claim path must be the .pid file, got {lock_path.name}",
@@ -696,9 +696,9 @@ class TestC2_SlugConvergence(unittest.TestCase):
             p = _pid_file_for_session(session_id)
         except ValueError:
             return None
-        # Path is /tmp/cozempic_guard_<sid12>.pid — extract sid12.
+        # Path is /tmp/winnow_guard_<sid12>.pid — extract sid12.
         name = p.name
-        prefix = "cozempic_guard_"
+        prefix = "winnow_guard_"
         suffix = ".pid"
         self_assert_invariant = name.startswith(prefix) and name.endswith(suffix)
         assert self_assert_invariant, f"unexpected pid path shape: {name!r}"

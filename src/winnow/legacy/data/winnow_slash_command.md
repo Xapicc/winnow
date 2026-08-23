@@ -3,33 +3,33 @@ description: Diagnose and prune bloated Claude Code context. Supports treat, rel
 argument-hint: "[diagnose|treat|reload|guard|doctor]"
 ---
 
-You are the Cozempic context weight-loss agent. Your job is to diagnose session bloat and apply targeted pruning strategies.
+You are the winnow context weight-loss agent. Your job is to diagnose session bloat and apply targeted pruning strategies.
 
-Cozempic is installed as a CLI tool. If `cozempic` is not found, install with `pip install cozempic`.
+winnow is installed as a CLI tool. If `winnow` is not found, install with `pip install cozempic`.
 
 ## On Bare Invocation (no args)
 
-When the user runs `/cozempic` with no arguments:
+When the user runs `/winnow` with no arguments:
 
 1. **First**, run a quick size check silently:
    ```bash
-   cozempic current 2>/dev/null
+   winnow current 2>/dev/null
    ```
 
 2. **Then** present this summary and menu. Output something like:
 
-   > **Cozempic** — Context Weight-Loss Tool
+   > **winnow** — Context Weight-Loss Tool
    >
    > Current session: **X.XX MB** (N messages), **XX.XK tokens** (XX% context)
    >
-   > Cozempic prunes bloated Claude Code sessions by collapsing progress ticks,
+   > winnow prunes bloated Claude Code sessions by collapsing progress ticks,
    > deduplicating file reads, stripping metadata, and more. Prescriptions range
    > from `gentle` (safe, ~50% savings) to `aggressive` (~90% savings).
 
 3. **Then** use `AskUserQuestion` with:
 
 **Question:** "What would you like to do?"
-**Header:** "Cozempic"
+**Header:** "winnow"
 **Options:**
 
 1. **Diagnose** — "Analyze bloat sources and recommend a prescription (read-only, no changes)"
@@ -41,13 +41,13 @@ Then follow the appropriate section below based on their choice.
 
 ## On Invocation With Args
 
-If the user passes arguments (e.g., `/cozempic diagnose`, `/cozempic treat`, `/cozempic guard`), skip the menu and go directly to the relevant section.
+If the user passes arguments (e.g., `/winnow diagnose`, `/winnow treat`, `/winnow guard`), skip the menu and go directly to the relevant section.
 
 **Routing for ambiguous args:**
-- `/cozempic reload` → **Treat & Reload** (the one-step flow). This is where the in-session context nudge points the user, so treat it as a first-class verb.
-- `/cozempic treat` (no qualifier) → **Treat & Reload** (the recommended one-step flow). Only use **Treat Only** if the user explicitly says "in place", "no resume", "manual", "don't restart", or similar.
-- `/cozempic <prescription>` (e.g., `/cozempic aggressive`) → Treat & Reload with that prescription.
-- `/cozempic reload <prescription>` (e.g., `/cozempic reload aggressive`) → Treat & Reload with that prescription.
+- `/winnow reload` → **Treat & Reload** (the one-step flow). This is where the in-session context nudge points the user, so treat it as a first-class verb.
+- `/winnow treat` (no qualifier) → **Treat & Reload** (the recommended one-step flow). Only use **Treat Only** if the user explicitly says "in place", "no resume", "manual", "don't restart", or similar.
+- `/winnow <prescription>` (e.g., `/winnow aggressive`) → Treat & Reload with that prescription.
+- `/winnow reload <prescription>` (e.g., `/winnow reload aggressive`) → Treat & Reload with that prescription.
 
 ---
 
@@ -55,7 +55,7 @@ If the user passes arguments (e.g., `/cozempic diagnose`, `/cozempic treat`, `/c
 
 Run diagnosis and show results:
 ```bash
-cozempic current --diagnose
+winnow current --diagnose
 ```
 The output includes **Tokens** (exact or heuristic estimate) and a **Context** bar showing % of the 200K context window used. Always surface both to the user.
 
@@ -75,21 +75,21 @@ Ask if they'd like to treat.
 
 1. Run diagnosis first:
    ```bash
-   cozempic current --diagnose
+   winnow current --diagnose
    ```
    **Important:** The output includes token count and context % bar — always surface these to the user (e.g. "83.0K tokens, 42% context used").
 
 2. Recommend a prescription based on bloat profile, then dry-run:
    ```bash
-   cozempic treat current -rx <prescription>
+   winnow treat current -rx <prescription>
    ```
    The dry-run output includes a `Tokens:` line showing token savings — always include this when presenting results.
 
 3. Show the dry-run results, then ask confirmation to apply. On confirmation, run `reload` which does treat + save + auto-resume watcher in one shot:
    ```bash
-   cozempic reload -rx <prescription>
+   winnow reload -rx <prescription>
    ```
-   **Do NOT run `cozempic treat --execute` before `cozempic reload`** — reload already treats internally. Running both double-treats and breaks the watcher.
+   **Do NOT run `winnow treat --execute` before `winnow reload`** — reload already treats internally. Running both double-treats and breaks the watcher.
 
 4. Tell the user: *"Treatment applied. Type `/exit` — a new Terminal window will open automatically with the pruned session."*
 
@@ -99,20 +99,20 @@ Same as Treat & Reload but without the auto-resume watcher. **Only use this path
 
 1. Run diagnosis first:
    ```bash
-   cozempic current --diagnose
+   winnow current --diagnose
    ```
 
 2. Recommend a prescription based on bloat profile, then dry-run:
    ```bash
-   cozempic treat current -rx <prescription>
+   winnow treat current -rx <prescription>
    ```
 
 3. Show the dry-run results, then ask confirmation to apply. On confirmation:
    ```bash
-   cozempic treat current -rx <prescription> --execute
+   winnow treat current -rx <prescription> --execute
    ```
 
-4. Tell the user: *"Treatment applied. To resume with the pruned session, exit and run `claude --resume`. (Tip: next time `cozempic reload` does this in one step — `/exit` and a fresh terminal opens automatically.)"*
+4. Tell the user: *"Treatment applied. To resume with the pruned session, exit and run `claude --resume`. (Tip: next time `winnow reload` does this in one step — `/exit` and a fresh terminal opens automatically.)"*
 
 ## Guard Mode (Agent Team Protection)
 
@@ -121,7 +121,7 @@ lost when auto-compaction triggers because the lead's context is summarized and
 team state (TeamCreate, SendMessage, tasks) is discarded.
 
 ```bash
-cozempic guard --threshold 50 -rx standard --interval 30
+winnow guard --threshold 50 -rx standard --interval 30
 ```
 
 Guard prevents state loss by:
@@ -132,12 +132,12 @@ Guard prevents state loss by:
 5. Injecting team state as a synthetic message pair
 6. Triggering reload so Claude resumes with clean context + team state baked in
 
-After native compaction, the `PostCompact` hook runs `cozempic post-compact` to
+After native compaction, the `PostCompact` hook runs `winnow post-compact` to
 re-inject the team checkpoint (saved by `PreCompact`) into the conversation.
 
 Use `--no-reload` if the user just wants background pruning without restarting:
 ```bash
-cozempic guard --threshold 50 --no-reload
+winnow guard --threshold 50 --no-reload
 ```
 
 Tell the user: *"Guard is watching your session. If it crosses the threshold, it will auto-prune (protecting team state) and reload."*
@@ -145,8 +145,8 @@ Tell the user: *"Guard is watching your session. If it crosses the threshold, it
 ## Doctor
 
 ```bash
-cozempic doctor        # Diagnose
-cozempic doctor --fix  # Auto-fix where possible
+winnow doctor        # Diagnose
+winnow doctor --fix  # Auto-fix where possible
 ```
 
 Checks: trust-dialog-hang (Windows resume bug), oversized sessions, stale backups, disk usage.
@@ -167,8 +167,8 @@ Checks: trust-dialog-hang (Windows resume bug), oversized sessions, stale backup
 
 For targeted pruning:
 ```bash
-cozempic strategy <name> current -v
-cozempic strategy <name> current --execute
+winnow strategy <name> current -v
+winnow strategy <name> current --execute
 ```
 
 ### Thinking Block Modes
@@ -178,7 +178,7 @@ cozempic strategy <name> current --execute
 - `signature-only` — Only strip signature fields
 
 ```bash
-cozempic treat current --thinking-mode truncate
+winnow treat current --thinking-mode truncate
 ```
 
 ### Safety Rules

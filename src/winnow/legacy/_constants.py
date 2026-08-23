@@ -1,4 +1,4 @@
-"""Shared compile-time constants for cozempic components.
+"""Shared compile-time constants for winnow components.
 
 Extracted to break circular-import cycles: guard.py imports team.py at module
 level, so team.py cannot import guard.py in return.  Any constant that BOTH

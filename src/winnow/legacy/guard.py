@@ -10,7 +10,7 @@ fallback — not the primary protection mechanism.
 
 Checkpoint triggers:
   1. Every N seconds (guard daemon)
-  2. On demand via `cozempic checkpoint` (hook-driven)
+  2. On demand via `winnow checkpoint` (hook-driven)
   3. At file size threshold (emergency prune)
 """
 
@@ -419,7 +419,7 @@ def prune_with_team_protect(
 
     Strategy:
     1. Extract team state
-    2. Tag team messages with __cozempic_team_protected__ (is_protected() skips them)
+    2. Tag team messages with __winnow_team_protected__ (is_protected() skips them)
     3. Run prescription on the FULL list (no splitting, no memory doubling)
     4. Remove tags, inject team recovery messages
     """
@@ -462,18 +462,18 @@ def prune_with_team_protect(
     try:
         for _, msg_dict, _ in messages:
             if _is_team_message(msg_dict, pending_task_ids):
-                msg_dict["__cozempic_team_protected__"] = True
+                msg_dict["__winnow_team_protected__"] = True
 
         pruned_messages, results = run_prescription(messages, strategy_names, config)
     finally:
         # 5. Remove tags from the source list (messages) — covers the abort path
         # where pruned_messages may be partially built or identical to messages.
         for _, msg_dict, _ in messages:
-            msg_dict.pop("__cozempic_team_protected__", None)
+            msg_dict.pop("__winnow_team_protected__", None)
 
     # 5b. Also strip from pruned_messages (they may be a different list).
     for _, msg_dict, _ in pruned_messages:
-        msg_dict.pop("__cozempic_team_protected__", None)
+        msg_dict.pop("__winnow_team_protected__", None)
 
     # 6. Inject team recovery messages at the end
     pruned_messages = inject_team_recovery(pruned_messages, team_state)
@@ -728,7 +728,7 @@ def start_guard(
         f"    Soft  ({soft_pct}%): read-only checkpoint, no live-file write (#106)\n"
         f"    Hard1 ({hard1_pct}%): {rx_name} prune + reload (terminate-first)\n"
         f"    Hard2 ({hard2_pct}%): aggressive prune + reload (emergency)\n"
-        f"    User  (90%): manual aggressive (cozempic treat -rx aggressive --execute)\n"
+        f"    User  (90%): manual aggressive (winnow treat -rx aggressive --execute)\n"
     )
 
     # Reactive overflow recovery via file watcher
@@ -753,7 +753,7 @@ def start_guard(
             str(session_path), on_growth=recovery.on_file_growth,
         )
         watcher_thread = threading.Thread(
-            target=overflow_watcher.start, daemon=True, name="cozempic-watcher",
+            target=overflow_watcher.start, daemon=True, name="winnow-watcher",
         )
         watcher_thread.start()
 
@@ -926,7 +926,7 @@ def start_guard(
                             f"protection in this session. SessionStart fires only "
                             f"on startup/resume/clear, NOT on tool calls or "
                             f"message turns, so the daemon will NOT auto-respawn "
-                            f"while the session continues. To re-enable cozempic: "
+                            f"while the session continues. To re-enable winnow: "
                             f"type /clear or restart the session. Recommended: "
                             f"split work across fresh sessions to avoid >55% "
                             f"context dominance by immutable tool-result blocks.",
@@ -2027,8 +2027,8 @@ def guard_prune_cycle(
     return result
 
 
-def _is_cozempic_watcher_process(pid: int) -> bool:
-    """Verify that `pid` is a cozempic reload watcher (bash + cozempic watcher script).
+def _is_winnow_watcher_process(pid: int) -> bool:
+    """Verify that `pid` is a winnow reload watcher (bash + winnow watcher script).
 
     Guards against false positives from pgrep substring matching.
     """
@@ -2040,28 +2040,28 @@ def _is_cozempic_watcher_process(pid: int) -> bool:
         if result.returncode != 0:
             return False
         args = (result.stdout or "").strip()
-        # Real watcher script contains both "bash" and "Cozempic guard resumed Claude"
-        return "bash" in args and "Cozempic guard resumed Claude" in args
+        # Real watcher script contains both "bash" and "winnow guard resumed Claude"
+        return "bash" in args and "winnow guard resumed Claude" in args
     except (subprocess.SubprocessError, OSError):
         return False
 
 
 def _cleanup_stale_watchers() -> None:
-    """Kill stale reload watchers from previous Cozempic versions.
+    """Kill stale reload watchers from previous winnow versions.
 
     Old watchers (pre-1.6.10) had hardcoded resume commands without flag
     detection. They linger as zombie processes waiting for Claude to exit.
     """
     try:
         result = subprocess.run(
-            ["pgrep", "-f", "cozempic.*resumed Claude"],
+            ["pgrep", "-f", "winnow.*resumed Claude"],
             capture_output=True, text=True, timeout=5,
         )
         for pid_str in result.stdout.strip().split("\n"):
             if pid_str:
                 try:
                     pid = int(pid_str)
-                    if _is_cozempic_watcher_process(pid):
+                    if _is_winnow_watcher_process(pid):
                         os.kill(pid, signal.SIGTERM)
                 except (ProcessLookupError, PermissionError, ValueError):
                     pass
@@ -2428,7 +2428,7 @@ def _spawn_reload_watcher(claude_pid: int, project_dir: str, session_id: str | N
     - Unlinks the reload sentinel AFTER osascript fires (NEW-1 option c) so
       the new Claude's SessionStart hook can spawn its guard without suppression.
     - Polls for the new Claude process for RELOAD_WATCHER_POLL_TIMEOUT_SECONDS
-      (GAP-B); writes a structured status file to /tmp/cozempic_reload_<sid12>.status
+      (GAP-B); writes a structured status file to /tmp/winnow_reload_<sid12>.status
       on timeout, which the next SessionStart hook surfaces to the operator.
     """
     resume_flag = f"--resume {session_id}" if session_id else "--resume"
@@ -2464,8 +2464,8 @@ def _spawn_reload_watcher(claude_pid: int, project_dir: str, session_id: str | N
     from .reload_lock import _slug_for as _rl_slug_for
     if session_id:
         sid12 = _rl_slug_for(session_id)
-        sentinel_path = f"/tmp/cozempic_reload_{sid12}.in-flight"
-        status_path = f"/tmp/cozempic_reload_{sid12}.status"
+        sentinel_path = f"/tmp/winnow_reload_{sid12}.in-flight"
+        status_path = f"/tmp/winnow_reload_{sid12}.status"
         pgrep_pattern = f"claude.*{sid12}"
     else:
         sid12 = ""
@@ -2484,7 +2484,7 @@ def _spawn_reload_watcher(claude_pid: int, project_dir: str, session_id: str | N
             f"gnome-terminal -- bash -c 'cd {shell_quote(project_dir)} && claude {resume_flag}; exec bash'; "
             f"elif command -v xterm >/dev/null 2>&1; then "
             f"xterm -e 'cd {shell_quote(project_dir)} && claude {resume_flag}' & "
-            f"else echo 'No terminal emulator found' >> /tmp/cozempic_guard.log; fi"
+            f"else echo 'No terminal emulator found' >> /tmp/winnow_guard.log; fi"
         )
     elif system == "Windows":
         # Windows has no bash, and the POSIX watcher below uses kill -0 / pgrep /
@@ -2500,11 +2500,11 @@ def _spawn_reload_watcher(claude_pid: int, project_dir: str, session_id: str | N
         _win_status = status_path
         if status_path == "/dev/null" or status_path.startswith("/tmp"):
             # /tmp / /dev/null don't exist on Windows — use the Windows temp dir.
-            _win_status = str(Path(tempfile.gettempdir()) / (f"cozempic_reload_{sid12}.status" if sid12 else "cozempic_reload.status"))
+            _win_status = str(Path(tempfile.gettempdir()) / (f"winnow_reload_{sid12}.status" if sid12 else "winnow_reload.status"))
         _win_sentinel = sentinel_path
         if sentinel_path.startswith("/tmp"):
-            _win_sentinel = str(Path(tempfile.gettempdir()) / f"cozempic_reload_{sid12}.in-flight")
-        _win_log = str(Path(tempfile.gettempdir()) / "cozempic_guard.log")
+            _win_sentinel = str(Path(tempfile.gettempdir()) / f"winnow_reload_{sid12}.in-flight")
+        _win_log = str(Path(tempfile.gettempdir()) / "winnow_guard.log")
 
         def _ps_q(s: str) -> str:  # PowerShell single-quote literal (double internal ')
             return "'" + s.replace("'", "''") + "'"
@@ -2537,7 +2537,7 @@ def _spawn_reload_watcher(claude_pid: int, project_dir: str, session_id: str | N
             # Phase 4: poll for the new claude; log on success, write status on timeout.
             + f"$deadline=(Get-Date).AddSeconds({RELOAD_WATCHER_POLL_TIMEOUT_SECONDS}); $new=$null; "
             f"while ((Get-Date) -lt $deadline) {{ {_ps_find_new}; if ($new) {{ break }}; Start-Sleep -Seconds {RELOAD_WATCHER_POLL_INTERVAL_SECONDS} }}; "
-            f"if ($new) {{ Add-Content -Path {_ps_q(_win_log)} -Value \"$(Get-Date): Cozempic guard resumed Claude (new PID $($new.Id))\" }} "
+            f"if ($new) {{ Add-Content -Path {_ps_q(_win_log)} -Value \"$(Get-Date): winnow guard resumed Claude (new PID $($new.Id))\" }} "
             f"else {{ Set-Content -Path {_ps_q(_win_status)} -Value \"failed`n$(Get-Date -Format o)`nnew Claude did not start within {RELOAD_WATCHER_POLL_TIMEOUT_SECONDS}s`ninvestigate: claude on PATH / auth / JSONL path\" }}"
         )
     else:
@@ -2579,14 +2579,14 @@ def _spawn_reload_watcher(claude_pid: int, project_dir: str, session_id: str | N
         f"  sleep {RELOAD_WATCHER_POLL_INTERVAL_SECONDS}; "
         f"done; "
         f"if [ -n \"$new_pid\" ]; then "
-        f"  echo \"$(date): Cozempic guard resumed Claude in {log_dir} (new PID $new_pid)\" >> /tmp/cozempic_guard.log; "
+        f"  echo \"$(date): winnow guard resumed Claude in {log_dir} (new PID $new_pid)\" >> /tmp/winnow_guard.log; "
         f"else "
         f"  printf '%s\\n%s\\n%s\\n%s\\n' 'failed' "
         f"    \"$(date -Iseconds 2>/dev/null || date)\" "
         f"    \"new Claude did not start within {RELOAD_WATCHER_POLL_TIMEOUT_SECONDS}s after resume_cmd (exit=$RESUME_EXIT)\" "
         f"    'investigate: Terminal automation permission / claude -r auth / JSONL path / network' "
         f"    > '{status_path}'; "
-        f"  echo \"$(date): Cozempic guard reload FAILED — no new Claude after {RELOAD_WATCHER_POLL_TIMEOUT_SECONDS}s\" >> /tmp/cozempic_guard.log; "
+        f"  echo \"$(date): winnow guard reload FAILED — no new Claude after {RELOAD_WATCHER_POLL_TIMEOUT_SECONDS}s\" >> /tmp/winnow_guard.log; "
         f"fi"
     )
 
@@ -2637,7 +2637,7 @@ def _guard_tmp_root() -> Path:
     """Directory for guard PID/log files.
 
     POSIX keeps the historical ``/tmp`` so the path stays byte-identical to the
-    SessionStart shell hook (which hardcodes ``/tmp/cozempic_guard_*.pid`` and
+    SessionStart shell hook (which hardcodes ``/tmp/winnow_guard_*.pid`` and
     cannot call ``tempfile.gettempdir()``); diverging would make the hook's
     "guard already running" fast-path always miss on macOS, where gettempdir()
     is ``/var/folders/.../T``. Windows has no ``/tmp`` — a literal
@@ -2686,7 +2686,7 @@ def _reload_ledger_max() -> int:
 # A guard reload SIGKILLs the Claude process and resumes from the pruned
 # transcript. Harness-side state that is NOT in the transcript — a running
 # Workflow-tool orchestration, a background subagent — is destroyed with no
-# recovery. cozempic could not see these before. This detects them from the
+# recovery. winnow could not see these before. This detects them from the
 # transcript via launch/completion markers (both DO appear in the JSONL):
 #   - Workflow launch:  "Workflow launched in background. Task ID: <id>"
 #   - background launch: "running in background with ID: <id>"
@@ -2941,7 +2941,7 @@ def detect_in_flight(messages) -> dict:
         # A FOREGROUND-completed Agent result is the agent's OUTPUT (prose), not a
         # launch ack — skip it, so a launch marker QUOTED in an agent's text (agents
         # that discuss/echo "Async agent launched ... agentId: X", e.g. when working
-        # ON cozempic) can't fabricate a PHANTOM in-flight task that wedges the gate
+        # ON winnow) can't fabricate a PHANTOM in-flight task that wedges the gate
         # (real-transcript pollution, 2026-06-09).
         if _AGENT_DONE_TRAILER_RE.search(rtext):
             continue
@@ -2987,7 +2987,7 @@ _TEAM_SPAWN_MARKER_RE = re.compile(
 # The STRUCTURAL teammate-message carrier the harness emits (and extract_team_state
 # parses) — `<teammate-message ... teammate_id="...">`. Matched as a tag, NOT as a
 # bare "teammate-message"/"idle_notification" substring, so prose merely *discussing*
-# the protocol (or cozempic's own source/docs) does not trip it (fleet P0).
+# the protocol (or winnow's own source/docs) does not trip it (fleet P0).
 _TEAMMATE_MSG_MARKER_RE = re.compile(
     r'<teammate-message\s[^>]*teammate_id\s*=\s*"', re.IGNORECASE)
 
@@ -3020,7 +3020,7 @@ def _unresolved_team_coordination(messages, team_state) -> bool:
         # synthetic delivery surface (root / queue-operation `content`), NOT a
         # user's typed `message.content`. A user PASTING a teammate-message line
         # into a teamless session must not wedge the guard (fleet P1, 2026-06-09);
-        # and in cozempic's real pre-prune gating a genuine team's spawn tool_use
+        # and in winnow's real pre-prune gating a genuine team's spawn tool_use
         # is still present → non-empty roster → this net is skipped anyway, so
         # narrowing the surface loses no real-team coverage.
         _root = msg.get("content")
@@ -3062,7 +3062,7 @@ def safe_to_reload(team_state, messages, session_path) -> tuple[bool, str]:
     genuinely-quiescent reload (avoids re-creating the inert guard).
     """
     inflight = detect_in_flight(messages)
-    # Harness-side in-flight work — the gap cozempic was blind to. These are the
+    # Harness-side in-flight work — the gap winnow was blind to. These are the
     # MOST reliable signals (launched−completed via task-notifications, verified
     # against real transcripts). NEVER reload through them. Checked first so an
     # active background subagent is caught even if TeamState is empty/stale.
@@ -3140,7 +3140,7 @@ def safe_to_reload(team_state, messages, session_path) -> tuple[bool, str]:
 # can execute the reload. The execute decision gates on safe_to_reload AND
 # SUSTAINED idle (it does not hard-read `warned`, so a missing/disabled Stop hook
 # can't wedge it; the trade-off is the warning is best-effort, not a hard
-# precondition). `cozempic reload` clears the sentinel (user took control).
+# precondition). `winnow reload` clears the sentinel (user took control).
 # Shared by guard (write) and cli `nudge` (read/warn).
 def _reload_armed_path(session_id: str | None, session_path: Path | None = None) -> Path:
     from .reload_lock import _slug_for as _rl_slug_for  # lazy — matches guard.py:2233 pattern
@@ -3148,7 +3148,7 @@ def _reload_armed_path(session_id: str | None, session_path: Path | None = None)
     # str() restores the coercion the old inline formula provided via str(raw);
     # callers are typed str|None but we keep defensive parity for non-str inputs.
     slug = _rl_slug_for(str(raw)) if raw is not None else "default"
-    return _guard_tmp_root() / f"cozempic_reload_armed_{slug}.json"
+    return _guard_tmp_root() / f"winnow_reload_armed_{slug}.json"
 
 
 def read_armed(session_id: str | None, session_path: Path | None = None) -> dict | None:
@@ -3233,7 +3233,7 @@ def _reload_ledger_path(session_id: str | None, session_path: Path) -> Path:
     # str() restores the coercion the old inline formula provided via str(raw);
     # callers are typed str|None but we keep defensive parity for non-str inputs.
     slug = _rl_slug_for(str(raw)) if raw is not None else "default"
-    return _guard_tmp_root() / f"cozempic_reload_{slug}.history"
+    return _guard_tmp_root() / f"winnow_reload_{slug}.history"
 
 
 def _reload_rate_exceeded(ledger_path: Path, now: float | None = None) -> tuple[bool, int]:
@@ -3300,14 +3300,14 @@ def _pid_file_for_session(session_id: str) -> Path:
             f"session_id must be alphanumeric+_- (leading-alphanumeric, >=12 chars), "
             f"got {type(session_id).__name__} of length {len(session_id)}"
         )
-    return _guard_tmp_root() / f"cozempic_guard_{session_id[:12]}.pid"
+    return _guard_tmp_root() / f"winnow_guard_{session_id[:12]}.pid"
 
 
 def _pid_file_for_cwd(cwd: str) -> Path:
     """Legacy: PID file keyed by CWD hash. Used for migration cleanup only."""
     import hashlib
     slug = hashlib.md5(cwd.encode()).hexdigest()[:12]
-    return _guard_tmp_root() / f"cozempic_guard_{slug}.pid"
+    return _guard_tmp_root() / f"winnow_guard_{slug}.pid"
 
 
 def _cleanup_legacy_pid(cwd: str) -> None:
@@ -3318,7 +3318,7 @@ def _cleanup_legacy_pid(cwd: str) -> None:
             pid = int(legacy.read_text().strip())
             os.kill(pid, 0)
             # Only SIGTERM if we can confirm this is actually our daemon.
-            if _is_cozempic_guard_process(pid):
+            if _is_winnow_guard_process(pid):
                 os.kill(pid, signal.SIGTERM)
                 time.sleep(1)
         except (ValueError, ProcessLookupError, PermissionError, OSError):
@@ -3403,12 +3403,12 @@ def _is_guard_running_for_session(session_id: str) -> int | None:
             return None
         os.kill(pid, 0)
         # Verify the PID is actually our guard — defend against PID reuse.
-        if not _is_cozempic_guard_process(pid):
+        if not _is_winnow_guard_process(pid):
             # Don't eagerly unlink a fresh-looking pidfile here. A peer
             # process that just did O_CREAT|O_EXCL in DaemonSpawnClaim has
             # written its own parent PID into the file BEFORE renaming to
             # the daemon PID; in that brief window the holding PID is a
-            # legitimate Python process that isn't yet a cozempic guard.
+            # legitimate Python process that isn't yet a winnow guard.
             # Treating it as PID-reuse and unlinking would destroy the
             # peer's claim and let multiple workers spawn. Only unlink
             # truly old pidfiles — those are real PID-reuse or genuine
@@ -3482,7 +3482,7 @@ def start_guard_daemon(
 ) -> dict:
     """Start the guard as a background daemon.
 
-    Spawns a detached subprocess running `cozempic guard` with output
+    Spawns a detached subprocess running `winnow guard` with output
     redirected to a log file. Uses a PID file to prevent double-starts.
 
     Pre-validates numeric parameters before spawning the child process.
@@ -3597,8 +3597,8 @@ def start_guard_daemon(
     else:
         import hashlib
         pid_key = hashlib.md5(cwd.encode()).hexdigest()[:12]
-        log_file = _guard_tmp_root() / f"cozempic_guard_{pid_key}.log"
-        pid_path = _guard_tmp_root() / f"cozempic_guard_{pid_key}.pid"
+        log_file = _guard_tmp_root() / f"winnow_guard_{pid_key}.log"
+        pid_path = _guard_tmp_root() / f"winnow_guard_{pid_key}.pid"
 
     if claude_pid is None:
         claude_pid = find_claude_pid()
@@ -3830,16 +3830,16 @@ def start_guard_daemon(
         claim.__exit__(None, None, None)
 
 
-def _is_cozempic_guard_process(pid: int) -> bool:
-    """Verify that `pid` is actually a cozempic guard daemon before we signal it.
+def _is_winnow_guard_process(pid: int) -> bool:
+    """Verify that `pid` is actually a winnow guard daemon before we signal it.
 
     Guards against PID reuse: when our daemon exits and the kernel recycles
     its PID to an unrelated user process, a blind `os.kill(pid, SIGTERM)` on
     the recycled PID is a confused-deputy bug (we'd kill something arbitrary).
     Inspects the process's argv; requires BOTH "winnow.legacy.cli guard" (matches
     our spawn pattern in start_guard_daemon) OR the explicit entry-point
-    "cozempic guard" — not just substring "cozempic" + "guard" which could
-    match unrelated things like `vim /tmp/cozempic_guard_notes.md`.
+    "winnow guard" — not just substring "winnow" + "guard" which could
+    match unrelated things like `vim /tmp/winnow_guard_notes.md`.
     """
     try:
         result = subprocess.run(
@@ -3854,16 +3854,16 @@ def _is_cozempic_guard_process(pid: int) -> bool:
             return False
         binary = Path(tokens[0]).name.lower()
         # tokens[0] must be a python interpreter (any minor/patch version) or
-        # the cozempic entry-point. Rejects `run-cozempic`, `fake-cozempic`,
+        # the winnow entry-point. Rejects `run-winnow`, `fake-winnow`,
         # `python-attacker`. Accepts `python3.11`, `python3.13.12`, etc. used
         # by pyenv / Homebrew / distro packaging.
-        if not (binary == "cozempic" or re.fullmatch(r"^python(\d+(\.\d+)*)?$", binary)):
+        if not (binary == "winnow" or re.fullmatch(r"^python(\d+(\.\d+)*)?$", binary)):
             return False
         # "winnow.legacy.cli" and "guard" must appear as discrete arg tokens, not as
         # substrings in filenames/paths (grep, less, vim on our source tree).
         if "winnow.legacy.cli" in tokens and "guard" in tokens:
             return True
-        if len(tokens) >= 2 and binary == "cozempic" and tokens[1] == "guard":
+        if len(tokens) >= 2 and binary == "winnow" and tokens[1] == "guard":
             return True
         return False
     except (subprocess.SubprocessError, OSError, TypeError):
@@ -4006,7 +4006,7 @@ def _pid_identity_match(pid: int, session_id: str | None) -> bool:
 
 # Bare process-liveness probe — does NOT consult the JSONL mtime.
 #
-# Anti-resurrection: a dead PID must read as dead even when cozempic's own
+# Anti-resurrection: a dead PID must read as dead even when winnow's own
 # ``save_messages`` just refreshed the session JSONL moments earlier.
 # ``_is_claude_process``'s mtime fallback would misread that fresh write as a
 # live Claude and let the reload watcher resurrect a session the user closed.
@@ -4021,7 +4021,7 @@ _pid_is_alive = _pid_is_alive_canonical
 def _is_claude_process(pid: int, session_path: Path | None = None) -> bool:
     """Verify that `pid` is a Claude Code process (node/claude binary).
 
-    Mirrors _is_cozempic_guard_process but for the Claude client side.
+    Mirrors _is_winnow_guard_process but for the Claude client side.
     Guards against PID reuse: if Claude exits and its PID is recycled, a blind
     SIGTERM on the recycled PID is a confused-deputy bug.
 
@@ -4128,7 +4128,7 @@ def reload_self_daemon(
 ) -> dict:
     """Gracefully restart the running guard daemon for this session.
 
-    Used after an in-place cozempic upgrade so the daemon picks up the new code
+    Used after an in-place winnow upgrade so the daemon picks up the new code
     on disk. SIGTERMs the existing daemon (it writes a final checkpoint via the
     SIGTERM handler), waits for it to exit, then spawns a fresh daemon with the
     same args. The new daemon imports from the freshly-installed package files.
@@ -4170,8 +4170,8 @@ def reload_self_daemon(
         return {"reloaded": False, "reason": "no daemon running for session"}
 
     # Verify the PID is actually our daemon — defend against PID reuse.
-    if not _is_cozempic_guard_process(old_pid):
-        # Stale pid file pointing at a recycled (non-cozempic) PID. Clear it
+    if not _is_winnow_guard_process(old_pid):
+        # Stale pid file pointing at a recycled (non-winnow) PID. Clear it
         # (only if it still points at the stale pid — CAS) and spawn fresh;
         # do NOT signal the unrelated process.
         if _pid_file_points_to(session_id, old_pid):
@@ -4189,7 +4189,7 @@ def reload_self_daemon(
             # Didn't exit on SIGTERM — escalate, but only if we still see our
             # daemon (guard against the unlikely race where another process
             # grabbed the PID right as the old daemon finally died).
-            if _is_cozempic_guard_process(old_pid):
+            if _is_winnow_guard_process(old_pid):
                 try:
                     os.kill(old_pid, signal.SIGKILL)
                 except (ProcessLookupError, PermissionError):
@@ -4307,7 +4307,7 @@ def _log_safe(text, limit: int = 80) -> str:
     """Make untrusted text safe to print into the guard log: collapse newlines /
     control chars to spaces and cap length. Without this, an attacker-controlled
     team_name could inject fake 'Pruned: 0 tokens freed (0.0%)' lines into the log
-    and trip cozempic guard-watchdog against a healthy daemon (C7 log-injection)."""
+    and trip winnow guard-watchdog against a healthy daemon (C7 log-injection)."""
     import re as _re
     s = _re.sub(r"[\x00-\x1f\x7f]+", " ", str(text if text is not None else ""))
     s = _re.sub(r"\s+", " ", s).strip()

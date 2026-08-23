@@ -8,7 +8,7 @@ import os
 import tempfile as _tempfile
 from pathlib import Path as _Path
 
-_SAVINGS_FILE = _Path.home() / ".cozempic_savings.json"
+_SAVINGS_FILE = _Path.home() / ".winnow_savings.json"
 
 
 # ── Process-liveness probe ──────────────────────────────────────────────────
@@ -102,7 +102,7 @@ class _HostFileLock:
     """Per-host advisory lock around a file path.
 
     Used to serialize read-modify-write cycles on shared state files
-    (cozempic-sessions.json, .cozempic_savings.json). The lock is keyed
+    (winnow-sessions.json, .winnow_savings.json). The lock is keyed
     on a companion `.lock` file alongside the target; the target itself
     is never opened by the lock.
 
@@ -176,7 +176,7 @@ def record_savings(tokens_saved: int, total_tokens: int = 0, turn_count: int = 0
     from the freed headroom. If session_id is provided, tracks the distinct
     pruned-session count (the right denominator for the "sessions are Nx longer"
     multiplier — record_savings only fires on a prune, so sessions seen here are
-    exactly the ones cozempic extended).
+    exactly the ones winnow extended).
 
     Atomic-safe: read-modify-write is wrapped in a host-wide flock so two
     concurrent prune cycles don't lose increments. Write itself uses mkstemp
@@ -238,16 +238,16 @@ def record_savings(tokens_saved: int, total_tokens: int = 0, turn_count: int = 0
     try:
         from urllib.request import Request, urlopen
         urlopen(Request("https://cozempic-counters.counterapi-ruya.workers.dev/counter/prunes/up",
-                       headers={"User-Agent": "cozempic"}), timeout=2)
+                       headers={"User-Agent": "winnow"}), timeout=2)
         # Version-tagged prune counter: lets us attribute prunes to a release so a
         # future prune-rate spike can be pinned to a specific version (the plain
-        # `prunes` counter is version-blind — its UA is just "cozempic"). Cardinality
+        # `prunes` counter is version-blind — its UA is just "winnow"). Cardinality
         # grows ~1 per release; version is already public, no install-id, no PII.
         try:
             from . import __version__ as _cz_ver
             _vtag = "".join(c if (c.isalnum() or c == "_") else "_" for c in _cz_ver.replace(".", "_"))
             urlopen(Request(f"https://cozempic-counters.counterapi-ruya.workers.dev/counter/prunes_v{_vtag}/up",
-                           headers={"User-Agent": f"cozempic/{_cz_ver}"}), timeout=2)
+                           headers={"User-Agent": f"winnow/{_cz_ver}"}), timeout=2)
         except Exception:
             pass
         if tokens_saved < 100_000:
@@ -259,7 +259,7 @@ def record_savings(tokens_saved: int, total_tokens: int = 0, turn_count: int = 0
         else:
             bucket = "saved_over_1m"
         urlopen(Request(f"https://cozempic-counters.counterapi-ruya.workers.dev/counter/{bucket}/up",
-                       headers={"User-Agent": "cozempic"}), timeout=2)
+                       headers={"User-Agent": "winnow"}), timeout=2)
     except Exception:
         pass
 
@@ -288,7 +288,7 @@ def get_savings_line() -> str | None:
         remaining = processed - total
         multiplier = f"{processed / remaining:.1f}x" if remaining > 0 else ""
 
-        parts = [f"Cozempic: {tok_str} tokens saved"]
+        parts = [f"winnow: {tok_str} tokens saved"]
         if multiplier:
             parts.append(f"{multiplier} longer sessions")
         if turns > 0:
@@ -401,7 +401,7 @@ _PROTECTED_TYPES = frozenset({
 # importing from executor.py, which would create a circular dependency.
 # executor.py imports this constant to apply the tag; strategies call
 # is_protected() which reads it. The string value is the sole source of truth.
-_METADATA_SINGLETON_KEY: str = "__cozempic_metadata_singleton__"
+_METADATA_SINGLETON_KEY: str = "__winnow_metadata_singleton__"
 
 
 def is_protected(msg: dict) -> bool:
@@ -415,9 +415,9 @@ def is_protected(msg: dict) -> bool:
         return True
     if msg.get("isVisibleInTranscriptOnly"):
         return True
-    if msg.get("__cozempic_behavioral_digest__"):
+    if msg.get("__winnow_behavioral_digest__"):
         return True
-    if msg.get("__cozempic_team_protected__"):
+    if msg.get("__winnow_team_protected__"):
         return True
     # P0-D: last-of-type metadata singleton — executor tags the last occurrence
     # of each protected type before strategies run; strip happens after.
@@ -436,8 +436,8 @@ def is_protected(msg: dict) -> bool:
 # has no step limit, so a catastrophic-backtracking pattern can't be fully prevented,
 # only discouraged + documented), and a cap on the text matched per block. A pattern
 # that protects most of the session is WARNED (a too-broad pattern makes the prune a
-# no-op — the inert-guard failure cozempic exists to prevent).
-_PATTERN_PROTECTED_KEY: str = "__cozempic_pattern_protected__"
+# no-op — the inert-guard failure winnow exists to prevent).
+_PATTERN_PROTECTED_KEY: str = "__winnow_pattern_protected__"
 _MAX_PROTECT_PATTERN_LEN: int = 1000
 _MAX_PROTECT_MATCH_BYTES: int = 256 * 1024
 # Hard per-surface cap on the no-SIGALRM (Windows / non-main-thread) match path,
@@ -928,7 +928,7 @@ def tag_pattern_matches(messages: list, patterns: list) -> int:
         risky = [p for p in patterns if _pattern_is_redos_risky(getattr(p, "pattern", str(p)))]
         if risky:
             import sys
-            print("  Cozempic: --protect-pattern matching has no time budget on this "
+            print("  winnow: --protect-pattern matching has no time budget on this "
                   "platform (no SIGALRM) and a supplied pattern can backtrack "
                   "catastrophically; skipping pattern protection this cycle. Simplify "
                   "the pattern or set WINNOW_PROTECT_MATCH_SECONDS=0 to opt out.",
@@ -960,13 +960,13 @@ def tag_pattern_matches(messages: list, patterns: list) -> int:
     except _ProtectMatchTimeout:
         import sys
         strip_pattern_tags(messages)  # fail-open: don't leave a half-protected session
-        print("  Cozempic: --protect-pattern matching exceeded its time budget — the "
+        print("  winnow: --protect-pattern matching exceeded its time budget — the "
               "pattern is too expensive; skipping pattern protection this cycle "
               "(WINNOW_PROTECT_MATCH_SECONDS to tune).", file=sys.stderr)
         return 0
     if matchable and count >= _PROTECT_OVERMATCH_WARN_FRACTION * matchable:
         import sys
-        print(f"  Cozempic: --protect-pattern matched {count}/{matchable} matchable "
+        print(f"  winnow: --protect-pattern matched {count}/{matchable} matchable "
               f"messages ({100 * count // matchable}%) — pruning may free little; "
               f"consider a narrower pattern.", file=sys.stderr)
     return count

@@ -1,6 +1,6 @@
 """Guard against drift between the two on-disk copies of hooks.json.
 
-`src/winnow/legacy/data/hooks.json` is the canonical source loaded by `cozempic init`
+`src/winnow/legacy/data/hooks.json` is the canonical source loaded by `winnow init`
 into a user's project. `plugin/hooks/hooks.json` ships via the Claude Code
 plugin marketplace. They MUST stay byte-identical so users get the same
 behavior regardless of install path. If you edit one, edit both — this test

@@ -31,7 +31,7 @@ from unittest.mock import MagicMock, patch
 # BUG-G1 — _cleanup_legacy_pid must NOT SIGTERM unverified PID
 # ---------------------------------------------------------------------------
 class TestG1_CleanupLegacyPidRequiresArgvVerify(unittest.TestCase):
-    """_cleanup_legacy_pid must call _is_cozempic_guard_process before SIGTERM.
+    """_cleanup_legacy_pid must call _is_winnow_guard_process before SIGTERM.
 
     Scenario: pre-1.6.13 legacy pidfile holds PID N. Host has since recycled
     N to an unrelated user process (editor, node server, shell). The cleanup
@@ -56,7 +56,7 @@ class TestG1_CleanupLegacyPidRequiresArgvVerify(unittest.TestCase):
         return legacy
 
     def test_does_not_sigterm_non_guard_pid(self):
-        """Recycled-PID scenario: pidfile points at a non-cozempic process.
+        """Recycled-PID scenario: pidfile points at a non-winnow process.
 
         With the fix, SIGTERM MUST NOT be sent. The legacy file is still unlinked.
         """
@@ -64,7 +64,7 @@ class TestG1_CleanupLegacyPidRequiresArgvVerify(unittest.TestCase):
         self._write_legacy_pidfile(31337)
 
         with (
-            patch("winnow.legacy.guard._is_cozempic_guard_process", return_value=False),
+            patch("winnow.legacy.guard._is_winnow_guard_process", return_value=False),
             patch("winnow.legacy.guard.os.kill") as mock_kill,
         ):
             _cleanup_legacy_pid(self.cwd)
@@ -80,12 +80,12 @@ class TestG1_CleanupLegacyPidRequiresArgvVerify(unittest.TestCase):
             )
 
     def test_sigterms_legitimate_guard_pid(self):
-        """Positive case: pidfile points at a real cozempic guard — SIGTERM is allowed."""
+        """Positive case: pidfile points at a real winnow guard — SIGTERM is allowed."""
         from winnow.legacy.guard import _cleanup_legacy_pid
         self._write_legacy_pidfile(42000)
 
         with (
-            patch("winnow.legacy.guard._is_cozempic_guard_process", return_value=True),
+            patch("winnow.legacy.guard._is_winnow_guard_process", return_value=True),
             patch("winnow.legacy.guard.os.kill") as mock_kill,
             patch("winnow.legacy.guard.time.sleep"),
         ):
@@ -108,8 +108,8 @@ class TestG2_CleanupStaleWatchersRequiresArgvVerify(unittest.TestCase):
     """_cleanup_stale_watchers must verify each match's full argv before SIGTERM.
 
     pgrep -f matches the entire command line as regex. A process like
-    `vim /tmp/cozempic_guard_resumed_Claude_notes.md` matches
-    'cozempic.*resumed Claude' but is NOT a watcher.
+    `vim /tmp/winnow_guard_resumed_Claude_notes.md` matches
+    'winnow.*resumed Claude' but is NOT a watcher.
     """
 
     def test_does_not_sigterm_false_positive_pgrep_match(self):
@@ -118,7 +118,7 @@ class TestG2_CleanupStaleWatchersRequiresArgvVerify(unittest.TestCase):
 
         # pgrep returns the PID — but the argv that ps resolves is a vim editor
         false_pid = "77777"
-        false_argv = "vim /home/u/cozempic_guard_resumed_Claude_notes.md"
+        false_argv = "vim /home/u/winnow_guard_resumed_Claude_notes.md"
 
         def fake_run(cmd, *args, **kwargs):
             mock = MagicMock()
@@ -155,7 +155,7 @@ class TestG2_CleanupStaleWatchersRequiresArgvVerify(unittest.TestCase):
         # Matches the real watcher_script shape in _spawn_reload_watcher at ~933-937
         real_argv = (
             "bash -c while kill -0 5000 2>/dev/null; do sleep 1; done; sleep 1; "
-            "osascript ... Cozempic guard resumed Claude in /home/u/project"
+            "osascript ... winnow guard resumed Claude in /home/u/project"
         )
 
         def fake_run(cmd, *args, **kwargs):
@@ -191,7 +191,7 @@ class TestG2_CleanupStaleWatchersRequiresArgvVerify(unittest.TestCase):
 # ---------------------------------------------------------------------------
 class TestG3_IsGuardRunningForSessionVerifiesPidOwnership(unittest.TestCase):
     """_is_guard_running_for_session must return None when the pidfile PID
-    is alive but not a cozempic guard.
+    is alive but not a winnow guard.
 
     Scenario: daemon crashed, PID recycled to an unrelated process. The
     function currently only checks `os.kill(pid, 0)` → returns the recycled
@@ -207,15 +207,15 @@ class TestG3_IsGuardRunningForSessionVerifiesPidOwnership(unittest.TestCase):
         self.pid_path.write_text("98765")
         self.addCleanup(self.pid_path.unlink, missing_ok=True)
 
-    def test_returns_none_when_pid_is_not_cozempic_guard(self):
+    def test_returns_none_when_pid_is_not_winnow_guard(self):
         """PID is alive (os.kill returns) but ps shows it's not our daemon."""
         from winnow.legacy.guard import _is_guard_running_for_session
 
-        # os.kill(pid, 0) succeeds (liveness OK); but _is_cozempic_guard_process
+        # os.kill(pid, 0) succeeds (liveness OK); but _is_winnow_guard_process
         # must return False for this PID → the function MUST return None.
         with (
             patch("winnow.legacy.guard.os.kill") as mock_kill,
-            patch("winnow.legacy.guard._is_cozempic_guard_process", return_value=False),
+            patch("winnow.legacy.guard._is_winnow_guard_process", return_value=False),
         ):
             result = _is_guard_running_for_session(self.session_id)
 
@@ -225,16 +225,16 @@ class TestG3_IsGuardRunningForSessionVerifiesPidOwnership(unittest.TestCase):
                 "run permanently unprotected. Must verify PID identity.",
             )
             # And liveness probe should have been attempted
-            # (we don't assert on _is_cozempic_guard_process call count, just on
+            # (we don't assert on _is_winnow_guard_process call count, just on
             # the returned contract — some implementations may short-circuit)
 
-    def test_returns_pid_when_pid_is_cozempic_guard(self):
-        """Positive case: PID is alive AND ps confirms it's a cozempic guard."""
+    def test_returns_pid_when_pid_is_winnow_guard(self):
+        """Positive case: PID is alive AND ps confirms it's a winnow guard."""
         from winnow.legacy.guard import _is_guard_running_for_session
 
         with (
             patch("winnow.legacy.guard.os.kill"),
-            patch("winnow.legacy.guard._is_cozempic_guard_process", return_value=True),
+            patch("winnow.legacy.guard._is_winnow_guard_process", return_value=True),
         ):
             result = _is_guard_running_for_session(self.session_id)
 
@@ -265,7 +265,7 @@ class TestG4_PidfileWriteIsAtomic(unittest.TestCase):
         self.pid_path.unlink(missing_ok=True)
         # Also clean log file
         key = self.session_id[:12]
-        self.log_path = Path("/tmp") / f"cozempic_guard_{key}.log"
+        self.log_path = Path("/tmp") / f"winnow_guard_{key}.log"
         self.log_path.unlink(missing_ok=True)
         self.addCleanup(self.pid_path.unlink, missing_ok=True)
         self.addCleanup(self.log_path.unlink, missing_ok=True)
@@ -635,14 +635,14 @@ class TestG8_MainLoopWatchdogVerifiesClaudeIdentity(unittest.TestCase):
     def test_is_claude_process_helper_exists(self):
         """Post-fix, the module must expose a helper to verify a PID is Claude.
 
-        This contract mirrors _is_cozempic_guard_process (line 1161) but for
+        This contract mirrors _is_winnow_guard_process (line 1161) but for
         claude/node processes. Without it, the watchdog CAN'T verify identity.
         """
         import winnow.legacy.guard as g
         self.assertTrue(
             hasattr(g, "_is_claude_process"),
             "Expected winnow.legacy.guard._is_claude_process helper (mirrors "
-            "_is_cozempic_guard_process but for claude/node) — currently missing "
+            "_is_winnow_guard_process but for claude/node) — currently missing "
             "→ watchdog has no way to verify PID identity (BUG-G8).",
         )
 
@@ -821,41 +821,41 @@ class TestNF2_MainWatchdogUsesIdentityCheck(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# NF-3 HIGH — _is_cozempic_guard_process substring match is too loose
+# NF-3 HIGH — _is_winnow_guard_process substring match is too loose
 # ---------------------------------------------------------------------------
-class TestNF3_IsCozempicGuardProcessRejectsLooseSubstrings(unittest.TestCase):
-    """`"winnow.legacy.cli" in args` AND `"cozempic" in tokens[0]` both false-positive
-    on grep/less/vim sessions + any `*-cozempic-*` binary.
+class TestNF3_IswinnowGuardProcessRejectsLooseSubstrings(unittest.TestCase):
+    """`"winnow.legacy.cli" in args` AND `"winnow" in tokens[0]` both false-positive
+    on grep/less/vim sessions + any `*-winnow-*` binary.
     """
 
     NON_GUARD_ARGVS = [
         "grep -r winnow.legacy.cli guard /home/user/projects",
         "less /tmp/winnow.legacy.cli-guard-output.log",
-        "/usr/local/bin/run-cozempic guard",
-        "/usr/local/bin/fake-cozempic guard --evil",
-        "vim /home/user/projects/cozempic/cli.py",
+        "/usr/local/bin/run-winnow guard",
+        "/usr/local/bin/fake-winnow guard --evil",
+        "vim /home/user/projects/winnow/cli.py",
     ]
 
     def test_rejects_loose_substring_matches(self):
-        from winnow.legacy.guard import _is_cozempic_guard_process
+        from winnow.legacy.guard import _is_winnow_guard_process
         false_positives = []
         for argv in self.NON_GUARD_ARGVS:
             with patch("winnow.legacy.guard.subprocess.run",
                        side_effect=_patch_ps(argv)):
-                got = _is_cozempic_guard_process(12345)
+                got = _is_winnow_guard_process(12345)
             if got is True:
                 false_positives.append(argv)
         self.assertEqual(
             false_positives, [],
-            f"_is_cozempic_guard_process false-positive on "
+            f"_is_winnow_guard_process false-positive on "
             f"{len(false_positives)} non-guard argv(s): {false_positives}. "
-            f"Tighten token[0] to endswith python/cozempic AND require "
+            f"Tighten token[0] to endswith python/winnow AND require "
             f"winnow.legacy.cli + guard as discrete tokens.",
         )
 
     def test_accepts_real_daemon_invocation(self):
         """Positive: canonical python -m winnow.legacy.cli guard invocation."""
-        from winnow.legacy.guard import _is_cozempic_guard_process
+        from winnow.legacy.guard import _is_winnow_guard_process
         real = (
             "/usr/local/bin/python3 -m winnow.legacy.cli guard "
             "--session abc-123 --threshold 50.0"
@@ -863,7 +863,7 @@ class TestNF3_IsCozempicGuardProcessRejectsLooseSubstrings(unittest.TestCase):
         with patch("winnow.legacy.guard.subprocess.run",
                    side_effect=_patch_ps(real)):
             self.assertTrue(
-                _is_cozempic_guard_process(55555),
+                _is_winnow_guard_process(55555),
                 "Tightened helper must still accept the canonical daemon invocation",
             )
 
@@ -885,7 +885,7 @@ class TestNF4_AtomicClaimHandlesNonExistsOsError(unittest.TestCase):
         self.pid_path.unlink(missing_ok=True)
         self.addCleanup(self.pid_path.unlink, missing_ok=True)
         key = self.session_id[:12]
-        self.log_path = Path("/tmp") / f"cozempic_guard_{key}.log"
+        self.log_path = Path("/tmp") / f"winnow_guard_{key}.log"
         self.log_path.unlink(missing_ok=True)
         self.addCleanup(self.log_path.unlink, missing_ok=True)
 
@@ -1064,7 +1064,7 @@ class TestNF5_WindowsTaskkillReVerifies(unittest.TestCase):
 # Regression: commit be027e0 changed the binary check from
 #   `binary in {"python", "python3"}` to `re.match(r"^python(\d+(\.\d+)*)?$", ...)`.
 # Without this, pyenv installs of python3.13.12 / Homebrew python3.11 guards
-# would be rejected as "not cozempic" → SIGTERM blocked on legitimate daemons,
+# would be rejected as "not winnow" → SIGTERM blocked on legitimate daemons,
 # or _is_guard_running_for_session returns None → duplicate daemons spawn.
 # ---------------------------------------------------------------------------
 class TestR2REG2_VersionedPythonAccepted(unittest.TestCase):
@@ -1080,15 +1080,15 @@ class TestR2REG2_VersionedPythonAccepted(unittest.TestCase):
         return f"/usr/local/bin/{binary} -m winnow.legacy.cli guard --session abc-123"
 
     def _entrypoint_argv(self) -> str:
-        """Native cozempic entry-point (no python interpreter)."""
-        return "/usr/local/bin/cozempic guard --session abc-123"
+        """Native winnow entry-point (no python interpreter)."""
+        return "/usr/local/bin/winnow guard --session abc-123"
 
     def _check(self, binary_or_argv: str, *, argv: str | None = None) -> bool:
-        from winnow.legacy.guard import _is_cozempic_guard_process
+        from winnow.legacy.guard import _is_winnow_guard_process
         final_argv = argv if argv is not None else self._argv_for(binary_or_argv)
         with patch("winnow.legacy.guard.subprocess.run",
                    side_effect=_patch_ps(final_argv)):
-            return _is_cozempic_guard_process(12345)
+            return _is_winnow_guard_process(12345)
 
     # ── Accepted variants ────────────────────────────────────────────────
     def test_accepts_python3_11_homebrew(self):
@@ -1115,21 +1115,21 @@ class TestR2REG2_VersionedPythonAccepted(unittest.TestCase):
         self.assertTrue(self._check("python2.7"),
                         "Legacy python2.7 rejected — regex should accept any digit sequence")
 
-    def test_accepts_cozempic_entrypoint(self):
-        """Native entry-point path: `cozempic guard ...` with no interpreter."""
+    def test_accepts_winnow_entrypoint(self):
+        """Native entry-point path: `winnow guard ...` with no interpreter."""
         self.assertTrue(
-            self._check("cozempic", argv=self._entrypoint_argv()),
-            "Native `cozempic guard` entry-point rejected",
+            self._check("winnow", argv=self._entrypoint_argv()),
+            "Native `winnow guard` entry-point rejected",
         )
 
     # ── Rejected variants ────────────────────────────────────────────────
-    def test_rejects_run_cozempic_wrapper(self):
-        self.assertFalse(self._check("run-cozempic"),
-                         "`run-cozempic` wrapper falsely accepted — confused deputy risk")
+    def test_rejects_run_winnow_wrapper(self):
+        self.assertFalse(self._check("run-winnow"),
+                         "`run-winnow` wrapper falsely accepted — confused deputy risk")
 
-    def test_rejects_fake_cozempic_impostor(self):
-        self.assertFalse(self._check("fake-cozempic"),
-                         "`fake-cozempic` impostor falsely accepted")
+    def test_rejects_fake_winnow_impostor(self):
+        self.assertFalse(self._check("fake-winnow"),
+                         "`fake-winnow` impostor falsely accepted")
 
     def test_rejects_python_attacker_impostor(self):
         self.assertFalse(self._check("python-attacker"),
@@ -1148,22 +1148,22 @@ class TestR2REG2_VersionedPythonAccepted(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Regex edge cases / ReDoS surface on _is_cozempic_guard_process
+# Regex edge cases / ReDoS surface on _is_winnow_guard_process
 # ---------------------------------------------------------------------------
-class TestRegexEdgeCases_IsCozempicGuardProcess(unittest.TestCase):
+class TestRegexEdgeCases_IswinnowGuardProcess(unittest.TestCase):
     """Pathological / adversarial inputs must fail CLOSED quickly."""
 
     def test_empty_argv_fails_closed(self):
         """`ps -p <pid> -o args=` returns empty: must return False, no crash."""
-        from winnow.legacy.guard import _is_cozempic_guard_process
+        from winnow.legacy.guard import _is_winnow_guard_process
         with patch("winnow.legacy.guard.subprocess.run",
                    side_effect=_patch_ps("")):
-            self.assertFalse(_is_cozempic_guard_process(12345))
+            self.assertFalse(_is_winnow_guard_process(12345))
 
     def test_newline_injected_binary_rejected(self):
         """Binary with embedded `\\n`: split() produces multi-token output, but
         the first token must fail the binary check; no crash."""
-        from winnow.legacy.guard import _is_cozempic_guard_process
+        from winnow.legacy.guard import _is_winnow_guard_process
         # The argv injects a newline that splits the first "binary" into two
         # tokens; tokens[0] becomes "python" but tokens[1] becomes "evil-cmd".
         # Either way, the guard command must not be accepted from a line that
@@ -1177,50 +1177,50 @@ class TestRegexEdgeCases_IsCozempicGuardProcess(unittest.TestCase):
             # crash and no confused-deputy if a genuine newline poisoning was
             # attempted. We assert no-crash.
             try:
-                _is_cozempic_guard_process(12345)
+                _is_winnow_guard_process(12345)
             except Exception as e:
-                self.fail(f"_is_cozempic_guard_process raised on newline input: {e!r}")
+                self.fail(f"_is_winnow_guard_process raised on newline input: {e!r}")
 
     def test_very_long_binary_name_rejected_fast(self):
         """`python` + `a`*1000: regex must reject and complete quickly (<100ms)."""
-        from winnow.legacy.guard import _is_cozempic_guard_process
+        from winnow.legacy.guard import _is_winnow_guard_process
         huge = "python" + "a" * 1000
         argv = f"{huge} -m winnow.legacy.cli guard --session abc"
         import time as _t
         t0 = _t.perf_counter()
         with patch("winnow.legacy.guard.subprocess.run",
                    side_effect=_patch_ps(argv)):
-            got = _is_cozempic_guard_process(12345)
+            got = _is_winnow_guard_process(12345)
         dt = _t.perf_counter() - t0
         self.assertFalse(got, "Pathological long binary name falsely accepted")
         self.assertLess(
             dt, 0.1,
-            f"_is_cozempic_guard_process took {dt*1000:.1f}ms on 1006-char binary "
+            f"_is_winnow_guard_process took {dt*1000:.1f}ms on 1006-char binary "
             f"— potential ReDoS surface",
         )
 
     def test_unicode_fullwidth_dot_rejected(self):
         """`python3．11` (fullwidth dot) must NOT match ASCII-dot regex."""
-        from winnow.legacy.guard import _is_cozempic_guard_process
+        from winnow.legacy.guard import _is_winnow_guard_process
         argv = "python3．11 -m winnow.legacy.cli guard --session abc"
         with patch("winnow.legacy.guard.subprocess.run",
                    side_effect=_patch_ps(argv)):
             self.assertFalse(
-                _is_cozempic_guard_process(12345),
+                _is_winnow_guard_process(12345),
                 "Unicode fullwidth dot falsely accepted as a version separator",
             )
 
     def test_trailing_whitespace_stripped(self):
         """Trailing whitespace on argv line must not affect acceptance —
         `args.strip()` handles it; tokens[0] remains clean."""
-        from winnow.legacy.guard import _is_cozempic_guard_process
+        from winnow.legacy.guard import _is_winnow_guard_process
         argv = "/usr/local/bin/python3.11 -m winnow.legacy.cli guard --session abc   \n\t "
         with patch("winnow.legacy.guard.subprocess.run",
                    side_effect=_patch_ps(argv)):
             # Trailing whitespace should NOT prevent acceptance of a legitimate
             # daemon (strip handles it); contract: still True.
             self.assertTrue(
-                _is_cozempic_guard_process(12345),
+                _is_winnow_guard_process(12345),
                 "Trailing whitespace caused legitimate daemon to be rejected",
             )
 
@@ -1316,7 +1316,7 @@ class TestDiffCoverage_AtomicPidfile_AllErrnos(unittest.TestCase):
         self.pid_path.unlink(missing_ok=True)
         self.addCleanup(self.pid_path.unlink, missing_ok=True)
         key = self.session_id[:12]
-        self.log_path = Path("/tmp") / f"cozempic_guard_{key}.log"
+        self.log_path = Path("/tmp") / f"winnow_guard_{key}.log"
         self.log_path.unlink(missing_ok=True)
         self.addCleanup(self.log_path.unlink, missing_ok=True)
 
@@ -1433,7 +1433,7 @@ class TestR3_1_PlaceholderPidZeroNeverSignaled(unittest.TestCase):
         >>> os.kill(0, 0)  # returns None, does NOT raise ProcessLookupError
 
     The contract: the function must short-circuit on pid <= 0 BEFORE the
-    liveness probe. Today it only survives thanks to `_is_cozempic_guard_process(0)`
+    liveness probe. Today it only survives thanks to `_is_winnow_guard_process(0)`
     returning False downstream — a future refactor that removes the gate makes
     this exploitable.
     """
@@ -1576,7 +1576,7 @@ class TestR3_2_WindowsTaskkillRegressionOnPsMissing(unittest.TestCase):
 # RED-R3-3 (STATIC-LOW-3) — Regex accepts trailing newline (re.match vs fullmatch)
 # ---------------------------------------------------------------------------
 class TestR3_3_BinaryRegexRejectsTrailingNewline(unittest.TestCase):
-    """`_is_cozempic_guard_process` uses `re.match(r"^python(\\d+(\\.\\d+)*)?$", binary)`.
+    """`_is_winnow_guard_process` uses `re.match(r"^python(\\d+(\\.\\d+)*)?$", binary)`.
     Python's `re.match` anchors at start; `$` matches before a trailing newline
     by default. So `binary == "python3\\n"` PASSES the regex:
 
@@ -1600,8 +1600,8 @@ class TestR3_3_BinaryRegexRejectsTrailingNewline(unittest.TestCase):
         so the binary-under-test becomes `"python3\\n"`.
         """
         import inspect
-        from winnow.legacy.guard import _is_cozempic_guard_process
-        src = inspect.getsource(_is_cozempic_guard_process)
+        from winnow.legacy.guard import _is_winnow_guard_process
+        src = inspect.getsource(_is_winnow_guard_process)
 
         # The function must use re.fullmatch (or explicit \n rejection on the
         # binary string) — NOT re.match + $. This is a stricter static check
@@ -1616,7 +1616,7 @@ class TestR3_3_BinaryRegexRejectsTrailingNewline(unittest.TestCase):
         )
         self.assertTrue(
             uses_fullmatch or has_explicit_binary_newline_guard,
-            "_is_cozempic_guard_process uses `re.match(..., $)` which accepts "
+            "_is_winnow_guard_process uses `re.match(..., $)` which accepts "
             "trailing `\\n` in the binary (Python regex quirk: `$` matches "
             "before a trailing newline unless re.fullmatch is used). Fix: "
             "switch to `re.fullmatch(...)` in guard.py:1344.",
@@ -1756,26 +1756,26 @@ class TestR3_4_PosixPlainTerminalSigtermHasInnerReverify(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # BUG-G13 — _pid_file_for_session must validate session_id as UUID/hex before
 # composing the pidfile path. Current code passes arbitrary strings through to
-# Path("/tmp") / f"cozempic_guard_{session_id[:12]}.pid" enabling both
+# Path("/tmp") / f"winnow_guard_{session_id[:12]}.pid" enabling both
 # filename collisions and path-traversal writes.
 # ---------------------------------------------------------------------------
 class TestPolishV2_BugG13PidFileUuidValidation(unittest.TestCase):
 
     def test_uuid_valid_returns_expected_path(self):
         """Regression: a well-formed UUID session_id still maps to the
-        expected '/tmp/cozempic_guard_<first-12>.pid' path."""
+        expected '/tmp/winnow_guard_<first-12>.pid' path."""
         from winnow.legacy.guard import _pid_file_for_session
         uuid = "e6c3a4b2-1234-5678-9abc-def012345678"
         p = _pid_file_for_session(uuid)
         self.assertEqual(
-            p, Path("/tmp") / f"cozempic_guard_{uuid[:12]}.pid",
+            p, Path("/tmp") / f"winnow_guard_{uuid[:12]}.pid",
             "valid UUID should still produce the canonical pidfile path",
         )
 
     def test_path_traversal_session_id_rejected(self):
         """A session_id containing path-traversal sequences (../../etc/pa)
         MUST raise ValueError. Currently it silently composes a path that
-        resolves outside /tmp/cozempic_guard_*.pid."""
+        resolves outside /tmp/winnow_guard_*.pid."""
         from winnow.legacy.guard import _pid_file_for_session
         with self.assertRaises(
             ValueError,
@@ -1827,7 +1827,7 @@ class TestPolishV2_BugG13PidFileUuidValidation(unittest.TestCase):
         # pass path with .jsonl suffix — normalization picks the stem
         p = _pid_file_for_session(f"/some/path/{uuid}.jsonl")
         self.assertEqual(
-            p, Path("/tmp") / f"cozempic_guard_{uuid[:12]}.pid",
+            p, Path("/tmp") / f"winnow_guard_{uuid[:12]}.pid",
             "jsonl-stripped UUID should validate and map correctly",
         )
 
@@ -1864,7 +1864,7 @@ class TestPolishV2_BugG16DeadShimRemoved(unittest.TestCase):
         from winnow.legacy.guard import _pid_file
         p = _pid_file("/tmp/some/cwd")
         self.assertTrue(
-            str(p).startswith("/tmp/cozempic_guard_"),
+            str(p).startswith("/tmp/winnow_guard_"),
             "_pid_file legacy alias signature broken — regression",
         )
 
@@ -2056,7 +2056,7 @@ class TestPolishV2_SessionIdRegexRequiresHexFirstChar(unittest.TestCase):
         uuid = "e6c3a4b2-1234-5678-9abc-def012345678"
         p = _pid_file_for_session(uuid)
         self.assertEqual(
-            p, Path("/tmp") / f"cozempic_guard_{uuid[:12]}.pid",
+            p, Path("/tmp") / f"winnow_guard_{uuid[:12]}.pid",
         )
 
     def test_relaxed_non_hex_session_id_accepted(self):
@@ -2072,7 +2072,7 @@ class TestPolishV2_SessionIdRegexRequiresHexFirstChar(unittest.TestCase):
         ):
             p = _pid_file_for_session(sid)
             self.assertEqual(
-                p, Path("/tmp") / f"cozempic_guard_{sid.lower()[:12]}.pid",
+                p, Path("/tmp") / f"winnow_guard_{sid.lower()[:12]}.pid",
                 f"Relaxed regex must accept {sid!r}",
             )
 
@@ -2136,7 +2136,7 @@ class TestPolishV2_StartGuardDaemonValidatesSessionId(unittest.TestCase):
     def test_no_orphan_pidfile_on_invalid_session(self):
         """Post-fix: a rejected spawn MUST NOT leave a pidfile anywhere,
         orphan or otherwise. Original RED case: the raw ``[:12]`` path
-        composition would create ``/tmp/cozempic_guard_test-sessio.pid``
+        composition would create ``/tmp/winnow_guard_test-sessio.pid``
         even when validation should reject. Post-Option-B the input must
         contain a char outside ``[a-z0-9_-]`` to still be rejected;
         ``test/path`` does (the ``/``) and is also the actual security
@@ -2147,8 +2147,8 @@ class TestPolishV2_StartGuardDaemonValidatesSessionId(unittest.TestCase):
         (via substitution ``re.sub(r'[^a-z0-9_-]', '_', s.lower())[:12]``),
         and a hypothetical accidental spawn could leave an orphan at that
         bash-derived path too. The original glob
-        ``cozempic_guard_test/*.pid`` was unreachable on POSIX (``/`` is
-        not a filename char) — replaced with ``cozempic_guard_test*.pid``
+        ``winnow_guard_test/*.pid`` was unreachable on POSIX (``/`` is
+        not a filename char) — replaced with ``winnow_guard_test*.pid``
         and the explicit bash-slug computation."""
         import re
 
@@ -2163,10 +2163,10 @@ class TestPolishV2_StartGuardDaemonValidatesSessionId(unittest.TestCase):
         # a prior interrupted run polluting the orphan check). N6 fix:
         # `test/*.pid` is unreachable on POSIX → use `test*.pid`.
         pre_clean_globs = (
-            "cozempic_guard_test-session*.pid",
-            "cozempic_guard_test_path*.pid",
-            "cozempic_guard_test*.pid",
-            f"cozempic_guard_{bash_slug}*.pid",
+            "winnow_guard_test-session*.pid",
+            "winnow_guard_test_path*.pid",
+            "winnow_guard_test*.pid",
+            f"winnow_guard_{bash_slug}*.pid",
         )
         for pattern in pre_clean_globs:
             for stale in Path("/tmp").glob(pattern):
@@ -2184,11 +2184,11 @@ class TestPolishV2_StartGuardDaemonValidatesSessionId(unittest.TestCase):
         # slug locations. Python validates first → it shouldn't have
         # written anything anywhere; both lists should be empty.
         python_orphans = (
-            list(Path("/tmp").glob("cozempic_guard_test-session*.pid"))
-            + list(Path("/tmp").glob("cozempic_guard_test_path*.pid"))
-            + list(Path("/tmp").glob("cozempic_guard_test*.pid"))
+            list(Path("/tmp").glob("winnow_guard_test-session*.pid"))
+            + list(Path("/tmp").glob("winnow_guard_test_path*.pid"))
+            + list(Path("/tmp").glob("winnow_guard_test*.pid"))
         )
-        bash_orphans = list(Path("/tmp").glob(f"cozempic_guard_{bash_slug}*.pid"))
+        bash_orphans = list(Path("/tmp").glob(f"winnow_guard_{bash_slug}*.pid"))
 
         # Cleanup any accidentally-spawned daemon from the RED state
         pid = result.get("pid")
@@ -2309,7 +2309,7 @@ class TestDaemonStrictNoneIsBehaviorPreserving(unittest.TestCase):
             )
 
             # 3. No UUID-keyed pid file in tmp — uuid-keyed files are named with a UUID
-            #    pattern (cozempic_guard_<uuid>.pid); their presence would indicate the
+            #    pattern (winnow_guard_<uuid>.pid); their presence would indicate the
             #    wrong-session dedup path ran instead of the CWD-hash path.
             all_pid_files = list(tmp_path.glob("*.pid"))
             uuid_pid_files = [

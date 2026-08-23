@@ -1,12 +1,12 @@
 """Shell-level idempotency test for the SessionStart hook command.
 
 Fires the canonical SessionStart hook command twice concurrently with the
-same SESSION_ID and counts how many `cozempic guard --daemon ...` spawns
+same SESSION_ID and counts how many `winnow guard --daemon ...` spawns
 actually happen. The contract introduced in hook-schema v7 is: at most ONE
 spawn per session, regardless of how many concurrent SessionStart hook fires
 the harness produces (resume + auto-compact + clear can all race).
 
-Validation strategy: replace the real `cozempic` binary on $PATH with a
+Validation strategy: replace the real `winnow` binary on $PATH with a
 counter stub that logs every invocation to a file, then drive the hook
 command twice in parallel. After both finish, assert the stub recorded
 `guard --daemon` AT MOST ONCE for the test session.
@@ -42,7 +42,7 @@ class TestHookSpawnIdempotency(unittest.TestCase):
     """Drive the real SessionStart command twice concurrently with the same
     SESSION_ID and verify only one `guard --daemon` spawn lands.
 
-    Uses a stub `cozempic` binary that:
+    Uses a stub `winnow` binary that:
       - prints a fixed version on `--version` so the upgrade short-circuits
       - records every invocation (with all args) to a log file
       - on `guard --daemon`, writes a PID file the way the real binary would
@@ -50,25 +50,25 @@ class TestHookSpawnIdempotency(unittest.TestCase):
       - exits 0 immediately (no actual daemon backgrounding)
 
     The test isolates everything in a tmpdir; nothing touches real /tmp
-    PID files or the user's installed cozempic.
+    PID files or the user's installed winnow.
     """
 
     def setUp(self):
-        self.tmpdir = Path(tempfile.mkdtemp(prefix="cozempic_hook_idem_"))
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="winnow_hook_idem_"))
         # A real-looking lowercase UUID. The 12-char prefix the PID-file uses
         # is deterministic; we use one we can assert against.
         self.session_id = "abcdef01-2345-4678-9abc-deadbeefcafe"
         self.sid12 = self.session_id[:12]  # "abcdef01-234"
-        # Per-test isolated TMPDIR so /tmp/cozempic_guard_* paths created
+        # Per-test isolated TMPDIR so /tmp/winnow_guard_* paths created
         # by the hook go into this dir, not the real /tmp.
         self.fake_tmp = self.tmpdir / "tmp"
         self.fake_tmp.mkdir()
-        # We *cannot* redirect the hook's hard-coded "/tmp/cozempic_guard_..."
+        # We *cannot* redirect the hook's hard-coded "/tmp/winnow_guard_..."
         # path via $TMPDIR (the hook string is literal "/tmp/..."). So we use
         # a unique session_id whose first-12 chars are unlikely to collide
         # with any real session on this host, and we clean up after.
-        self.pid_file = Path(f"/tmp/cozempic_guard_{self.sid12}.pid")
-        self.hook_lock = Path(f"/tmp/cozempic_hook_{self.sid12}.lock")
+        self.pid_file = Path(f"/tmp/winnow_guard_{self.sid12}.pid")
+        self.hook_lock = Path(f"/tmp/winnow_hook_{self.sid12}.lock")
         for p in (self.pid_file, self.hook_lock):
             if p.exists():
                 p.unlink()
@@ -76,7 +76,7 @@ class TestHookSpawnIdempotency(unittest.TestCase):
         self.invocation_log = self.tmpdir / "invocations.log"
         self.stub_bin_dir = self.tmpdir / "bin"
         self.stub_bin_dir.mkdir()
-        self._install_stub_cozempic()
+        self._install_stub_winnow()
 
     def tearDown(self):
         self._kill_pid_file_daemon()
@@ -88,8 +88,8 @@ class TestHookSpawnIdempotency(unittest.TestCase):
                     pass
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
-    def _install_stub_cozempic(self):
-        """Drop a fake `cozempic` executable in self.stub_bin_dir.
+    def _install_stub_winnow(self):
+        """Drop a fake `winnow` executable in self.stub_bin_dir.
 
         Records every call's argv into invocation_log. On `guard --daemon`
         and `guard --reload-self`, spawns a long-lived sleeper subprocess
@@ -99,10 +99,10 @@ class TestHookSpawnIdempotency(unittest.TestCase):
         (already exited by then) and decide the daemon is dead.
 
         Also stubs `uv` and `pip` so the upgrade chain is a no-op (otherwise
-        the chain would attempt a real pip install of cozempic, polluting
+        the chain would attempt a real pip install of winnow, polluting
         the host environment and slowing the test).
         """
-        stub_path = self.stub_bin_dir / "cozempic"
+        stub_path = self.stub_bin_dir / "winnow"
         stub_path.write_text(textwrap.dedent(f"""\
             #!/usr/bin/env bash
             # Log every invocation with PID + args. Append is atomic for
@@ -110,7 +110,7 @@ class TestHookSpawnIdempotency(unittest.TestCase):
             printf '%s\\n' "$$ $*" >> {self.invocation_log!s}
             case "$1" in
               --version)
-                echo "cozempic 99.0.0"
+                echo "winnow 99.0.0"
                 ;;
               guard)
                 if [[ "$2" == "--daemon" || "$2" == "--reload-self" ]]; then
@@ -159,12 +159,12 @@ class TestHookSpawnIdempotency(unittest.TestCase):
     def _run_hook_once(self, hook_cmd: str) -> subprocess.CompletedProcess:
         """Pipe a synthetic SessionStart payload into the hook command."""
         env = os.environ.copy()
-        # Put the stub bin FIRST on PATH so `cozempic` resolves to it.
+        # Put the stub bin FIRST on PATH so `winnow` resolves to it.
         env["PATH"] = f"{self.stub_bin_dir}:{env.get('PATH', '')}"
-        # Prevent the hook from calling out to a real Python `cozempic` install
+        # Prevent the hook from calling out to a real Python `winnow` install
         # via the python3 -m fallback. The python3 fallback runs only when
-        # the bare `cozempic` call fails; our stub always succeeds, so the
-        # fallback is unreachable. But disabling the cozempic package
+        # the bare `winnow` call fails; our stub always succeeds, so the
+        # fallback is unreachable. But disabling the winnow package
         # discovery in PYTHONPATH belt-and-suspenders for hermeticity.
         env["PYTHONPATH"] = ""
         payload = json.dumps(
@@ -269,7 +269,7 @@ class TestHookSpawnIdempotency(unittest.TestCase):
             1,
             f"Concurrent SessionStart fires spawned {spawns} daemons for "
             f"session {self.session_id} (expected <=1). "
-            f"This is the bug from /tmp/cozempic_guard_c492ae5e-971.log "
+            f"This is the bug from /tmp/winnow_guard_c492ae5e-971.log "
             f"where two `--- Guard daemon started ---` lines appeared 2 ms apart. "
             f"Log: {self.invocation_log.read_text() if self.invocation_log.exists() else '(empty)'}",
         )

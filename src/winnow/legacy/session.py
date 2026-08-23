@@ -168,7 +168,7 @@ class _PruneLock:
     """Advisory lock preventing concurrent prune cycles on the same session file.
 
     Uses fcntl.LOCK_EX|LOCK_NB on a companion .prune-lock file so two guard
-    instances (or a guard + a manual `cozempic treat --execute`) cannot race
+    instances (or a guard + a manual `winnow treat --execute`) cannot race
     each other.  Falls back silently to a no-op on platforms without fcntl
     (Windows).
     """
@@ -478,7 +478,7 @@ def resolve_session(
         print("Error: Could not auto-detect current session.", file=sys.stderr)
         if strict:
             print("Cannot determine session unambiguously — use an explicit session ID.", file=sys.stderr)
-        print("Use 'cozempic list' to find the session ID.", file=sys.stderr)
+        print("Use 'winnow list' to find the session ID.", file=sys.stderr)
         sys.exit(1)
 
     p = Path(session_arg)
@@ -492,7 +492,7 @@ def resolve_session(
             return sess["path"]
 
     print(f"Error: Cannot find session '{session_arg}'", file=sys.stderr)
-    print("Use 'cozempic list' to see available sessions.", file=sys.stderr)
+    print("Use 'winnow list' to see available sessions.", file=sys.stderr)
     sys.exit(1)
 
 
@@ -503,7 +503,7 @@ def resolve_session(
 # Consumers (reload, guard resume) prefer this over slug reversal, which is
 # ambiguous for paths containing hyphens.
 
-_SIDECAR_FILENAME = "cozempic-sessions.json"
+_SIDECAR_FILENAME = "winnow-sessions.json"
 _SIDECAR_MAX_ENTRIES = 200
 
 
@@ -531,7 +531,7 @@ def _save_sidecar(data: dict) -> None:
 
     Two concurrent guard daemons calling record_session can no longer
     collide on a shared `.tmp` filename (the bug that caused
-    `FileNotFoundError: cozempic-sessions.tmp -> cozempic-sessions.json`
+    `FileNotFoundError: winnow-sessions.tmp -> winnow-sessions.json`
     in production when SessionStart fires twice within the same ms).
     Use record_session() if you need read-modify-write atomicity — it
     wraps load+modify+save in a host-wide flock to prevent lost updates.
@@ -603,11 +603,11 @@ def get_session_nudge_tiers(session_id: str) -> "list | None":
 
 # ─── Active-transcript store (follows Claude Code's own session) ──────────────
 #
-# The MANUAL CLI path (`cozempic current`, `/cozempic reload`) cannot ask Claude
+# The MANUAL CLI path (`winnow current`, `/winnow reload`) cannot ask Claude
 # Code which session is live, so it historically inferred it from cwd → project
 # slug → most-recent file. That picks the WRONG session whenever the active
 # session lives in a different project dir than cwd (the f464a40c incident:
-# active under -Users-ruya, cwd mapped to the Cozempic dir whose most-recent
+# active under -Users-ruya, cwd mapped to the winnow dir whose most-recent
 # session was a stale one).
 #
 # Claude Code DOES know the active session: it hands the SessionStart hook a
@@ -616,7 +616,7 @@ def get_session_nudge_tiers(session_id: str) -> "list | None":
 # cannot. `find_current_session` consults this FIRST. The record self-expires:
 # dead PIDs are pruned on every write, and a vanished transcript falls through.
 
-_ACTIVE_SESSIONS_FILENAME = "cozempic-active-sessions.json"
+_ACTIVE_SESSIONS_FILENAME = "winnow-active-sessions.json"
 _ACTIVE_SESSIONS_MAX = 64
 
 
@@ -1213,7 +1213,7 @@ def auto_repair_unresumable(path: Path, min_idle_seconds: float = 10.0) -> bool:
     ``min_idle_seconds`` (mtime staleness = no active writer): a real crash
     artifact (a session Claude can no longer resume) is always stale, while a
     live mid-write is not. This makes recovery automatic for silently-affected
-    users (any cozempic command that touches the dead session heals it) without
+    users (any winnow command that touches the dead session heals it) without
     ever risking a healthy live session.
 
     Returns True iff a repair was written. Never raises.

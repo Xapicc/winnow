@@ -93,7 +93,7 @@ class TestSaveSidecarConcurrent(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             # Redirect sidecar to tmp
             with patch("winnow.legacy.session.get_sidecar_path",
-                       return_value=Path(tmp) / "cozempic-sessions.json"):
+                       return_value=Path(tmp) / "winnow-sessions.json"):
                 errors = []
 
                 def writer(i):
@@ -108,7 +108,7 @@ class TestSaveSidecarConcurrent(unittest.TestCase):
                 self.assertEqual(errors, [], f"record_session raised: {errors}")
                 # All 10 sessions present (the _HostFileLock prevents
                 # lost updates even though writes themselves are atomic)
-                data = json.loads((Path(tmp) / "cozempic-sessions.json").read_text())
+                data = json.loads((Path(tmp) / "winnow-sessions.json").read_text())
                 self.assertEqual(len(data), 10,
                     f"Expected 10 sessions, got {len(data)} — lost updates!")
 
@@ -121,7 +121,7 @@ class TestRecordSavingsAtomic(unittest.TestCase):
         Pre-fix used direct write_text with no lock → races lost updates."""
         from winnow.legacy.helpers import record_savings
         with tempfile.TemporaryDirectory() as tmp:
-            savings_file = Path(tmp) / ".cozempic_savings.json"
+            savings_file = Path(tmp) / ".winnow_savings.json"
             with patch("winnow.legacy.helpers._SAVINGS_FILE", savings_file):
                 # Disable telemetry pings
                 with patch.dict(os.environ, {"WINNOW_NO_TELEMETRY": "1"}):
@@ -308,26 +308,33 @@ class TestHookSchemaV9(unittest.TestCase):
     v8's C2 slug convergence is preserved verbatim (kept as the
     codebase convention); v9 only changes the PID-reading mechanism."""
 
-    def test_schema_marker_bumped(self):
-        from winnow.legacy.init import HOOK_SCHEMA_VERSION
-        # Durable floor (was pinned to an exact version → broke on every bump).
-        self.assertGreaterEqual(int(HOOK_SCHEMA_VERSION.lstrip("v")), 12)
+    def test_the_marker_is_winnows_and_is_built_from_the_version(self):
+        # This replaced a floor on the version number (">= v12"). The counter
+        # restarts at v1 in winnow (FORK.md §6.2), so a number can no longer
+        # stand in for the fix a bump was made for; what v9 protects is
+        # asserted against the hook body in
+        # tests/test_guard_polish_pr93.py::test_hooks_json_uses_head_minus_1.
+        # What is left to hold here is the marker's own shape, because a marker
+        # that stops naming winnow silently stops matching installed hooks.
+        from winnow.legacy.init import HOOK_SCHEMA_MARKER, HOOK_SCHEMA_VERSION
+        self.assertRegex(HOOK_SCHEMA_VERSION, r"^v\d+$")
+        self.assertEqual(HOOK_SCHEMA_MARKER, f"winnow-hook-schema={HOOK_SCHEMA_VERSION}")
 
     def test_no_unflocked_foreground_guard_daemon_call(self):
-        """The unflocked foreground `cozempic guard --daemon` call stays removed.
+        """The unflocked foreground `winnow guard --daemon` call stays removed.
         v7's three-branch idempotency (kept verbatim in v8) wraps the spawn in
         `if PID alive then : ; elif has flock then (flock -n 8 || exit 0;
         spawn) 8>$STARTUP_LOCK ; else spawn ; fi`. Two branches (elif + else)
-        each carry the `cozempic guard --daemon || python3 -m cozempic guard
+        each carry the `winnow guard --daemon || python3 -m winnow guard
         --daemon` pair, so the total occurrence count is 4 (2 branches × 2
         fallback variants). Anything else means an unguarded branch or a
         missing fallback."""
         hooks_path = Path(__file__).parent.parent / "src" / "winnow" / "legacy" / "data" / "hooks.json"
         hooks = json.loads(hooks_path.read_text())
         ss_cmd = hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"]
-        count = ss_cmd.count("cozempic guard --daemon")
+        count = ss_cmd.count("winnow guard --daemon")
         self.assertEqual(count, 4,
-            f"Expected 4 'cozempic guard --daemon' occurrences (2 branches × "
+            f"Expected 4 'winnow guard --daemon' occurrences (2 branches × "
             f"[primary + python3 fallback]), got {count}")
 
     def test_startup_lock_present(self):
@@ -345,7 +352,7 @@ class TestHookSchemaV9(unittest.TestCase):
         self.assertIn("GUARD_STARTUP_LOCK=", ss_cmd,
             "Expected a dedicated GUARD_STARTUP_LOCK variable for the "
             "second-layer flock guarding the daemon spawn")
-        self.assertIn("/tmp/cozempic_guard_${SLUG}.startup-lock", ss_cmd,
+        self.assertIn("/tmp/winnow_guard_${SLUG}.startup-lock", ss_cmd,
             "GUARD_STARTUP_LOCK path must use ${SLUG} — the POSIX-safe first 12 "
             "chars of the bash-sanitised lowercased session_id (#168). Convergence "
             "(C2/Option B) is achieved by Python relaxing its regex to match this "
@@ -372,9 +379,9 @@ class TestHookSchemaV9(unittest.TestCase):
         self.assertIn("kill -0", ss_cmd,
             "Expected `kill -0` liveness probe to short-circuit redundant daemon spawns")
         # Path must match Python's `_pid_file_for_session` convention
-        # (/tmp/cozempic_guard_<slug>.pid where <slug> = first 12 chars of
+        # (/tmp/winnow_guard_<slug>.pid where <slug> = first 12 chars of
         # the lowercased+sanitised session_id; Python validates same charset).
-        self.assertIn("/tmp/cozempic_guard_${SLUG}.pid", ss_cmd,
+        self.assertIn("/tmp/winnow_guard_${SLUG}.pid", ss_cmd,
             "Fast-path PID file path must use ${SLUG} — the POSIX-safe first 12 "
             "chars of the bash-sanitised lowercased session_id (#168), which "
             "(post-C2 Option B) matches the slug Python computes via _SESSION_ID_RE.")
@@ -528,7 +535,7 @@ class TestDoctorRespectsPruneLock(unittest.TestCase):
 class TestMcpTreatSessionPruneLock(unittest.TestCase):
     """The MCP plugin's treat_session tool was the third unprotected
     save_messages site flagged by the architecture review. It exposes the
-    same data-loss race to users invoking /cozempic:treat via Claude Code."""
+    same data-loss race to users invoking /winnow:treat via Claude Code."""
 
     def test_mcp_treat_session_aborts_on_conflict_behavioral(self):
         """BEHAVIORAL (not a static scan): the MCP treat_session(execute=True) guard

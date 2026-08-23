@@ -1,14 +1,14 @@
 """Single-flight reload coordinator.
 
-Cozempic has THREE independent code paths that can spawn a reload watcher
+winnow has THREE independent code paths that can spawn a reload watcher
 (treat session → kill Claude → spawn watcher → osascript new terminal):
 
-  1. `cozempic reload` (cli.py:cmd_reload) — user-initiated
+  1. `winnow reload` (cli.py:cmd_reload) — user-initiated
   2. `guard_prune_cycle` (guard.py) — auto-fired at HARD1/HARD2 thresholds
   3. `OverflowRecovery._do_recover` (overflow.py) — reactive overflow detection
 
 Without coordination, all three can fire simultaneously. The production
-cascade we observed: user typed `/cozempic treat reload` while the guard
+cascade we observed: user typed `/winnow treat reload` while the guard
 daemon was already crossing its 55% threshold. Both spawned watchers. When
 the user typed `/exit`, both watchers detected Claude's death and both opened
 new terminals via osascript. Two Claudes attached to the same JSONL → session
@@ -18,7 +18,7 @@ This module provides a per-session lock that all three paths consult before
 spawning a watcher. The first to acquire wins; others see `ReloadLockHeld`
 and either fail-fast (CLI), defer to next cycle (guard), or skip (overflow).
 
-The lock file lives at `{tempfile.gettempdir()}/cozempic_reload_<sid:12>.lock`
+The lock file lives at `{tempfile.gettempdir()}/winnow_reload_<sid:12>.lock`
 and contains `<pid>\\n<iso-timestamp>\\n<initiator>\\n`. Stale locks (holder
 PID is dead) are auto-cleared. Wedged locks (holder alive but lock age > 30s)
 surface as `ReloadLockHeld(wedged=True)` — operator action required.
@@ -52,7 +52,7 @@ INIT_OVERFLOW = "overflow"
 
 # Sentinel constants — guard the reload window to prevent transient-daemon races.
 #
-# The sentinel file lives at {tempfile.gettempdir()}/cozempic_reload_<slug>.in-flight
+# The sentinel file lives at {tempfile.gettempdir()}/winnow_reload_<slug>.in-flight
 # and is written by _terminate_and_resume BEFORE spawning the watcher, so any
 # concurrent SessionStart hook (upgrade-chain re-fire, parallel Tab) that calls
 # start_guard_daemon sees the sentinel and skips the spawn.
@@ -100,7 +100,7 @@ def _slug_for(session_id: str) -> str:
 def _lock_path_for(session_id: str) -> Path:
     """Compose the lock file path for a session."""
     slug = _slug_for(session_id)
-    return Path(tempfile.gettempdir()) / f"cozempic_reload_{slug}.lock"
+    return Path(tempfile.gettempdir()) / f"winnow_reload_{slug}.lock"
 
 
 def _is_process_alive(pid: int) -> bool:
@@ -302,7 +302,7 @@ def acquire_with_wait(
 ) -> _ReloadLock:
     """Try to acquire a reload lock, polling for up to `wait_seconds`.
 
-    Used by `cozempic reload --wait` to give the user an opt-in queueing
+    Used by `winnow reload --wait` to give the user an opt-in queueing
     behavior instead of fail-fast. The poll interval is short so we don't
     hold up the user when the lock is released quickly.
 
@@ -372,7 +372,7 @@ def _reload_sentinel_path_for(session_id: str) -> Path:
             f"sentinel slug contains path separator (session_id type "
             f"{type(session_id).__name__}, length {len(session_id)})"
         )
-    return Path("/tmp") / f"cozempic_reload_{slug}.in-flight"
+    return Path("/tmp") / f"winnow_reload_{slug}.in-flight"
 
 
 def _read_sentinel_metadata(sentinel_path: Path) -> tuple[int, Optional[float]]:

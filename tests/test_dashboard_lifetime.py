@@ -16,7 +16,7 @@ from winnow.legacy.dashboard.render import render_html
 
 
 def _ledger_file(tmp, data):
-    p = Path(tmp) / ".cozempic_savings.json"
+    p = Path(tmp) / ".winnow_savings.json"
     p.write_text(json.dumps(data))
     return p
 
@@ -195,7 +195,7 @@ class TestCliLifetimeLine(unittest.TestCase):
                         cli.cmd_dashboard(argparse.Namespace(no_open=True, agent="codex"))
                     # the global ledger must NOT show next to an agent-scoped view
                     self.assertNotIn("Lifetime:", buf.getvalue())
-                html = (Path(home) / ".cozempic" / "dashboard.html").read_text()
+                html = (Path(home) / ".winnow" / "dashboard.html").read_text()
                 self.assertNotIn('<section class="lifetime">', html)
 
 

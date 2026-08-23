@@ -1,4 +1,4 @@
-"""1.8.22 — tiered nudge (cozempic nudge, Stop hook). Non-blocking, once-per-tier."""
+"""1.8.22 — tiered nudge (winnow nudge, Stop hook). Non-blocking, once-per-tier."""
 
 from __future__ import annotations
 
@@ -24,8 +24,8 @@ def _transcript(tmp: Path, total: int, model: str = "claude-sonnet-4-6") -> Path
 
 class TestNudge(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp(prefix="cozempic_nudge_"))
-        self.home = Path(tempfile.mkdtemp(prefix="cozempic_home_"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="winnow_nudge_"))
+        self.home = Path(tempfile.mkdtemp(prefix="winnow_home_"))
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -65,22 +65,22 @@ class TestNudge(unittest.TestCase):
         self.assertIsNotNone(m)
         self.assertIn("56%", m)
         # Must point at the SLASH command, not the bare shell command: this is an
-        # in-TUI systemMessage, and a bare `cozempic reload` typed in the prompt goes
+        # in-TUI systemMessage, and a bare `winnow reload` typed in the prompt goes
         # to the model (does NOT run the CLI). Regression guard for that UX bug.
-        self.assertIn("/cozempic reload", m)
-        self.assertNotRegex(m, r"(?<!/)`cozempic reload`")
+        self.assertIn("/winnow reload", m)
+        self.assertNotRegex(m, r"(?<!/)`winnow reload`")
         self.assertIn("pause between turns", m.lower())
 
     def test_all_tiers_use_slash_command_not_bare(self):
-        # No tier may tell the user to run the bare `cozempic reload` (it would be
+        # No tier may tell the user to run the bare `winnow reload` (it would be
         # routed to the model in the Claude Code TUI, not the shell).
         for size, sid in ((260_000, "a25"), (560_000, "a55"), (820_000, "a80")):
             m = self._run(size, sid)
             self.assertIsNotNone(m)
             if "reload" in m:
                 self.assertNotRegex(
-                    m, r"(?<!/)`cozempic reload`",
-                    f"tier message uses bare `cozempic reload` (should be /cozempic reload): {m!r}")
+                    m, r"(?<!/)`winnow reload`",
+                    f"tier message uses bare `winnow reload` (should be /winnow reload): {m!r}")
 
     def test_80_tier_urgent_no_emergency_word(self):
         m = self._run(820_000, "s80")  # 82%
@@ -137,7 +137,7 @@ class TestNudge(unittest.TestCase):
     def test_non_blocking_malformed_state_file(self):
         # A corrupt/foreign nudge-state.json must not crash the nudge.
         from winnow.legacy.cli import cmd_nudge
-        sf = self.home / ".claude" / "cozempic-metrics" / "nudge-state.json"
+        sf = self.home / ".claude" / "winnow-metrics" / "nudge-state.json"
         sf.parent.mkdir(parents=True, exist_ok=True)
         for bad in ('[1,2,3]', '{"s1": "not-a-dict"}', '{"s1": {"tiers_fired": ["x","y"]}}'):
             sf.write_text(bad)

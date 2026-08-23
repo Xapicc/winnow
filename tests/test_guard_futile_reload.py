@@ -54,7 +54,7 @@ class TestMarginalPruneSkipsReload(unittest.TestCase):
     """
 
     def setUp(self):
-        self.tmpdir = Path(tempfile.mkdtemp(prefix="cozempic_gap_d_"))
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="winnow_gap_d_"))
         self.sid = "fedcba987654321012345678abcdefff"
         self.session_path = _make_session_file(self.tmpdir, 100_000)
 
@@ -138,7 +138,7 @@ class TestSubstantialPruneProceedsWithReload(unittest.TestCase):
     """
 
     def setUp(self):
-        self.tmpdir = Path(tempfile.mkdtemp(prefix="cozempic_gap_d2_"))
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="winnow_gap_d2_"))
         self.sid = "aabbccdd1122334455667788aabbccdd"
         self.session_path = _make_session_file(self.tmpdir, 100_000)
 
@@ -210,7 +210,7 @@ class TestMinPruneRatioEnvVarOverride(unittest.TestCase):
     """
 
     def setUp(self):
-        self.tmpdir = Path(tempfile.mkdtemp(prefix="cozempic_gap_d3_"))
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="winnow_gap_d3_"))
         self.sid = "cc11dd22ee33ff440011223344cc11dd"
         self.session_path = _make_session_file(self.tmpdir, 100_000)
 
@@ -334,7 +334,7 @@ class TestFutileReloadIncrementsKCounter(unittest.TestCase):
     """
 
     def setUp(self):
-        self.tmpdir = Path(tempfile.mkdtemp(prefix="cozempic_gap_d5_"))
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="winnow_gap_d5_"))
         self.sid = "dd22ee33ff440011223344dd22ee33ff"
         self.session_path = _make_session_file(self.tmpdir, 100_000)
 
@@ -411,7 +411,7 @@ class TestFutileReloadLogMessageEmitsOnce(unittest.TestCase):
     """
 
     def setUp(self):
-        self.tmpdir = Path(tempfile.mkdtemp(prefix="cozempic_gap_d6_"))
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="winnow_gap_d6_"))
         self.sid = "ee33ff440011223344ee33ff440011ee"
         self.session_path = _make_session_file(self.tmpdir, 100_000)
 
@@ -466,7 +466,7 @@ class TestFutileReloadWritesTeamCheckpoint(unittest.TestCase):
     """
 
     def setUp(self):
-        self.tmpdir = Path(tempfile.mkdtemp(prefix="cozempic_gap_d7_"))
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="winnow_gap_d7_"))
         self.sid = "ff440011223344ff4400112233440011"
         self.session_path = _make_session_file(self.tmpdir, 100_000)
 

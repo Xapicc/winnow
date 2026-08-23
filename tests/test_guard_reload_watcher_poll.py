@@ -36,13 +36,13 @@ if str(SRC) not in sys.path:
 class TestWatcherWritesStatusOnNoNewClaude(unittest.TestCase):
     """When _spawn_reload_watcher fires and no claude process with the session
     prefix appears within RELOAD_WATCHER_POLL_TIMEOUT_SECONDS, the watcher
-    must write a structured status file at /tmp/cozempic_reload_<sid12>.status.
+    must write a structured status file at /tmp/winnow_reload_<sid12>.status.
     """
 
     def setUp(self):
         self.sid = "11223344556677889900aabbccdd1122"
         self.sid12 = self.sid[:12]
-        self.status_path = Path(f"/tmp/cozempic_reload_{self.sid12}.status")
+        self.status_path = Path(f"/tmp/winnow_reload_{self.sid12}.status")
         self.status_path.unlink(missing_ok=True)
         self.addCleanup(self.status_path.unlink, missing_ok=True)
 
@@ -142,13 +142,13 @@ class TestWatcherLogsSuccessWhenNewClaudeAppears(unittest.TestCase):
     def setUp(self):
         self.sid = "22334455667788990011bbccddeeff22"
         self.sid12 = self.sid[:12]
-        self.status_path = Path(f"/tmp/cozempic_reload_{self.sid12}.status")
+        self.status_path = Path(f"/tmp/winnow_reload_{self.sid12}.status")
         self.status_path.unlink(missing_ok=True)
         self.addCleanup(self.status_path.unlink, missing_ok=True)
         # E: register cleanup for guard_log so the file doesn't leak on macOS
         # (gettempdir() resolves to /var/folders/…, not /tmp).
         from winnow.legacy.guard import _guard_tmp_root
-        guard_log = _guard_tmp_root() / "cozempic_guard.log"
+        guard_log = _guard_tmp_root() / "winnow_guard.log"
         self.guard_log = guard_log
         self.addCleanup(guard_log.unlink, missing_ok=True)
 
@@ -236,7 +236,7 @@ class TestWatcherHandlesResumeCmdNonzeroExit(unittest.TestCase):
     def setUp(self):
         self.sid = "33445566778899001122ccddee334455"
         self.sid12 = self.sid[:12]
-        self.status_path = Path(f"/tmp/cozempic_reload_{self.sid12}.status")
+        self.status_path = Path(f"/tmp/winnow_reload_{self.sid12}.status")
         self.status_path.unlink(missing_ok=True)
         self.addCleanup(self.status_path.unlink, missing_ok=True)
 
@@ -314,7 +314,7 @@ class TestSessionStartHookSurfacesPriorStatus(unittest.TestCase):
     def setUp(self):
         self.sid = "44556677889900112233ddeeff445566"
         self.sid12 = self.sid[:12]
-        self.status_path = Path(f"/tmp/cozempic_reload_{self.sid12}.status")
+        self.status_path = Path(f"/tmp/winnow_reload_{self.sid12}.status")
         # Plant a failure status file
         self.status_path.write_text(
             "failed\n"
@@ -378,8 +378,8 @@ class TestStatusFilePerSessionIsolation(unittest.TestCase):
         self.sid_b = "bbbbbbbbbbbb0000111122223333bbbb"
         self.sid_a12 = self.sid_a[:12]
         self.sid_b12 = self.sid_b[:12]
-        self.status_a = Path(f"/tmp/cozempic_reload_{self.sid_a12}.status")
-        self.status_b = Path(f"/tmp/cozempic_reload_{self.sid_b12}.status")
+        self.status_a = Path(f"/tmp/winnow_reload_{self.sid_a12}.status")
+        self.status_b = Path(f"/tmp/winnow_reload_{self.sid_b12}.status")
         for p in (self.status_a, self.status_b):
             p.unlink(missing_ok=True)
         self.addCleanup(self.status_a.unlink, missing_ok=True)

@@ -355,17 +355,17 @@ class TestStaleTmpArtifacts(unittest.TestCase):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def _make_pid_file(self, slug: str, pid: int) -> Path:
-        p = self.tmpdir / f"cozempic_guard_{slug}.pid"
+        p = self.tmpdir / f"winnow_guard_{slug}.pid"
         p.write_text(str(pid))
         return p
 
     def _make_log_file(self, slug: str, content: str = "log\n") -> Path:
-        p = self.tmpdir / f"cozempic_guard_{slug}.log"
+        p = self.tmpdir / f"winnow_guard_{slug}.log"
         p.write_text(content)
         return p
 
     def _make_lock_file(self, slug: str) -> Path:
-        p = self.tmpdir / f"cozempic_hook_{slug}.lock"
+        p = self.tmpdir / f"winnow_hook_{slug}.lock"
         p.write_text("")
         return p
 
@@ -375,7 +375,7 @@ class TestStaleTmpArtifacts(unittest.TestCase):
         self.assertEqual(result.status, "ok")
 
     def test_live_guard_is_not_stale(self):
-        """A .pid file pointing to a live cozempic guard + its paired .log
+        """A .pid file pointing to a live winnow guard + its paired .log
         must not be flagged."""
         live_pid = 42
         self._make_pid_file("livesess-12", live_pid)
@@ -385,7 +385,7 @@ class TestStaleTmpArtifacts(unittest.TestCase):
         self.assertEqual(result.status, "ok")
 
     def test_dead_pid_file_is_stale(self):
-        """A .pid file whose PID is no longer a running cozempic guard is stale."""
+        """A .pid file whose PID is no longer a running winnow guard is stale."""
         self._make_pid_file("deadsess-01", 999999)
         with patch("winnow.legacy.doctor._is_live_guard_pid", return_value=False):
             result = check_stale_tmp_artifacts()
@@ -416,7 +416,7 @@ class TestStaleTmpArtifacts(unittest.TestCase):
 
     def test_garbage_pid_content_is_treated_as_stale(self):
         """Non-integer .pid file content must not crash — treat as stale."""
-        pid_path = self.tmpdir / "cozempic_guard_badcontent-07.pid"
+        pid_path = self.tmpdir / "winnow_guard_badcontent-07.pid"
         pid_path.write_text("not-an-integer")
         result = check_stale_tmp_artifacts()
         self.assertIn(result.status, ("warning", "issue"))
@@ -430,11 +430,11 @@ class TestStaleTmpArtifacts(unittest.TestCase):
         self.assertEqual(result.status, "issue")
 
     def test_protected_globals_are_never_reported(self):
-        """Global append-only files (breaker state, cozempic_guard.log,
-        cozempic_reload.log) must NEVER be flagged — they are intentional."""
-        (self.tmpdir / "cozempic_guard.log").write_text("global log")
-        (self.tmpdir / "cozempic_reload.log").write_text("reload log")
-        (self.tmpdir / "cozempic_breaker_abc123.json").write_text("{}")
+        """Global append-only files (breaker state, winnow_guard.log,
+        winnow_reload.log) must NEVER be flagged — they are intentional."""
+        (self.tmpdir / "winnow_guard.log").write_text("global log")
+        (self.tmpdir / "winnow_reload.log").write_text("reload log")
+        (self.tmpdir / "winnow_breaker_abc123.json").write_text("{}")
         result = check_stale_tmp_artifacts()
         self.assertEqual(result.status, "ok")
 
@@ -444,7 +444,7 @@ class TestStaleTmpArtifacts(unittest.TestCase):
         log_path = self._make_log_file("deadsess-10")
         with patch("winnow.legacy.doctor._is_live_guard_pid", return_value=False):
             msg = fix_stale_tmp_artifacts()
-        self.assertFalse((self.tmpdir / "cozempic_guard_deadsess-10.pid").exists())
+        self.assertFalse((self.tmpdir / "winnow_guard_deadsess-10.pid").exists())
         self.assertFalse(log_path.exists())
         self.assertIn("2", msg)  # reports 2 files deleted
 
@@ -463,9 +463,9 @@ class TestStaleTmpArtifacts(unittest.TestCase):
         self.assertTrue(lock_path.exists())
 
     def test_fix_preserves_global_files(self):
-        guard_log = self.tmpdir / "cozempic_guard.log"
+        guard_log = self.tmpdir / "winnow_guard.log"
         guard_log.write_text("global")
-        breaker = self.tmpdir / "cozempic_breaker_xyz.json"
+        breaker = self.tmpdir / "winnow_breaker_xyz.json"
         breaker.write_text("{}")
         fix_stale_tmp_artifacts()
         self.assertTrue(guard_log.exists())
@@ -499,8 +499,8 @@ class TestOversizedSessions(unittest.TestCase):
         with patch("winnow.legacy.doctor.find_sessions", return_value=sessions):
             result = check_oversized_sessions()
         self.assertEqual(result.status, "issue")
-        self.assertIn("cozempic treat aabbccdd", result.fix_description)
-        self.assertIn("cozempic treat 11223344", result.fix_description)
+        self.assertIn("winnow treat aabbccdd", result.fix_description)
+        self.assertIn("winnow treat 11223344", result.fix_description)
         self.assertNotIn("<session>", result.fix_description)
 
     def test_fix_description_one_line_per_session(self):
@@ -511,7 +511,7 @@ class TestOversizedSessions(unittest.TestCase):
         ]
         with patch("winnow.legacy.doctor.find_sessions", return_value=sessions):
             result = check_oversized_sessions()
-        lines = [l for l in result.fix_description.splitlines() if "cozempic treat" in l]
+        lines = [l for l in result.fix_description.splitlines() if "winnow treat" in l]
         self.assertEqual(len(lines), 3)
 
     def test_fix_description_sorted_largest_first(self):

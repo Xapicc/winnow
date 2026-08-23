@@ -3,7 +3,7 @@ user-defined regex prune-immunity. Messages whose text matches a pattern get the
 same is_protected() immunity as team messages, so every strategy spares them.
 
 Mechanism proof: the prescription strategies (gentle/standard/aggressive) all check
-is_protected() before pruning, and is_protected() honors __cozempic_pattern_protected__.
+is_protected() before pruning, and is_protected() honors __winnow_pattern_protected__.
 These tests verify the matcher surfaces, the safeguards (ReDoS-length cap, input cap,
 over-protection warn), the crash-safe strip, and that a tagged message is excluded
 from a strategy's removal actions.

@@ -166,7 +166,7 @@ def _env_warn(name: str, value: str, reason: str) -> None:
 
     Using bare stderr (not `logging`) matches the convention already used by
     `cli._prescan_argv` for the same class of warning — users running
-    `cozempic ...` see the warning immediately above the command output
+    `winnow ...` see the warning immediately above the command output
     without having to configure a logging handler."""
     print(
         f"Warning: ignoring {name}={value!r} — {reason}",

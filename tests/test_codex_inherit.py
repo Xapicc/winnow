@@ -128,7 +128,7 @@ class TestDashboardInheritance(unittest.TestCase):
                 # render via cmd_dashboard and prove claude did NOT leak through
                 with patch("webbrowser.open"):
                     cli.cmd_dashboard(argparse.Namespace(no_open=True, agent="codex"))
-                html = (Path(home) / ".cozempic" / "dashboard.html").read_text()
+                html = (Path(home) / ".winnow" / "dashboard.html").read_text()
                 self.assertIn("agent=codex", html)
                 self.assertIn("codex", html)
                 self.assertNotIn("claude", html)  # the real isolation check

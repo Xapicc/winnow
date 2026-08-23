@@ -162,7 +162,7 @@ class TestToolResultAge(unittest.TestCase):
             if action.replacement and "tool-result-age" in action.reason:
                 content_blocks = action.replacement.get("message", {}).get("content", [])
                 for block in content_blocks:
-                    if block.get("type") == "tool_result" and "[cozempic" in block.get("content", ""):
+                    if block.get("type") == "tool_result" and "[winnow" in block.get("content", ""):
                         self.assertIn("lines", block["content"])
                         self.assertIn("KB]", block["content"])
 
@@ -272,7 +272,7 @@ class TestToolResultAge(unittest.TestCase):
         for action in sr.actions:
             if action.replacement:
                 for block in action.replacement.get("message", {}).get("content", []):
-                    if block.get("type") == "tool_result" and "[cozempic" in block.get("content", ""):
+                    if block.get("type") == "tool_result" and "[winnow" in block.get("content", ""):
                         self.assertIn("Read", block["content"])
                         self.assertIn("/src/main.py", block["content"])
                         found_stub = True

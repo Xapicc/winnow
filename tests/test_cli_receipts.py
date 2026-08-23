@@ -1,4 +1,4 @@
-"""D1 integration: the cli prune helper actually emits a receipt under ~/.cozempic."""
+"""D1 integration: the cli prune helper actually emits a receipt under ~/.winnow."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ class TestCliEmitsReceipt(unittest.TestCase):
                     Path(home) / "sess-xyz.jsonl", _pr(),
                     source="manual", outcome="committed", cwd=home,
                 )
-                rec_dir = Path(home) / ".cozempic" / "receipts"
+                rec_dir = Path(home) / ".winnow" / "receipts"
                 session_files = [p for p in rec_dir.glob("*.jsonl") if p.name != "index.jsonl"]
                 self.assertEqual(len(session_files), 1)
                 rec = json.loads(session_files[0].read_text().splitlines()[0])
@@ -49,7 +49,7 @@ class TestCliEmitsReceipt(unittest.TestCase):
                     Path(home) / "s.jsonl", _pr(), source="manual",
                     outcome="deferred", cwd=home, defer_reason="prune_lock",
                 )
-                rec_dir = Path(home) / ".cozempic" / "receipts"
+                rec_dir = Path(home) / ".winnow" / "receipts"
                 sf = [p for p in rec_dir.glob("*.jsonl") if p.name != "index.jsonl"][0]
                 rec = json.loads(sf.read_text().splitlines()[0])
                 validate_receipt(rec)
@@ -64,7 +64,7 @@ class TestCliEmitsReceipt(unittest.TestCase):
             with patch.dict(os.environ, {"HOME": home}):
                 os.environ.pop("WINNOW_NO_RECEIPTS", None)
                 cli._emit_prune_receipt(None, object(), source="manual", outcome="committed")
-                rec_dir = Path(home) / ".cozempic" / "receipts"
+                rec_dir = Path(home) / ".winnow" / "receipts"
                 # no parseable garbage receipt persisted (dir absent or empty)
                 self.assertFalse(rec_dir.exists() and any(rec_dir.iterdir()))
 

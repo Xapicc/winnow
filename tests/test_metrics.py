@@ -79,7 +79,7 @@ class TestBuildReceipt(unittest.TestCase):
         self.assertEqual(r["schema_version"], SCHEMA_VERSION)
         self.assertEqual(r["receipt_id"], "fixedid")
         self.assertEqual(r["ts"], "2026-06-16T09:00:00Z")
-        self.assertEqual(r["tool"], {"name": "cozempic", "version": "1.8.32"})
+        self.assertEqual(r["tool"], {"name": "winnow", "version": "1.8.32"})
         self.assertEqual(r["agent"]["name"], "claude")
         self.assertEqual(r["mode"], "edit_resume")
         self.assertEqual(r["outcome"], "committed")

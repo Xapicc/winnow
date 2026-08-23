@@ -44,8 +44,8 @@ class TestCwdToProjectSlug:
 
     def test_worktree_dotclaude_in_path(self):
         """Worktrees whose path contains '.claude' must produce correct slug."""
-        result = cwd_to_project_slug("/Users/x/cozempic/.claude/worktrees/fix-slug")
-        assert result == "-Users-x-cozempic--claude-worktrees-fix-slug", (
+        result = cwd_to_project_slug("/Users/x/winnow/.claude/worktrees/fix-slug")
+        assert result == "-Users-x-winnow--claude-worktrees-fix-slug", (
             f"Got {result!r}. Dot in path component not replaced."
         )
 

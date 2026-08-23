@@ -47,14 +47,14 @@ class TestGuardTmpRoot(unittest.TestCase):
         # the "guard already running" fast-path doesn't always miss on macOS.
         with patch.object(guard.os, "name", "posix"):
             p = guard._pid_file_for_session("abcdef012345")
-            self.assertTrue(str(p).startswith("/tmp/cozempic_guard_"))
+            self.assertTrue(str(p).startswith("/tmp/winnow_guard_"))
 
 
 class TestIsGuardRunningWindowsOSError(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
-        self.pid_path = Path(self._tmp.name) / "cozempic_guard_test.pid"
+        self.pid_path = Path(self._tmp.name) / "winnow_guard_test.pid"
         self.pid_path.write_text("424242")  # plausible, > 0 pid
 
     def test_windows_oserror_treated_as_dead(self):

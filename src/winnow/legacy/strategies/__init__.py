@@ -1,4 +1,4 @@
-"""Pruning strategies for Cozempic.
+"""Pruning strategies for winnow.
 
 Importing this package registers all strategies with the global registry.
 """

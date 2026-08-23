@@ -12,7 +12,7 @@ them. This corpus catches the whole class with an OUTPUT-shaped invariant:
     argparse error) OR return a finite, in-range, correctly-typed value.
 
 Adding a new WINNOW_* numeric knob? Add one row to _ENV_VALIDATORS and the corpus
-is applied automatically. Zero dependencies (cozempic is stdlib-only — no hypothesis).
+is applied automatically. Zero dependencies (winnow is stdlib-only — no hypothesis).
 
 Extended in PR-2 (input-validation hardening) to cover:
   P-A: parse_env_positive_int / parse_env_non_negative_int upper-bound (huge-int path)

@@ -1,7 +1,7 @@
-"""Lifetime savings ledger — surfaces cozempic's running totals on the dashboard.
+"""Lifetime savings ledger — surfaces winnow's running totals on the dashboard.
 
-The dashboard's per-prune views (D2) only see receipts, which are new. cozempic
-has ALSO kept a lifetime counter at ``~/.cozempic_savings.json`` since long before
+The dashboard's per-prune views (D2) only see receipts, which are new. winnow
+has ALSO kept a lifetime counter at ``~/.winnow_savings.json`` since long before
 receipts existed (see helpers.record_savings). This loader reads that ledger so the
 dashboard can lead with the user's TRUE totals (e.g. 456M tokens across 3,309
 prunes) instead of just the handful of receipts recorded so far.
@@ -20,7 +20,7 @@ from .._constants import _MAX_RECEIPT_INT
 
 def lifetime_path() -> Path:
     """Where helpers.record_savings writes the lifetime ledger."""
-    return Path.home() / ".cozempic_savings.json"
+    return Path.home() / ".winnow_savings.json"
 
 
 def _num_or_zero(value) -> int:

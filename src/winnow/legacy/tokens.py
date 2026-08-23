@@ -479,7 +479,7 @@ def quick_token_estimate(path: Path, context_window: int = DEFAULT_CONTEXT_WINDO
     file — when no usage frame is found there. A long trailing run of
     usage-less lines (streaming partials, attachments, queued operations) can
     push the last real ``usage`` block past a fixed window; the old fixed-tail
-    read then returned None, blanking ``cozempic current`` AND disabling every
+    read then returned None, blanking ``winnow current`` AND disabling every
     token-based guard threshold (each gated on ``current_tokens is not None``),
     silently degrading the guard to MB-only thresholds on long sessions.
 

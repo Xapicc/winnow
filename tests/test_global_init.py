@@ -9,7 +9,7 @@ from unittest import mock
 
 class TestGlobalAutoInit(unittest.TestCase):
     def _stub_marker(self, tmpdir):
-        return Path(tmpdir) / ".cozempic_global_initialized"
+        return Path(tmpdir) / ".winnow_global_initialized"
 
     def _stub_home_claude(self, tmpdir):
         d = Path(tmpdir) / ".claude"
@@ -122,7 +122,7 @@ class TestGlobalAutoInit(unittest.TestCase):
                     self.assertTrue(marker.exists())
 
     def test_version_check_triggers_init(self):
-        """`cozempic --version` (no subcommand) should trigger global init."""
+        """`winnow --version` (no subcommand) should trigger global init."""
         from winnow.legacy import cli
         with tempfile.TemporaryDirectory() as tmp:
             self._stub_home_claude(tmp)
@@ -135,7 +135,7 @@ class TestGlobalAutoInit(unittest.TestCase):
                     self.assertTrue((Path(tmp) / ".claude" / "settings.json").exists())
 
     def test_help_does_not_trigger_init(self):
-        """`cozempic --help` / `-h` must NOT trigger init (purely informational)."""
+        """`winnow --help` / `-h` must NOT trigger init (purely informational)."""
         from winnow.legacy import cli
         for help_flag in ("--help", "-h"):
             with self.subTest(flag=help_flag):
@@ -151,10 +151,10 @@ class TestGlobalAutoInit(unittest.TestCase):
 
 
 class TestUninstallHooks(unittest.TestCase):
-    def test_removes_cozempic_hooks_only(self):
+    def test_removes_winnow_hooks_only(self):
         from winnow.legacy.init import wire_hooks, uninstall_hooks
         with tempfile.TemporaryDirectory() as tmp:
-            # Set up a settings.json with a non-cozempic hook + cozempic hooks
+            # Set up a settings.json with a non-winnow hook + winnow hooks
             (Path(tmp) / ".claude").mkdir()
             settings_path = Path(tmp) / ".claude" / "settings.json"
             settings_path.write_text(json.dumps({
@@ -165,12 +165,12 @@ class TestUninstallHooks(unittest.TestCase):
                     }],
                 }
             }))
-            # Wire cozempic on top
+            # Wire winnow on top
             wire_hooks(tmp)
             after_wire = json.loads(settings_path.read_text())
             self.assertGreater(len(after_wire["hooks"]["SessionStart"]), 1)
 
-            # Uninstall — user hook stays, cozempic hooks go
+            # Uninstall — user hook stays, winnow hooks go
             result = uninstall_hooks(tmp)
             self.assertGreater(len(result["removed"]), 0)
             after = json.loads(settings_path.read_text())
@@ -185,8 +185,8 @@ class TestUninstallHooks(unittest.TestCase):
             self.assertEqual(result["removed"], [])
 
     def test_mixed_entry_preserves_user_commands(self):
-        """An entry containing BOTH cozempic and user commands in its `hooks`
-        list must only lose the cozempic commands. Regression for 'uninstall
+        """An entry containing BOTH winnow and user commands in its `hooks`
+        list must only lose the winnow commands. Regression for 'uninstall
         nukes user commands in shared entries' (bug 4.1)."""
         from winnow.legacy.init import uninstall_hooks, HOOK_SCHEMA_MARKER
         with tempfile.TemporaryDirectory() as tmp:
@@ -197,10 +197,10 @@ class TestUninstallHooks(unittest.TestCase):
                     "SessionStart": [{
                         "matcher": "",
                         "hooks": [
-                            # User command (no cozempic, no schema marker)
+                            # User command (no winnow, no schema marker)
                             {"type": "command", "command": "echo 'my-hook'"},
-                            # Cozempic command with current schema marker
-                            {"type": "command", "command": f"cozempic guard --daemon # {HOOK_SCHEMA_MARKER}"},
+                            # winnow command with current schema marker
+                            {"type": "command", "command": f"winnow guard --daemon # {HOOK_SCHEMA_MARKER}"},
                         ],
                     }],
                 }
@@ -224,10 +224,10 @@ class TestUninstallHooks(unittest.TestCase):
 
 
 class TestStaleHookRefresh(unittest.TestCase):
-    def test_stale_cozempic_hook_gets_refreshed(self):
-        """A settings.json with a pre-schema cozempic hook (old wrapper command,
+    def test_stale_winnow_hook_gets_refreshed(self):
+        """A settings.json with a pre-schema winnow hook (old wrapper command,
         no schema marker) must be upgraded to the current schema on wire_hooks.
-        Uses the realistic pre-v2 command pattern which had `python3 -m cozempic`
+        Uses the realistic pre-v2 command pattern which had `python3 -m winnow`
         as the fallback wrapper — that's how we detect 'ours' pre-schema.
         """
         from winnow.legacy.init import wire_hooks, HOOK_SCHEMA_MARKER
@@ -239,9 +239,9 @@ class TestStaleHookRefresh(unittest.TestCase):
                     "SessionStart": [{
                         "matcher": "",
                         "hooks": [
-                            # Stale cozempic hook — the pre-v2 canonical pattern
-                            # (python3 -m cozempic fallback, no schema marker).
-                            {"type": "command", "command": "{ cozempic guard --daemon 2>/dev/null || python3 -m cozempic guard --daemon 2>/dev/null; } || true"},
+                            # Stale winnow hook — the pre-v2 canonical pattern
+                            # (python3 -m winnow fallback, no schema marker).
+                            {"type": "command", "command": "{ winnow guard --daemon 2>/dev/null || python3 -m winnow guard --daemon 2>/dev/null; } || true"},
                         ],
                     }],
                 }
@@ -253,37 +253,37 @@ class TestStaleHookRefresh(unittest.TestCase):
             cmd = after["hooks"]["SessionStart"][0]["hooks"][0]["command"]
             self.assertIn(HOOK_SCHEMA_MARKER, cmd, "schema marker must be present after refresh")
 
-    def test_user_command_with_cozempic_substring_is_not_treated_as_ours(self):
-        """A user-authored chain command like `cozempic checkpoint && backup.sh`
-        must NOT be classified as cozempic-installed (bug 1.4). Previously the
+    def test_user_command_with_winnow_substring_is_not_treated_as_ours(self):
+        """A user-authored chain command like `winnow checkpoint && backup.sh`
+        must NOT be classified as winnow-installed (bug 1.4). Previously the
         substring-match fallback would false-match and `uninstall_hooks` would
         delete the user's backup script.
 
         Also covers the secondary regression (bug 7.1 from round-3 audit): a
-        user chain `pre; python3 -m cozempic X; post` must NOT match either —
+        user chain `pre; python3 -m winnow X; post` must NOT match either —
         requires the FULL canonical wrapper shape (brace-open + python
         fallback), not just one or the other.
         """
-        from winnow.legacy.init import _is_cozempic_command
-        # Chain with cozempic + user step — no wrapper, no match
-        self.assertFalse(_is_cozempic_command("cozempic checkpoint && my-backup.sh"))
-        # User hook referencing cozempic in a string — no match
-        self.assertFalse(_is_cozempic_command('echo "cozempic notes" > /tmp/out'))
-        # User chain that includes `python3 -m cozempic` — still no match
-        # (was a false positive in the prior fix). Lacks `{ cozempic ` opener.
-        self.assertFalse(_is_cozempic_command(
-            "pre-step && python3 -m cozempic checkpoint && post-step"
+        from winnow.legacy.init import _is_winnow_command
+        # Chain with winnow + user step — no wrapper, no match
+        self.assertFalse(_is_winnow_command("winnow checkpoint && my-backup.sh"))
+        # User hook referencing winnow in a string — no match
+        self.assertFalse(_is_winnow_command('echo "winnow notes" > /tmp/out'))
+        # User chain that includes `python3 -m winnow` — still no match
+        # (was a false positive in the prior fix). Lacks `{ winnow ` opener.
+        self.assertFalse(_is_winnow_command(
+            "pre-step && python3 -m winnow checkpoint && post-step"
         ))
-        self.assertFalse(_is_cozempic_command(
-            "my-script.sh; python3 -m cozempic digest flush"
+        self.assertFalse(_is_winnow_command(
+            "my-script.sh; python3 -m winnow digest flush"
         ))
         # A real canonical hook with the python fallback wrapper — SHOULD match
-        self.assertTrue(_is_cozempic_command(
-            "{ cozempic checkpoint 2>/dev/null || python3 -m cozempic checkpoint 2>/dev/null; } || true"
+        self.assertTrue(_is_winnow_command(
+            "{ winnow checkpoint 2>/dev/null || python3 -m winnow checkpoint 2>/dev/null; } || true"
         ))
         # A v4+ hook with the schema marker — SHOULD match
-        self.assertTrue(_is_cozempic_command(
-            "echo 'hi' # cozempic-hook-schema=v4"
+        self.assertTrue(_is_winnow_command(
+            "echo 'hi' # winnow-hook-schema=v4"
         ))
 
     def test_refresh_preserves_user_command_in_mixed_entry(self):
@@ -301,8 +301,8 @@ class TestStaleHookRefresh(unittest.TestCase):
                         "hooks": [
                             # User hook FIRST (order matters for some setups)
                             {"type": "command", "command": "export MY_SETUP=1"},
-                            # Stale cozempic hook
-                            {"type": "command", "command": "{ cozempic guard --daemon 2>/dev/null || python3 -m cozempic guard --daemon 2>/dev/null; } || true"},
+                            # Stale winnow hook
+                            {"type": "command", "command": "{ winnow guard --daemon 2>/dev/null || python3 -m winnow guard --daemon 2>/dev/null; } || true"},
                             # Another user hook AFTER
                             {"type": "command", "command": "echo 'session started' >> /tmp/user.log"},
                         ],
@@ -339,16 +339,16 @@ class TestStaleHookRefresh(unittest.TestCase):
 
 
 class TestPIDReuseCheck(unittest.TestCase):
-    def test_is_cozempic_guard_process_false_for_other_pid(self):
-        """Random PID (e.g. init, 1) should not be identified as a cozempic guard."""
-        from winnow.legacy.guard import _is_cozempic_guard_process
-        # PID 1 exists on every Unix but isn't cozempic
-        self.assertFalse(_is_cozempic_guard_process(1))
+    def test_is_winnow_guard_process_false_for_other_pid(self):
+        """Random PID (e.g. init, 1) should not be identified as a winnow guard."""
+        from winnow.legacy.guard import _is_winnow_guard_process
+        # PID 1 exists on every Unix but isn't winnow
+        self.assertFalse(_is_winnow_guard_process(1))
 
-    def test_is_cozempic_guard_process_false_for_nonexistent(self):
-        from winnow.legacy.guard import _is_cozempic_guard_process
+    def test_is_winnow_guard_process_false_for_nonexistent(self):
+        from winnow.legacy.guard import _is_winnow_guard_process
         # Almost certainly not a real PID
-        self.assertFalse(_is_cozempic_guard_process(999999))
+        self.assertFalse(_is_winnow_guard_process(999999))
 
 
 class TestAtomicWrite(unittest.TestCase):
@@ -376,7 +376,7 @@ class TestAtomicWrite(unittest.TestCase):
             # Original file must still be intact
             self.assertEqual(path.read_text(), original)
             # No tempfile left behind
-            temps = list(Path(tmp, ".claude").glob(".cozempic-settings-*"))
+            temps = list(Path(tmp, ".claude").glob(".winnow-settings-*"))
             self.assertEqual(temps, [], f"tempfile not cleaned up: {temps}")
 
     def test_save_settings_writes_successfully(self):
@@ -425,7 +425,7 @@ class TestDoSMarkerOnFailure(unittest.TestCase):
             # Fake home with .claude dir
             (Path(tmp) / ".claude").mkdir()
             os.environ.pop("WINNOW_NO_GLOBAL_INIT", None)
-            marker = Path(tmp) / ".cozempic_global_initialized"
+            marker = Path(tmp) / ".winnow_global_initialized"
             with mock.patch.object(cli, "_GLOBAL_INIT_MARKER", marker):
                 with mock.patch.object(cli.Path, "home", return_value=Path(tmp)):
                     with mock.patch.object(cli.sys.stdin, "isatty", return_value=False):

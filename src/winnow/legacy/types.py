@@ -1,4 +1,4 @@
-"""Core data types for Cozempic."""
+"""Core data types for winnow."""
 
 from __future__ import annotations
 

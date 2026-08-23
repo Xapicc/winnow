@@ -6,7 +6,7 @@ Invariant:
     For every adversarial input, a dashboard numeric coercion MUST either return
     a finite, in-range, correctly-typed value OR return None (which renders as
     "—"). It MUST NOT raise an exception — a corrupt receipt must never crash
-    `cozempic dashboard`.
+    `winnow dashboard`.
 
 Covers: _context_pct, _int (aggregate), _num_or_zero (lifetime), load_lifetime,
 aggregate (end-to-end), _fmt_tokens/_fmt_bytes (render), build_receipt,
@@ -48,7 +48,7 @@ def _make_minimal_receipt(outcome="committed", **overrides) -> dict:
         "schema_version": "1.0",
         "receipt_id": "test-id-1",
         "ts": "2026-01-01T00:00:00Z",
-        "tool": {"name": "cozempic", "version": "1.8.0"},
+        "tool": {"name": "winnow", "version": "1.8.0"},
         "agent": {"name": "claude", "version": "1.0", "adapter_schema_version": 1},
         "session": {"id_hash": "abc", "transcript_hash": "def", "cwd_hash": "ghi"},
         "trigger": {"source": "manual", "tier": "standard",

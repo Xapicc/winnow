@@ -47,7 +47,7 @@ class TestRenderHtml(unittest.TestCase):
         h = render_html(_data(), generated_ts="2026-06-16T09:05:00Z")
         self.assertTrue(h.startswith("<!DOCTYPE html>"))
         self.assertIn("</html>", h)
-        self.assertIn("cozempic", h)
+        self.assertIn("winnow", h)
 
     def test_empty_state(self):
         h = render_html({"lifetime": {"prunes_total": 0}}, generated_ts="t")
@@ -161,7 +161,7 @@ class TestCliDashboardCommand(unittest.TestCase):
                 with patch("webbrowser.open") as wb:
                     cli.cmd_dashboard(argparse.Namespace(no_open=True))
                     wb.assert_not_called()  # --no-open suppresses browser
-                out = Path(home) / ".cozempic" / "dashboard.html"
+                out = Path(home) / ".winnow" / "dashboard.html"
                 self.assertTrue(out.exists())
                 self.assertTrue(out.read_text().startswith("<!DOCTYPE html>"))
 

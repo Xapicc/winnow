@@ -28,8 +28,8 @@ from .types import Message
 # Constants
 # ---------------------------------------------------------------------------
 
-PROTECTION_TAG = "__cozempic_behavioral_digest__"
-DIGEST_DIR = Path.home() / ".cozempic"
+PROTECTION_TAG = "__winnow_behavioral_digest__"
+DIGEST_DIR = Path.home() / ".winnow"
 DIGEST_FILE = DIGEST_DIR / "behavioral-digest.json"
 DIGEST_MD_FILE = DIGEST_DIR / "behavioral-digest.md"
 
@@ -154,7 +154,7 @@ _SYSTEM_NOISE_MARKERS = (
     "<bash-stderr>",
     "<user-prompt-submit-hook",
     "Please analyze this codebase",  # /init prompt
-    "[Cozempic Guard:",  # cozempic self-restoration meta banner
+    "[winnow Guard:",  # winnow self-restoration meta banner
     "This session is being continued from a previous conversation",  # CC compaction-resume banner
     # Skill-injection bodies (#109): when a skill loads, the harness injects its
     # SKILL.md into the transcript prefixed with this header. It is NOT a user
@@ -694,7 +694,7 @@ def load_digest_store(project_dir: str = "") -> DigestStore:
         _enforce_active_cap(store)
         # Persist the migration so we don't re-scan on every load.
         # Without this, a store with 572 noise rules would re-demote them
-        # on every cozempic invocation — wasting cycles and never cleaning
+        # on every winnow invocation — wasting cycles and never cleaning
         # the on-disk file unless a separate save path happens to fire.
         if migrated:
             try:
@@ -928,7 +928,7 @@ def _get_memdir(cwd: str = "") -> Path | None:
     `CLAUDE_CONFIG_DIR` (used by the `claudes` profile launcher) before
     falling back to `~/.claude`. Prevents cross-profile leaks.
 
-    Read-only: cozempic does NOT create this dir — Claude Code owns it and creates
+    Read-only: winnow does NOT create this dir — Claude Code owns it and creates
     it lazily. We only sync into it once it exists, so a brand-new folder isn't
     proactively populated with the (global) digest until Claude Code establishes
     its memory dir.
@@ -970,7 +970,7 @@ def sync_to_memdir(store: DigestStore, cwd: str = "") -> int:
     active = store.active_rules()
     if not active:
         # Remove existing digest memory if no active rules
-        digest_mem = mem_dir / "cozempic_digest.md"
+        digest_mem = mem_dir / "winnow_digest.md"
         if digest_mem.exists():
             digest_mem.unlink()
         return 0
@@ -981,7 +981,7 @@ def sync_to_memdir(store: DigestStore, cwd: str = "") -> int:
         return 0
 
     content = f"""---
-name: Cozempic Behavioral Digest
+name: winnow Behavioral Digest
 description: Behavioral rules extracted from user corrections — follow these when applicable
 type: feedback
 ---
@@ -989,7 +989,7 @@ type: feedback
 {text}
 """
 
-    digest_mem = mem_dir / "cozempic_digest.md"
+    digest_mem = mem_dir / "winnow_digest.md"
     _atomic_write_text(digest_mem, content)
 
     # Update MEMORY.md index if needed
@@ -1004,14 +1004,14 @@ type: feedback
 
 
 def _update_memory_index(mem_dir: Path) -> None:
-    """Ensure cozempic_digest.md is referenced in MEMORY.md index."""
+    """Ensure winnow_digest.md is referenced in MEMORY.md index."""
     index_path = mem_dir / "MEMORY.md"
-    marker = "[Cozempic Behavioral Digest](cozempic_digest.md)"
+    marker = "[winnow Behavioral Digest](winnow_digest.md)"
     entry = f"- {marker} — behavioral rules from user corrections"
 
     if index_path.exists():
         content = index_path.read_text(encoding="utf-8")
-        if "cozempic_digest.md" in content:
+        if "winnow_digest.md" in content:
             return  # Already referenced
         content = content.rstrip() + f"\n{entry}\n"
         index_path.write_text(content, encoding="utf-8")

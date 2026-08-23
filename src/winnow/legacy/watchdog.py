@@ -213,7 +213,7 @@ class GuardLoopHit:
     pid: int | None
     pid_alive: bool
     report: LoopReport
-    guard_confirmed: bool = False  # True iff pid_alive AND process is a cozempic guard
+    guard_confirmed: bool = False  # True iff pid_alive AND process is a winnow guard
 
 
 def _read_pid(pid_file: Path) -> int | None:
@@ -229,17 +229,17 @@ def scan_guard_logs(
     loop_trip: int = LOOP_TRIP_DEFAULT,
     max_tail_bytes: int = 256 * 1024,
 ) -> list[GuardLoopHit]:
-    """Scan every ``cozempic_guard_*.log`` under ``log_dir`` for stuck loops.
+    """Scan every ``winnow_guard_*.log`` under ``log_dir`` for stuck loops.
 
     Returns one ``GuardLoopHit`` per log whose tail shows the loop signature.
-    The paired ``cozempic_guard_*.pid`` (if present) is read so a caller can tell
+    The paired ``winnow_guard_*.pid`` (if present) is read so a caller can tell
     a LIVE stuck daemon (actionable) from a dead one's stale log (already gone).
     """
     log_dir = Path(log_dir)
     hits: list[GuardLoopHit] = []
     if not log_dir.is_dir():
         return hits
-    for log_file in sorted(log_dir.glob("cozempic_guard_*.log")):
+    for log_file in sorted(log_dir.glob("winnow_guard_*.log")):
         try:
             size = log_file.stat().st_size
             with open(log_file, "r", encoding="utf-8", errors="replace") as fh:
@@ -260,8 +260,8 @@ def scan_guard_logs(
             # side-effecty) and prevents a circular import (guard imports watchdog
             # indirectly through its own helpers). alive=True implies pid is not
             # None (since _pid_alive(None) returns False).
-            from .guard import _is_cozempic_guard_process
-            confirmed = _is_cozempic_guard_process(pid)
+            from .guard import _is_winnow_guard_process
+            confirmed = _is_winnow_guard_process(pid)
         else:
             confirmed = False
         hits.append(GuardLoopHit(

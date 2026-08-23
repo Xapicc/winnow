@@ -38,7 +38,7 @@ class CircuitBreaker:
         window_seconds: int = BREAKER_WINDOW_SECONDS,
     ):
         slug = hashlib.md5(session_id.encode()).hexdigest()[:12]
-        self.state_path = Path(f"/tmp/cozempic_breaker_{slug}.json")
+        self.state_path = Path(f"/tmp/winnow_breaker_{slug}.json")
         self.max_recoveries = max_recoveries
         self.window_seconds = window_seconds
 
@@ -385,7 +385,7 @@ class OverflowRecovery:
 
         # 6. Terminate Claude + auto-resume
         # Wave 2: acquire single-flight reload lock. If another reload
-        # pipeline is already in flight (manual `cozempic reload`, guard
+        # pipeline is already in flight (manual `winnow reload`, guard
         # threshold-fire, or another overflow recovery instance), defer
         # ours. The prune output is already saved; the in-flight pipeline
         # will do the kill+resume.

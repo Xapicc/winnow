@@ -8,7 +8,7 @@ Hard invariant: **a receipt must never break or defer a prune.** Every public
 function here is exception-isolated and returns ``None`` on any failure rather
 than propagating — losing a receipt is acceptable; corrupting a prune is not.
 
-Layout under ``~/.cozempic/receipts/``:
+Layout under ``~/.winnow/receipts/``:
   * ``<session_id_hash>.jsonl`` — full receipts for one session, one per line.
   * ``index.jsonl``            — compact per-prune summaries for fast dashboard load.
 """
@@ -38,8 +38,8 @@ _CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]")
 
 
 def receipts_dir(base_dir: Path | None = None) -> Path:
-    """Directory receipts live in (``~/.cozempic/receipts`` by default)."""
-    base = base_dir if base_dir is not None else (Path.home() / ".cozempic")
+    """Directory receipts live in (``~/.winnow/receipts`` by default)."""
+    base = base_dir if base_dir is not None else (Path.home() / ".winnow")
     return Path(base) / RECEIPTS_DIRNAME
 
 
@@ -76,7 +76,7 @@ def receipts_enabled() -> bool:
 
 
 def _tool_version() -> str:
-    """Best-effort cozempic version for receipt provenance."""
+    """Best-effort winnow version for receipt provenance."""
     try:
         from . import __version__
 

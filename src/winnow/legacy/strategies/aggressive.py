@@ -294,12 +294,12 @@ def strategy_document_dedup(messages: list[Message], config: dict) -> StrategyRe
 
             if btype == "text":
                 preview = text_of(block)[:80].replace("\n", " ")
-                new_blocks[occ_bi] = {"type": "text", "text": f"[duplicate content removed by cozempic - first seen earlier: {preview}...]"}
+                new_blocks[occ_bi] = {"type": "text", "text": f"[duplicate content removed by winnow - first seen earlier: {preview}...]"}
             elif btype == "tool_result":
                 content = block.get("content", "")
                 if isinstance(content, str):
                     preview = content[:80].replace("\n", " ")
-                    new_blocks[occ_bi] = {**block, "content": f"[duplicate content removed by cozempic: {preview}...]"}
+                    new_blocks[occ_bi] = {**block, "content": f"[duplicate content removed by winnow: {preview}...]"}
 
             new_msg = set_content_blocks(msg, new_blocks)
             new_size = msg_bytes(new_msg)
@@ -359,7 +359,7 @@ def strategy_mega_block_trim(messages: list[Message], config: dict) -> StrategyR
                     half = max_block_bytes // 2
                     trimmed = (
                         text[:half]
-                        + f"\n\n... [{len(text.encode('utf-8')) - max_block_bytes} bytes trimmed by cozempic] ...\n\n"
+                        + f"\n\n... [{len(text.encode('utf-8')) - max_block_bytes} bytes trimmed by winnow] ...\n\n"
                         + text[-half:]
                     )
                     if btype == "thinking":

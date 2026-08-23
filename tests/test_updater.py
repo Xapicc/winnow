@@ -157,22 +157,22 @@ class TestInstallMethodDetection(unittest.TestCase):
 
     def test_detects_brew_keg(self):
         self.assertEqual(self._method_for(
-            "/opt/homebrew/Cellar/cozempic/1.8.22/libexec/lib/python3.12/site-packages/cozempic/updater.py"),
+            "/opt/homebrew/Cellar/cozempic/1.8.22/libexec/lib/python3.12/site-packages/winnow/updater.py"),
             "brew")
 
     def test_detects_uv_tool(self):
         self.assertEqual(self._method_for(
-            "/Users/x/.local/share/uv/tools/cozempic/lib/python3.12/site-packages/cozempic/updater.py"),
+            "/Users/x/.local/share/uv/tools/cozempic/lib/python3.12/site-packages/winnow/updater.py"),
             "uv-tool")
 
     def test_detects_pipx(self):
         self.assertEqual(self._method_for(
-            "/Users/x/.local/pipx/venvs/cozempic/lib/python3.12/site-packages/cozempic/updater.py"),
+            "/Users/x/.local/pipx/venvs/cozempic/lib/python3.12/site-packages/winnow/updater.py"),
             "pipx")
 
     def test_defaults_to_pip(self):
         self.assertEqual(self._method_for(
-            "/Users/x/proj/.venv/lib/python3.12/site-packages/cozempic/updater.py"),
+            "/Users/x/proj/.venv/lib/python3.12/site-packages/winnow/updater.py"),
             "pip")
 
 
@@ -366,8 +366,8 @@ class TestHookHonorsOptOuts(unittest.TestCase):
         # version-shaped pin → exact spec; malformed/injection pin → bare cozempic.
         self.assertEqual(res[2]["spec"], "cozempic==1.8.30")
         self.assertEqual(res[3]["spec"], "cozempic==1.8.30")  # leading v stripped
-        self.assertEqual(res[4]["spec"], "cozempic")           # garbage not used as spec
-        self.assertEqual(res[6]["spec"], "cozempic")           # injection rejected
+        self.assertEqual(res[4]["spec"], "cozempic")         # garbage not used as spec
+        self.assertEqual(res[6]["spec"], "cozempic")         # injection rejected
 
 
 class TestMaybeAutoUpdateBrew(_EnvIsolated):

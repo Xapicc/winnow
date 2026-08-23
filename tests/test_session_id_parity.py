@@ -52,7 +52,7 @@ def _bash_slug(session_id: str) -> str:
             print(re.sub(r'[^a-z0-9_-]', '_', s))
         ")
         SLUG=$(printf '%.12s' "$SESSION_ID")      # POSIX-safe, #168
-        GUARD_PID_FILE="/tmp/cozempic_guard_${SLUG}.pid"
+        GUARD_PID_FILE="/tmp/winnow_guard_${SLUG}.pid"
 
     So the bash slug is: ``re.sub(r'[^a-z0-9_-]', '_', s.lower())[:12]``.
     """
@@ -90,7 +90,7 @@ class TestSessionIdSlugParity(unittest.TestCase):
                 continue
             python_slug = (
                 python_path.name
-                .removeprefix("cozempic_guard_")
+                .removeprefix("winnow_guard_")
                 .removesuffix(".pid")
             )
             if bash_slug != python_slug:
@@ -119,7 +119,7 @@ class TestSessionIdSlugParity(unittest.TestCase):
             python_path = _pid_file_for_session(sid)
             self.assertEqual(
                 python_path.name,
-                "cozempic_guard_5d53e013-32d.pid",
+                "winnow_guard_5d53e013-32d.pid",
                 f"Canonical UUID slug regressed for {sid!r}: got {python_path.name!r}",
             )
 

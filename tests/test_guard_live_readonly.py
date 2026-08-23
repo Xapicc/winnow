@@ -26,7 +26,7 @@ def _make_session_file(tmpdir: Path, size_bytes: int = 100_000) -> Path:
 class TestReadOnlyLiveGuard(unittest.TestCase):
 
     def setUp(self):
-        self.tmpdir = Path(tempfile.mkdtemp(prefix="cozempic_106_"))
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="winnow_106_"))
         self.session_path = _make_session_file(self.tmpdir, 100_000)
 
     def tearDown(self):
@@ -274,7 +274,7 @@ class TestDeferredWriteAppendPreservation(unittest.TestCase):
     snapshot and its death must survive the deferred (post-death) write."""
 
     def setUp(self):
-        self.tmpdir = Path(tempfile.mkdtemp(prefix="cozempic_106_append_"))
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="winnow_106_append_"))
         self.session_path = self.tmpdir / "s.jsonl"
 
     def tearDown(self):

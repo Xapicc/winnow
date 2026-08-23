@@ -158,7 +158,7 @@ class TeamState:
         # in the markdown made the STRICT checkpoint write/read raise UnicodeEncode/Decode
         # — the R14 surrogatepass write merely RELOCATED that crash to read_team_checkpoint
         # / the PostCompact hook. Sanitizing at this single render chokepoint keeps the
-        # file strict-UTF-8 clean for both cozempic AND Claude Code's own reader, with no
+        # file strict-UTF-8 clean for both winnow AND Claude Code's own reader, with no
         # WTF-8 round-trip. A lone surrogate has no display value anyway.
         if any(0xD800 <= ord(c) <= 0xDFFF for c in s):
             s = "".join("�" if 0xD800 <= ord(c) <= 0xDFFF else c for c in s)
@@ -342,7 +342,7 @@ def build_team_recovery_receipt(state: TeamState) -> dict:
     if not state.tasks:
         gaps.append("no_task_assignment_table")
 
-    # Cozempic can currently identify the last coordination line, but it does
+    # winnow can currently identify the last coordination line, but it does
     # not yet expose a per-teammate event/message cursor. Marking active teams
     # as partial until that exists prevents a phantom-team recovery from being
     # presented as complete.
@@ -1115,7 +1115,7 @@ def extract_team_state(messages: list[Message]) -> TeamState:
         # H1-B RESIDUAL (DEFERRED): this is a presence-check, not a cryptographic
         # authenticator.  A user who knows about teamName could craft a message with
         # any teamName value and bypass this gate (e.g. user types a fake carrier with
-        # teamName="cozempic-pipeline").  Closing H1-B would require a harness-stamped
+        # teamName="winnow-pipeline").  Closing H1-B would require a harness-stamped
         # sender field (like the C-3 residual which needs a structural nested_agent_id
         # marker) that user-typed text cannot forge.  Until then H-1 raises the bar
         # from zero knowledge (anyone can trigger it) to harness knowledge (only someone
@@ -1348,7 +1348,7 @@ def write_team_checkpoint(state: TeamState, project_dir: Path | None = None) -> 
     # other shared-state writer is atomic (temp + os.replace); this one was the holdout.
     # Strict UTF-8 is safe now (R15): _san replaces lone surrogates with U+FFFD at the
     # render chokepoint, so to_markdown() is clean UTF-8 — no UnicodeEncodeError on
-    # write and no WTF-8 for the reader (cozempic OR Claude Code) to choke on. (The R14
+    # write and no WTF-8 for the reader (winnow OR Claude Code) to choke on. (The R14
     # errors="surrogatepass" write was reverted because it only RELOCATED the crash to
     # the strict read in read_team_checkpoint / the PostCompact hook.)
     from .helpers import atomic_write_text
@@ -1454,7 +1454,7 @@ def inject_team_recovery(messages: list[Message], state: TeamState) -> list[Mess
         content = inner.get("content", "")
         if (
             isinstance(content, str)
-            and "[Cozempic Guard: context was pruned." in content
+            and "[winnow Guard: context was pruned." in content
             and recovery_text in content
         ):
             return messages
@@ -1497,7 +1497,7 @@ def inject_team_recovery(messages: list[Message], state: TeamState) -> list[Mess
         "message": {
             "role": "user",
             "content": (
-                "[Cozempic Guard: context was pruned. Team state restored below "
+                "[winnow Guard: context was pruned. Team state restored below "
                 "for your reference — do not echo it back, just acknowledge briefly "
                 "and continue.]\n\n"
                 f"{recovery_text}"

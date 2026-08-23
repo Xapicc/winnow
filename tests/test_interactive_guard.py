@@ -107,7 +107,7 @@ class TestForceReloadPct(unittest.TestCase):
 
 class TestArmNudgeFromResult(unittest.TestCase):
     def setUp(self):
-        self.scratch = Path(tempfile.mkdtemp(prefix="cozempic_arm_"))
+        self.scratch = Path(tempfile.mkdtemp(prefix="winnow_arm_"))
 
     def tearDown(self):
         shutil.rmtree(self.scratch, ignore_errors=True)

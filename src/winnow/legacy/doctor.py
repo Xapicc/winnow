@@ -15,7 +15,7 @@ from pathlib import Path
 from .session import find_sessions, get_claude_dir, get_claude_json_path
 
 
-# Directory where cozempic writes runtime artifacts (.pid / .log / .lock files).
+# Directory where winnow writes runtime artifacts (.pid / .log / .lock files).
 # Exposed as a module-level constant so tests can redirect it to a tmpdir
 # without monkeypatching every glob call. Always points at POSIX /tmp today;
 # a future Windows port would swap this for tempfile.gettempdir().
@@ -144,7 +144,7 @@ def check_oversized_sessions() -> CheckResult:
         for s in sorted_large[:5]
     )
     cmds = "\n".join(
-        f"  cozempic treat {s['session_id'][:8]} -rx aggressive --execute"
+        f"  winnow treat {s['session_id'][:8]} -rx aggressive --execute"
         for s in sorted_large
     )
 
@@ -221,15 +221,15 @@ def check_disk_usage() -> CheckResult:
         name="disk-usage",
         status=status,
         message=f"{len(sessions)} sessions using {total / 1024 / 1024:.1f}MB total",
-        fix_description="Run: cozempic treat <session> -rx standard --execute" if status != "ok" else None,
+        fix_description="Run: winnow treat <session> -rx standard --execute" if status != "ok" else None,
     )
 
 
 # ─── stale-tmp-artifacts ─────────────────────────────────────────────────────
 # When a guard daemon exits (crash, `kill -9`, reboot) without going through
-# its normal shutdown path, it leaves behind a /tmp/cozempic_guard_*.pid file,
-# a paired /tmp/cozempic_guard_*.log, and — if the crash happened while a
-# SessionStart hook was running — a /tmp/cozempic_hook_*.lock.
+# its normal shutdown path, it leaves behind a /tmp/winnow_guard_*.pid file,
+# a paired /tmp/winnow_guard_*.log, and — if the crash happened while a
+# SessionStart hook was running — a /tmp/winnow_hook_*.lock.
 #
 # Existing cleanup is lazy and per-session: `_is_guard_running_for_session`
 # (guard.py:947) only unlinks a stale .pid when a *new* guard for the SAME
@@ -242,10 +242,10 @@ def check_disk_usage() -> CheckResult:
 # (guard.py:890,904 and cli.py:541,552) and the circuit-breaker state file
 # (overflow.py:41) which is designed to survive daemon restarts.
 _PROTECTED_TMP_NAMES = frozenset({
-    "cozempic_guard.log",
-    "cozempic_reload.log",
+    "winnow_guard.log",
+    "winnow_reload.log",
 })
-_PROTECTED_TMP_PREFIXES = ("cozempic_breaker_",)
+_PROTECTED_TMP_PREFIXES = ("winnow_breaker_",)
 
 
 def _is_protected_tmp_artifact(name: str) -> bool:
@@ -256,10 +256,10 @@ def _is_protected_tmp_artifact(name: str) -> bool:
 
 
 def _is_live_guard_pid(pid: int) -> bool:
-    """Return True when `pid` is both alive AND a cozempic guard process.
+    """Return True when `pid` is both alive AND a winnow guard process.
 
     Delegates process-argv verification to the canonical helper in guard.py
-    (`_is_cozempic_guard_process`) so PID-reuse defense stays in one place.
+    (`_is_winnow_guard_process`) so PID-reuse defense stays in one place.
     """
     import os as _os
 
@@ -267,8 +267,8 @@ def _is_live_guard_pid(pid: int) -> bool:
         _os.kill(pid, 0)
     except (ProcessLookupError, PermissionError, OSError):
         return False
-    from .guard import _is_cozempic_guard_process
-    return _is_cozempic_guard_process(pid)
+    from .guard import _is_winnow_guard_process
+    return _is_winnow_guard_process(pid)
 
 
 def _is_lock_held(lock_path: Path) -> bool:
@@ -306,7 +306,7 @@ def _is_lock_held(lock_path: Path) -> bool:
 
 
 def _classify_tmp_artifacts() -> tuple[list[Path], list[Path], list[Path]]:
-    """Scan `_TMP_DIR` and partition cozempic artifacts into three buckets:
+    """Scan `_TMP_DIR` and partition winnow artifacts into three buckets:
     stale .pid/.log files, orphan .lock files, and kept files (unused here
     but isolates the pure-IO from the status/message logic).
 
@@ -320,7 +320,7 @@ def _classify_tmp_artifacts() -> tuple[list[Path], list[Path], list[Path]]:
     pid_files: list[Path] = []
 
     try:
-        entries = list(_TMP_DIR.glob("cozempic_guard_*.pid"))
+        entries = list(_TMP_DIR.glob("winnow_guard_*.pid"))
     except OSError:
         entries = []
 
@@ -328,7 +328,7 @@ def _classify_tmp_artifacts() -> tuple[list[Path], list[Path], list[Path]]:
     for pid_path in entries:
         if _is_protected_tmp_artifact(pid_path.name):
             continue
-        slug = pid_path.stem[len("cozempic_guard_"):]  # strip prefix, keep before .pid
+        slug = pid_path.stem[len("winnow_guard_"):]  # strip prefix, keep before .pid
         # Tolerant parse: handles both legacy 1-line and new 3-line
         # pidfile formats (PR #93 item #5). Returns 0 on garble → we
         # classify as stale.
@@ -342,16 +342,16 @@ def _classify_tmp_artifacts() -> tuple[list[Path], list[Path], list[Path]]:
             stale_pids.append(pid_path)
         pid_files.append(pid_path)
 
-    pid_slugs = {p.stem[len("cozempic_guard_"):] for p in pid_files}
+    pid_slugs = {p.stem[len("winnow_guard_"):] for p in pid_files}
 
     try:
-        log_entries = list(_TMP_DIR.glob("cozempic_guard_*.log"))
+        log_entries = list(_TMP_DIR.glob("winnow_guard_*.log"))
     except OSError:
         log_entries = []
     for log_path in log_entries:
         if _is_protected_tmp_artifact(log_path.name):
             continue
-        slug = log_path.stem[len("cozempic_guard_"):]
+        slug = log_path.stem[len("winnow_guard_"):]
         if slug in live_slugs:
             continue  # paired with a live guard
         if slug in pid_slugs:
@@ -360,7 +360,7 @@ def _classify_tmp_artifacts() -> tuple[list[Path], list[Path], list[Path]]:
             orphan_logs.append(log_path)  # no pid file at all — orphan
 
     try:
-        lock_entries = list(_TMP_DIR.glob("cozempic_hook_*.lock"))
+        lock_entries = list(_TMP_DIR.glob("winnow_hook_*.lock"))
     except OSError:
         lock_entries = []
     for lock_path in lock_entries:
@@ -373,17 +373,17 @@ def _classify_tmp_artifacts() -> tuple[list[Path], list[Path], list[Path]]:
 
 
 def check_stale_tmp_artifacts() -> CheckResult:
-    """Detect accumulated cozempic runtime artifacts left behind by crashed
+    """Detect accumulated winnow runtime artifacts left behind by crashed
     or abnormally-terminated guard daemons.
 
     Surfaces three classes of artifact:
-      - stale /tmp/cozempic_guard_*.pid files whose PID is dead or not a
-        cozempic guard (PID-reuse safe via `_is_cozempic_guard_process`)
-      - /tmp/cozempic_guard_*.log files with no matching live guard
-      - /tmp/cozempic_hook_*.lock files not currently held by any flock
+      - stale /tmp/winnow_guard_*.pid files whose PID is dead or not a
+        winnow guard (PID-reuse safe via `_is_winnow_guard_process`)
+      - /tmp/winnow_guard_*.log files with no matching live guard
+      - /tmp/winnow_hook_*.lock files not currently held by any flock
 
-    Global append-only files (cozempic_guard.log, cozempic_reload.log) and
-    the circuit-breaker state file (cozempic_breaker_*.json) are ignored —
+    Global append-only files (winnow_guard.log, winnow_reload.log) and
+    the circuit-breaker state file (winnow_breaker_*.json) are ignored —
     those are intentionally persistent.
     """
     stale_pids, orphan_logs, orphan_locks = _classify_tmp_artifacts()
@@ -393,7 +393,7 @@ def check_stale_tmp_artifacts() -> CheckResult:
         return CheckResult(
             name="stale-tmp-artifacts",
             status="ok",
-            message="No stale cozempic artifacts in /tmp/",
+            message="No stale winnow artifacts in /tmp/",
         )
 
     # Size aggregate — helps surface the "96 log files" case.
@@ -1136,18 +1136,18 @@ def check_agent_model_mismatch() -> CheckResult:
     )
 
 
-def check_cozempic_daemon_running() -> CheckResult:
-    """Report whether a cozempic guard daemon is running for the current session.
+def check_winnow_daemon_running() -> CheckResult:
+    """Report whether a winnow guard daemon is running for the current session.
 
-    Verifies via `_is_cozempic_guard_process` (ps argv match) so a PID-reused
+    Verifies via `_is_winnow_guard_process` (ps argv match) so a PID-reused
     stranger process doesn't produce a false-positive "daemon running".
     """
     from pathlib import Path as _Path
     import os as _os, glob as _glob
-    from .guard import _is_cozempic_guard_process
+    from .guard import _is_winnow_guard_process
     from .spawn_lock import _parse_pidfile_pid
     pids_alive: list[int] = []
-    for pidf in _glob.glob("/tmp/cozempic_guard_*.pid"):
+    for pidf in _glob.glob("/tmp/winnow_guard_*.pid"):
         # Tolerant parse: handles both legacy 1-line and new 3-line
         # pidfile formats (PR #93 item #5). Returns 0 on garble.
         pid = _parse_pidfile_pid(_Path(pidf))
@@ -1158,38 +1158,38 @@ def check_cozempic_daemon_running() -> CheckResult:
         except OSError:
             continue
         # Verify this PID is actually our guard (not a PID-reused stranger)
-        if _is_cozempic_guard_process(pid):
+        if _is_winnow_guard_process(pid):
             pids_alive.append(pid)
     if pids_alive:
         return CheckResult(
-            name="cozempic-daemon-running",
+            name="winnow-daemon-running",
             status="ok",
             message=f"{len(pids_alive)} guard daemon(s) running (PIDs: {', '.join(str(p) for p in pids_alive[:5])})",
         )
     return CheckResult(
-        name="cozempic-daemon-running",
+        name="winnow-daemon-running",
         status="warning",
         message="No guard daemon is running. Background protection is inactive for this session.",
         fix_description=(
             "The daemon starts automatically on next Claude Code session via the "
-            "SessionStart hook. Start one now: `cozempic guard --daemon`."
+            "SessionStart hook. Start one now: `winnow guard --daemon`."
         ),
     )
 
 
-def check_cozempic_project_init() -> CheckResult:
-    """Check that the current working directory's .claude/ has cozempic hooks wired.
+def check_winnow_project_init() -> CheckResult:
+    """Check that the current working directory's .claude/ has winnow hooks wired.
 
-    Distinct from check_cozempic_hooks (which inspects ~/.claude/settings.json,
+    Distinct from check_winnow_hooks (which inspects ~/.claude/settings.json,
     user-global). This one verifies that the *current project* will start the
     guard daemon on its next session — the most common silent-failure mode
-    (user pip-installed cozempic but never ran `cozempic init` in this project).
+    (user pip-installed winnow but never ran `winnow init` in this project).
     """
     from pathlib import Path
     claude_dir = Path.cwd() / ".claude"
     if not claude_dir.exists():
         return CheckResult(
-            name="cozempic-project-init",
+            name="winnow-project-init",
             status="ok",
             message="Not a Claude project (no .claude/ in cwd) — skipping",
         )
@@ -1211,27 +1211,27 @@ def check_cozempic_project_init() -> CheckResult:
                 if not isinstance(entry, dict):
                     continue
                 for h in entry.get("hooks", []) or []:
-                    from .init import _is_cozempic_command
-                    if _is_cozempic_command(str(h.get("command", ""))):
+                    from .init import _is_winnow_command
+                    if _is_winnow_command(str(h.get("command", ""))):
                         found = True
                         break
 
     if found:
         return CheckResult(
-            name="cozempic-project-init",
+            name="winnow-project-init",
             status="ok",
-            message="Project is initialized — cozempic hooks present in .claude/",
+            message="Project is initialized — winnow hooks present in .claude/",
         )
     return CheckResult(
-        name="cozempic-project-init",
+        name="winnow-project-init",
         status="warning",
         message="Current project is NOT initialized. Guard daemon will not start on session.",
-        fix_description="Run: cozempic init (or run any cozempic command — auto-init wires it on first use)",
+        fix_description="Run: winnow init (or run any winnow command — auto-init wires it on first use)",
     )
 
 
-def check_cozempic_hooks() -> CheckResult:
-    """Check that all expected cozempic hooks are wired in settings.json.
+def check_winnow_hooks() -> CheckResult:
+    """Check that all expected winnow hooks are wired in settings.json.
 
     Verifies that SessionStart, PostToolUse, PreCompact, PostCompact, and Stop
     hooks are present. Missing hooks mean protection gaps — e.g., no PostCompact
@@ -1242,17 +1242,17 @@ def check_cozempic_hooks() -> CheckResult:
 
     if not settings_path.exists():
         return CheckResult(
-            name="cozempic-hooks",
+            name="winnow-hooks",
             status="warning",
             message="No ~/.claude/settings.json found — no hooks configured",
-            fix_description="Run: cozempic init",
+            fix_description="Run: winnow init",
         )
 
     try:
         settings = json.loads(settings_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError) as e:
         return CheckResult(
-            name="cozempic-hooks",
+            name="winnow-hooks",
             status="warning",
             message=f"Could not read settings.json: {e}",
         )
@@ -1263,27 +1263,27 @@ def check_cozempic_hooks() -> CheckResult:
 
     for event in expected:
         entries = hooks.get(event, [])
-        from .init import _is_cozempic_command
-        has_cozempic = any(
-            _is_cozempic_command(h.get("command", ""))
+        from .init import _is_winnow_command
+        has_winnow = any(
+            _is_winnow_command(h.get("command", ""))
             for entry in entries
             for h in entry.get("hooks", [])
         )
-        if not has_cozempic:
+        if not has_winnow:
             missing.append(event)
 
     if not missing:
         return CheckResult(
-            name="cozempic-hooks",
+            name="winnow-hooks",
             status="ok",
-            message="All cozempic hooks are wired (SessionStart, PreCompact, PostCompact, Stop)",
+            message="All winnow hooks are wired (SessionStart, PreCompact, PostCompact, Stop)",
         )
 
     return CheckResult(
-        name="cozempic-hooks",
+        name="winnow-hooks",
         status="warning",
-        message=f"Missing cozempic hooks: {', '.join(missing)}. Protection gaps exist.",
-        fix_description="Run: cozempic init",
+        message=f"Missing winnow hooks: {', '.join(missing)}. Protection gaps exist.",
+        fix_description="Run: winnow init",
     )
 
 
@@ -1430,7 +1430,7 @@ def check_unresumable_session() -> CheckResult:
     SIGTERM'd Claude Code mid-line) leaves a partial last line. Claude then
     can't parse the transcript: ``Failed to resume session <id>``. The torn line
     is data the writer never finished, so dropping it is safe and restores
-    resume. Ref: Ruya-AI/cozempic#147.
+    resume. Ref: Ruya-AI/winnow#147.
     """
     sessions = find_sessions()
     torn = []
@@ -1480,9 +1480,9 @@ def fix_unresumable_session() -> str:
 ALL_CHECKS: list[tuple[str, callable, callable | None]] = [
     ("trust-dialog-hang", check_trust_dialog_hang, fix_trust_dialog_hang),
     ("hooks-trust-flag", check_hooks_trust_flag, fix_hooks_trust_flag),
-    ("cozempic-hooks", check_cozempic_hooks, None),
-    ("cozempic-project-init", check_cozempic_project_init, None),
-    ("cozempic-daemon-running", check_cozempic_daemon_running, None),
+    ("winnow-hooks", check_winnow_hooks, None),
+    ("winnow-project-init", check_winnow_project_init, None),
+    ("winnow-daemon-running", check_winnow_daemon_running, None),
     ("claude-json-corruption", check_claude_json_corruption, fix_claude_json_corruption),
     ("corrupted-tool-use", check_corrupted_tool_use, fix_corrupted_tool_use),
     ("orphaned-tool-results", check_orphaned_tool_results, fix_orphaned_tool_results),

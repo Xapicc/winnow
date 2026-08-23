@@ -328,9 +328,9 @@ class TestGuardCycleGate(unittest.TestCase):
     """Integration: guard_prune_cycle must DEFER (not terminate) when unsafe."""
 
     def setUp(self):
-        self.tmpdir = Path(tempfile.mkdtemp(prefix="cozempic_sp_"))
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="winnow_sp_"))
         self.session_path = _make_session_file(self.tmpdir, 100_000)
-        self.scratch = Path(tempfile.mkdtemp(prefix="cozempic_tmproot_"))
+        self.scratch = Path(tempfile.mkdtemp(prefix="winnow_tmproot_"))
 
     def tearDown(self):
         shutil.rmtree(self.tmpdir, ignore_errors=True)

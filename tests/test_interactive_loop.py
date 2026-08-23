@@ -32,7 +32,7 @@ def _run_guard(token_estimate: int, env: dict, context_window: int = 200_000):
     from winnow.legacy import guard
     from winnow.legacy.team import TeamState
 
-    tmp = Path(tempfile.mkdtemp(prefix="cozempic_loop_"))
+    tmp = Path(tempfile.mkdtemp(prefix="winnow_loop_"))
     sess_path = tmp / "s.jsonl"
     sess_path.write_text("x" * 5000)  # constant size across cycles
     sess = {"session_id": "loopsess0001", "path": sess_path}
@@ -53,7 +53,7 @@ def _run_guard(token_estimate: int, env: dict, context_window: int = 200_000):
                 "original_tokens": 165_000, "final_tokens": 110_000}
 
     import os
-    e = {kk: vv for kk, vv in os.environ.items() if not kk.startswith("COZEMPIC")}
+    e = {kk: vv for kk, vv in os.environ.items() if not kk.startswith("WINNOW")}
     # Disable the warned-before-reload grace wait so these tests exercise the
     # idle-reload wiring directly (the warned-gate has its own dedicated tests).
     e.setdefault("WINNOW_RELOAD_WARN_GRACE", "0")

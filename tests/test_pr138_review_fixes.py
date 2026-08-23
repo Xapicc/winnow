@@ -88,8 +88,8 @@ class TestPersistedTokensSavedCallSite(unittest.TestCase):
     """
 
     def setUp(self):
-        self.tmpdir = Path(tempfile.mkdtemp(prefix="cozempic_m1_"))
-        self.scratch = Path(tempfile.mkdtemp(prefix="cozempic_m1_scr_"))
+        self.tmpdir = Path(tempfile.mkdtemp(prefix="winnow_m1_"))
+        self.scratch = Path(tempfile.mkdtemp(prefix="winnow_m1_scr_"))
         # Minimal session file — content doesn't matter, size does
         self.session_path = self.tmpdir / "session.jsonl"
         line = '{"type":"user","message":{"content":"' + "x" * 100 + '"}}\n'

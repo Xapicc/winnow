@@ -119,7 +119,7 @@ class TestSyncToMemdir(unittest.TestCase):
         with patch("winnow.legacy.digest._get_memdir", return_value=self.mem_dir):
             synced = sync_to_memdir(store)
         self.assertEqual(synced, 2)  # 2 active rules
-        digest_mem = self.mem_dir / "cozempic_digest.md"
+        digest_mem = self.mem_dir / "winnow_digest.md"
         self.assertTrue(digest_mem.exists())
         content = digest_mem.read_text()
         self.assertIn("type: feedback", content)
@@ -128,7 +128,7 @@ class TestSyncToMemdir(unittest.TestCase):
 
     def test_removes_file_when_no_active_rules(self):
         # Pre-create file
-        digest_mem = self.mem_dir / "cozempic_digest.md"
+        digest_mem = self.mem_dir / "winnow_digest.md"
         digest_mem.write_text("old content")
         store = DigestStore()
         with patch("winnow.legacy.digest._get_memdir", return_value=self.mem_dir):
@@ -184,7 +184,7 @@ class TestFlushRecover(unittest.TestCase):
             self.assertGreater(added + upvoted, 0)
             self.assertTrue(digest_file.exists())
             # Memdir should have been synced too (rule promoted to active via 2nd occurrence)
-            digest_mem = self.mem_dir / "cozempic_digest.md"
+            digest_mem = self.mem_dir / "winnow_digest.md"
             self.assertTrue(digest_mem.exists())
 
     def test_recover_syncs_to_memdir(self):
@@ -199,7 +199,7 @@ class TestFlushRecover(unittest.TestCase):
             save_digest_store(store)
             synced = recover_digest(project_dir="/test")
             self.assertGreater(synced, 0)
-            content = (self.mem_dir / "cozempic_digest.md").read_text()
+            content = (self.mem_dir / "winnow_digest.md").read_text()
             self.assertIn("Co-Authored-By", content)
 
     def test_full_cycle(self):
@@ -230,7 +230,7 @@ class TestFlushRecover(unittest.TestCase):
             self.assertGreater(len(store.active_rules()), 0)
 
             # Verify memdir synced
-            self.assertTrue((self.mem_dir / "cozempic_digest.md").exists())
+            self.assertTrue((self.mem_dir / "winnow_digest.md").exists())
 
             # Recover: re-sync (idempotent)
             synced = recover_digest(project_dir="/test")

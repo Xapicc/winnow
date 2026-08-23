@@ -168,9 +168,9 @@ class TestScanGuardLogs(unittest.TestCase):
         self._td.cleanup()
 
     def _write(self, sid, text, pid=None):
-        (self.dir / f"cozempic_guard_{sid}.log").write_text(text, encoding="utf-8")
+        (self.dir / f"winnow_guard_{sid}.log").write_text(text, encoding="utf-8")
         if pid is not None:
-            (self.dir / f"cozempic_guard_{sid}.pid").write_text(str(pid), encoding="utf-8")
+            (self.dir / f"winnow_guard_{sid}.pid").write_text(str(pid), encoding="utf-8")
 
     def test_flags_live_storm(self):
         self._write("aaa", _respawn_storm(), pid=4242)
@@ -219,8 +219,8 @@ class TestCliCommand(unittest.TestCase):
     def _run(self, fix=False, pid=4242):
         from types import SimpleNamespace
         from winnow.legacy.cli import cmd_guard_watchdog
-        (self.dir / "cozempic_guard_zzz.log").write_text(_respawn_storm(), encoding="utf-8")
-        (self.dir / "cozempic_guard_zzz.pid").write_text(str(pid), encoding="utf-8")
+        (self.dir / "winnow_guard_zzz.log").write_text(_respawn_storm(), encoding="utf-8")
+        (self.dir / "winnow_guard_zzz.pid").write_text(str(pid), encoding="utf-8")
         args = SimpleNamespace(fix=fix, log_dir=str(self.dir), loop_trip=20)
         return cmd_guard_watchdog(args)
 
@@ -231,12 +231,12 @@ class TestCliCommand(unittest.TestCase):
         self.assertEqual(cm.exception.code, 3)
 
     def test_fix_sends_sigterm(self):
-        """--fix SIGTERMs a pid confirmed as a cozempic guard (guard_confirmed=True)."""
+        """--fix SIGTERMs a pid confirmed as a winnow guard (guard_confirmed=True)."""
         killed = {}
         def fake_kill(pid, sig):
             killed["pid"], killed["sig"] = pid, sig
         with mock.patch("winnow.legacy.watchdog._pid_alive", lambda pid: True), \
-             mock.patch("winnow.legacy.guard._is_cozempic_guard_process", return_value=True), \
+             mock.patch("winnow.legacy.guard._is_winnow_guard_process", return_value=True), \
              mock.patch("os.kill", fake_kill):
             self._run(fix=True)
         self.assertEqual(killed.get("pid"), 4242)
@@ -248,7 +248,7 @@ class TestFixIdentityGate(unittest.TestCase):
 
     Confused-deputy scenario: guard exits hard (SIGKILL / OOM), pidfile is
     never unlinked, OS recycles the PID to an unrelated same-user process,
-    operator runs `cozempic guard-watchdog --fix`.  Without an identity gate,
+    operator runs `winnow guard-watchdog --fix`.  Without an identity gate,
     the innocent process is SIGTERMed.
 
     RED-at-base proof: before the fix, ``test_fix_refuses_to_kill_non_guard``
@@ -259,8 +259,8 @@ class TestFixIdentityGate(unittest.TestCase):
     def setUp(self):
         self._td = TemporaryDirectory()
         self.dir = Path(self._td.name)
-        (self.dir / "cozempic_guard_zzz.log").write_text(_respawn_storm(), encoding="utf-8")
-        (self.dir / "cozempic_guard_zzz.pid").write_text("7777", encoding="utf-8")
+        (self.dir / "winnow_guard_zzz.log").write_text(_respawn_storm(), encoding="utf-8")
+        (self.dir / "winnow_guard_zzz.pid").write_text("7777", encoding="utf-8")
 
     def tearDown(self):
         self._td.cleanup()
@@ -275,7 +275,7 @@ class TestFixIdentityGate(unittest.TestCase):
             killed["pid"], killed["sig"] = pid, sig
 
         with mock.patch("winnow.legacy.watchdog._pid_alive", return_value=True), \
-             mock.patch("winnow.legacy.guard._is_cozempic_guard_process", return_value=is_guard), \
+             mock.patch("winnow.legacy.guard._is_winnow_guard_process", return_value=is_guard), \
              mock.patch("os.kill", fake_kill):
             args = SimpleNamespace(fix=True, log_dir=str(self.dir), loop_trip=20)
             try:
@@ -297,7 +297,7 @@ class TestFixIdentityGate(unittest.TestCase):
                          "confused-deputy bug: the identity gate is missing")
 
     def test_fix_kills_confirmed_guard(self):
-        """A pid confirmed as a cozempic guard MUST receive SIGTERM under --fix."""
+        """A pid confirmed as a winnow guard MUST receive SIGTERM under --fix."""
         killed = self._run_fix(is_guard=True)
         self.assertEqual(killed.get("pid"), 7777)
         self.assertEqual(killed.get("sig"), signal.SIGTERM)

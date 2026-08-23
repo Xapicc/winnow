@@ -1,4 +1,4 @@
-"""CLI interface for Cozempic."""
+"""CLI interface for winnow."""
 
 from __future__ import annotations
 
@@ -180,7 +180,7 @@ def print_strategy_result(sr: StrategyResult, total_bytes: int):
 def print_prescription_result(pr: PrescriptionResult):
     saved = pr.original_total_bytes - pr.final_total_bytes
 
-    print(f"\n  Cozempic — {pr.prescription_name} prescription\n")
+    print(f"\n  winnow — {pr.prescription_name} prescription\n")
 
     if pr.original_tokens is not None and pr.final_tokens is not None:
         tok_saved = pr.original_tokens - pr.final_tokens
@@ -249,7 +249,7 @@ def cmd_list(args):
 
 def _auto_heal_session(path):
     """#147: silently repair a torn trailing line on an IDLE (dead) session so a
-    user troubleshooting a 'Failed to resume' just by running a cozempic command
+    user troubleshooting a 'Failed to resume' just by running a winnow command
     auto-recovers — without ever racing a live write (gated on mtime staleness).
     Best-effort; never raises."""
     try:
@@ -647,7 +647,7 @@ def cmd_reload(args):
     """Treat the current session, then spawn a watcher that auto-resumes Claude.
 
     Wave 2: acquires a single-flight `_ReloadLock` to prevent two reload
-    pipelines from running concurrently (manual `cozempic reload` + the
+    pipelines from running concurrently (manual `winnow reload` + the
     guard daemon's auto-fire at 55%/80% thresholds, or `OverflowRecovery`).
     Without this lock, both spawn watchers, both osascript new terminals,
     both try to `claude --resume` the same session → session conflict.
@@ -672,8 +672,8 @@ def cmd_reload(args):
     if not sess:
         print("Could not detect current session.", file=sys.stderr)
         print("Cannot determine session unambiguously — pass one explicitly:", file=sys.stderr)
-        print("  cozempic reload --session <uuid-or-path> -rx <prescription>", file=sys.stderr)
-        print("Use 'cozempic list' to find the session ID.", file=sys.stderr)
+        print("  winnow reload --session <uuid-or-path> -rx <prescription>", file=sys.stderr)
+        print("Use 'winnow list' to find the session ID.", file=sys.stderr)
         sys.exit(1)
 
     # User is taking manual control of the reload — clear any armed-reload
@@ -884,7 +884,7 @@ def cmd_reload(args):
 
         # Step 2: Generate recap from the pruned messages
         import tempfile
-        recap_path = Path(tempfile.gettempdir()) / f"cozempic_recap_{sess['session_id'][:8]}.txt"
+        recap_path = Path(tempfile.gettempdir()) / f"winnow_recap_{sess['session_id'][:8]}.txt"
         save_recap(new_messages, recap_path)
         print(f"  Recap saved to {recap_path}")
 
@@ -959,7 +959,7 @@ def _spawn_watcher(claude_pid: int, project_dir: str, recap_path: Path | None = 
             f"gnome-terminal -- bash -c '{inner_cmd}'; "
             f"elif command -v xterm >/dev/null 2>&1; then "
             f"xterm -e '{inner_cmd}' & "
-            f"else echo 'No terminal emulator found' >> /tmp/cozempic_reload.log; fi"
+            f"else echo 'No terminal emulator found' >> /tmp/winnow_reload.log; fi"
         )
     else:
         print(f"  WARNING: Auto-resume not supported on {system}.")
@@ -970,7 +970,7 @@ def _spawn_watcher(claude_pid: int, project_dir: str, recap_path: Path | None = 
         f"while kill -0 {claude_pid} 2>/dev/null; do sleep 1; done; "
         f"sleep 1; "
         f"{resume_cmd}; "
-        f"echo \"$(date): Cozempic resumed Claude in {project_dir}\" >> /tmp/cozempic_reload.log"
+        f"echo \"$(date): winnow resumed Claude in {project_dir}\" >> /tmp/winnow_reload.log"
     )
 
     subprocess.Popen(
@@ -1102,7 +1102,7 @@ def cmd_guard_watchdog(args):
     A process safeguard outside the daemon: an OLD or broken guard that fails to
     self-arrest (the f641174c / PilotCC reload-loop) keeps spinning until killed.
     This reads the guard logs and flags the loop signature. ``--fix`` SIGTERMs a
-    LIVE looping daemon that has been IDENTITY-VERIFIED as a cozempic guard
+    LIVE looping daemon that has been IDENTITY-VERIFIED as a winnow guard
     process; without that check, a recycled PID (kernel reuse after hard exit)
     could be an innocent unrelated process. The default mode is report-only.
     """
@@ -1114,7 +1114,7 @@ def cmd_guard_watchdog(args):
     loop_trip = getattr(args, "loop_trip", None) or 20
     hits = scan_guard_logs(log_dir, loop_trip=loop_trip)
 
-    print("\n  COZEMPIC GUARD-LOOP WATCHDOG")
+    print("\n  WINNOW GUARD-LOOP WATCHDOG")
     print("  ═══════════════════════════════════════════════════════════════════")
     print(f"  Scanned: {log_dir}")
     if not hits:
@@ -1137,7 +1137,7 @@ def cmd_guard_watchdog(args):
             except (ProcessLookupError, PermissionError, OSError) as e:
                 print(f"      ! could not signal pid {h.pid}: {e}")
         elif getattr(args, "fix", False) and h.pid_alive and h.pid:
-            print(f"      → pid {h.pid} is alive but is NOT a cozempic guard "
+            print(f"      → pid {h.pid} is alive but is NOT a winnow guard "
                   f"(recycled?) — refusing to kill")
         elif h.pid_alive:
             print(f"      → re-run with --fix to terminate this looping daemon "
@@ -1169,7 +1169,7 @@ def cmd_doctor(args):
 
     results = run_doctor(fix=args.fix)
 
-    print("\n  COZEMPIC DOCTOR")
+    print("\n  WINNOW DOCTOR")
     print("  ═══════════════════════════════════════════════════════════════════")
     print()
 
@@ -1200,14 +1200,14 @@ def cmd_doctor(args):
     elif issues or warnings:
         print(f"  Summary: {issues} issue(s), {warnings} warning(s)")
         if not args.fix:
-            print("  Run 'cozempic doctor --fix' to auto-fix where possible.")
+            print("  Run 'winnow doctor --fix' to auto-fix where possible.")
     else:
         print("  All clear — no issues found.")
     print()
 
 
 def cmd_uninstall(args):
-    """Reverse `cozempic init` — remove hooks, the slash command, and markers.
+    """Reverse `winnow init` — remove hooks, the slash command, and markers.
 
     Default scope is GLOBAL (~/.claude). Keeps the user's data (savings ledger,
     receipts) unless --purge. Sets the auto-init opt-out so init won't re-wire.
@@ -1217,7 +1217,7 @@ def cmd_uninstall(args):
     scope = "all" if getattr(args, "all", False) else ("project" if getattr(args, "project", False) else "global")
     purge = getattr(args, "purge", False)
 
-    print("\n  COZEMPIC UNINSTALL")
+    print("\n  WINNOW UNINSTALL")
     print("  ═══════════════════════════════════════════════════════════════════")
     print(f"  Scope: {scope}" + ("  (+ purge data)" if purge else ""))
 
@@ -1225,7 +1225,7 @@ def cmd_uninstall(args):
         prev = preview_uninstall(scope, purge)
         print("  Dry run — nothing will be changed.\n")
         print(f"    Hooks would be removed from: {prev['hooks_in'] or '(none)'}")
-        print(f"    Slash command (~/.claude/commands/cozempic.md): "
+        print(f"    Slash command (~/.claude/commands/winnow.md): "
               f"{'remove' if prev['slash_command'] else '(not present / not ours)'}")
         print(f"    Remind counter: {'remove' if prev['remind_counter'] else '(none)'}")
         if purge:
@@ -1234,7 +1234,7 @@ def cmd_uninstall(args):
         return
 
     if purge:
-        print("  --purge will DELETE your savings ledger + receipts (~/.cozempic). This is irreversible.")
+        print("  --purge will DELETE your savings ledger + receipts (~/.winnow). This is irreversible.")
         try:
             if input("  Continue? [y/N] ").strip().lower() != "y":
                 print("  Aborted.\n")
@@ -1255,22 +1255,22 @@ def cmd_uninstall(args):
         print(f"  Removed slash command: {sc['path']}"
               + (f"  (backup: {sc['backup_path']})" if sc.get("backup_path") else ""))
     elif sc and sc.get("skipped_foreign"):
-        print(f"  Left {sc['path']} in place (not a cozempic command).")
+        print(f"  Left {sc['path']} in place (not a winnow command).")
     if result.get("purged"):
         print(f"  Purged data: {', '.join(result['purged'])}")
     if result.get("opt_out_set"):
-        print("  Auto-init disabled. Re-run `cozempic init` to reinstall.")
+        print("  Auto-init disabled. Re-run `winnow init` to reinstall.")
     print()
 
 
 def cmd_init(args):
-    """Wire cozempic hooks and slash command into the current project (or globally)."""
+    """Wire winnow hooks and slash command into the current project (or globally)."""
     if getattr(args, "uninstall_global", False):
-        # Deprecated alias → `cozempic uninstall --global`.
-        print("  Note: `init --uninstall-global` is deprecated; use `cozempic uninstall`.", file=sys.stderr)
+        # Deprecated alias → `winnow uninstall --global`.
+        print("  Note: `init --uninstall-global` is deprecated; use `winnow uninstall`.", file=sys.stderr)
         from .init import uninstall_hooks
         result = uninstall_hooks(str(Path.home()))
-        print("\n  COZEMPIC INIT — UNINSTALL GLOBAL")
+        print("\n  WINNOW INIT — UNINSTALL GLOBAL")
         print("  ═══════════════════════════════════════════════════════════════════")
         if result.get("removed"):
             print(f"  Removed {len(result['removed'])} hook(s) from {result['settings_path']}")
@@ -1279,7 +1279,7 @@ def cmd_init(args):
             if result.get("backup_path"):
                 print(f"  Backup: {result['backup_path']}")
         else:
-            print("  No cozempic hooks found in ~/.claude/settings.json — nothing to remove.")
+            print("  No winnow hooks found in ~/.claude/settings.json — nothing to remove.")
         # Mark as opted-out so global auto-init doesn't re-fire
         try:
             _GLOBAL_INIT_MARKER.touch()
@@ -1295,7 +1295,7 @@ def cmd_init(args):
         project_dir = args.cwd or os.getcwd()
         scope_label = f"Project: {project_dir}"
 
-    print(f"\n  COZEMPIC INIT")
+    print(f"\n  WINNOW INIT")
     print(f"  ═══════════════════════════════════════════════════════════════════")
     print(f"  {scope_label}")
     print()
@@ -1328,16 +1328,16 @@ def cmd_init(args):
         for h in hooks["skipped"]:
             print(f"    ~ {h} (current, skipped)")
 
-    # #158: if cozempic is running from a throwaway env (uvx / uv run), the path
+    # #158: if winnow is running from a throwaway env (uvx / uv run), the path
     # baked into the hooks won't exist next session, so the guard daemon can't
     # auto-start. Warn loudly and point at a persistent install.
     if hooks.get("ephemeral"):
         print()
-        print("  ⚠ cozempic is running from an EPHEMERAL environment (e.g. `uvx`).")
+        print("  ⚠ winnow is running from an EPHEMERAL environment (e.g. `uvx`).")
         print("    The guard daemon will NOT auto-start on the next session — the hook")
-        print("    can't find cozempic. Install persistently so it lands on PATH:")
+        print("    can't find winnow. Install persistently so it lands on PATH:")
         print("        uv tool install cozempic")
-        print("    then re-run `cozempic init`.")
+        print("    then re-run `winnow init`.")
 
     print()
 
@@ -1345,10 +1345,10 @@ def cmd_init(args):
     slash = result["slash_command"]
     if slash.get("updated"):
         print(f"  Slash command: updated → {slash['path']}")
-        print(f"  Use /cozempic in any Claude Code session to diagnose and treat.")
+        print(f"  Use /winnow in any Claude Code session to diagnose and treat.")
     elif slash["installed"]:
         print(f"  Slash command: installed → {slash['path']}")
-        print(f"  Use /cozempic in any Claude Code session to diagnose and treat.")
+        print(f"  Use /winnow in any Claude Code session to diagnose and treat.")
     elif slash["already_existed"]:
         print(f"  Slash command: up-to-date at {slash['path']}")
     elif not args.no_slash_command:
@@ -1369,7 +1369,7 @@ def cmd_init(args):
 
 
 def cmd_self_update(args):
-    """Force-upgrade cozempic from PyPI regardless of install method."""
+    """Force-upgrade winnow from PyPI regardless of install method."""
     from .updater import _get_latest_version, _do_upgrade, _version_tuple
     from . import __version__
 
@@ -1379,12 +1379,12 @@ def cmd_self_update(args):
         sys.exit(1)
 
     if _version_tuple(latest) <= _version_tuple(__version__):
-        print(f"  Cozempic v{__version__} is already the latest.")
+        print(f"  winnow v{__version__} is already the latest.")
         return
 
     print(f"  Upgrading {__version__} → {latest}...")
     if _do_upgrade(latest):
-        print(f"  Cozempic v{latest} installed. Restart to use the new version.")
+        print(f"  winnow v{latest} installed. Restart to use the new version.")
     else:
         print(f"  Upgrade failed. Try: pip install --upgrade cozempic")
         sys.exit(1)
@@ -1404,7 +1404,7 @@ def _build_nudge_message(tier_key: int, pct: float, proj: float | None,
     reload then."""
     pct_disp = int(round(pct * 100))
     if tier_key <= 25:
-        return (f"✦ Cozempic: context {pct_disp}%. Optional — `/cozempic reload` does a "
+        return (f"✦ winnow: context {pct_disp}%. Optional — `/winnow reload` does a "
                 f"lossless prune+resume at any breakpoint (higher fidelity than autocompact).")
     reclaim = f"reclaims ~{int(round(proj))}% by pruning bloat" if proj else "prunes bloat"
     # When agents/tools are in flight, the safe-point gate holds the reload until
@@ -1412,22 +1412,22 @@ def _build_nudge_message(tier_key: int, pct: float, proj: float | None,
     when = ("the guard auto-reloads once your current agents/tools finish"
             if inflight else "the guard auto-reloads once you pause between turns")
     if tier_key <= 55:
-        return (f"✦ Cozempic: you're at {pct_disp}% context. A safe reload {reclaim} and "
+        return (f"✦ winnow: you're at {pct_disp}% context. A safe reload {reclaim} and "
                 f"resumes automatically (conversation preserved). Your call:\n"
-                f"    • run `/cozempic reload` now to control the timing, or\n"
+                f"    • run `/winnow reload` now to control the timing, or\n"
                 f"    • do nothing — {when}.")
     reclaim80 = (f"reclaims ~{int(round(proj))}% without loss" if proj
                  else "prunes bloat without losing your conversation")
-    tail = ("Run `/cozempic reload` now to pick the moment, or it reloads once your "
+    tail = ("Run `/winnow reload` now to pick the moment, or it reloads once your "
             "agents/tools finish." if inflight else
-            "Run `/cozempic reload` now to pick the moment or wait for the autoreload to kick in.")
-    return (f"✦ Cozempic: context {pct_disp}% — approaching the autocompact wall. A reload "
+            "Run `/winnow reload` now to pick the moment or wait for the autoreload to kick in.")
+    return (f"✦ winnow: context {pct_disp}% — approaching the autocompact wall. A reload "
             f"{reclaim80}. {tail}")
 
 
 def cmd_nudge(args):
     """Stop-hook: emit a non-blocking systemMessage nudging the user to
-    `/cozempic reload` at 25/55/80% context, ONCE per tier. Takes NO action — no
+    `/winnow reload` at 25/55/80% context, ONCE per tier. Takes NO action — no
     prune, no reload, never blocks the stop, never fed to the model. Always exit 0.
     """
     import json as _json
@@ -1484,7 +1484,7 @@ def cmd_nudge(args):
     # Once-per-tier latch with re-arm: drop tiers we've fallen BELOW (so they
     # re-fire on a later re-cross), persist that drop in EVERY path, then fire the
     # current tier only if not already latched.
-    state_file = Path.home() / ".claude" / "cozempic-metrics" / "nudge-state.json"
+    state_file = Path.home() / ".claude" / "winnow-metrics" / "nudge-state.json"
     try:
         state = _json.loads(state_file.read_text()) if state_file.exists() else {}
     except Exception:
@@ -1569,7 +1569,7 @@ def cmd_remind(args):
     Claude's context, keeping rules in the recency window.
     """
     interval = int(getattr(args, "interval", None) or 25)
-    counter_file = Path.home() / ".cozempic_remind_counter"
+    counter_file = Path.home() / ".winnow_remind_counter"
 
     # Increment counter
     try:
@@ -1618,7 +1618,7 @@ def cmd_remind(args):
             break
 
     if lines:
-        print(f"Cozempic behavioral rules (reminder #{count // interval}):", file=sys.stderr)
+        print(f"winnow behavioral rules (reminder #{count // interval}):", file=sys.stderr)
         for line in lines[:8]:
             print(line, file=sys.stderr)
 
@@ -1633,7 +1633,7 @@ def cmd_completions(args):
 
 
 def cmd_formulary(args):
-    print("\n  COZEMPIC FORMULARY")
+    print("\n  WINNOW FORMULARY")
     print("  ═══════════════════════════════════════════════════════════════════")
     print()
     print("  Strategies:")
@@ -1650,10 +1650,10 @@ def cmd_formulary(args):
     print()
 
     print("  Usage:")
-    print("    cozempic treat <session> -rx gentle      # Safe, minimal pruning")
-    print("    cozempic treat <session> -rx standard     # Recommended (default)")
-    print("    cozempic treat <session> -rx aggressive   # Maximum savings")
-    print("    cozempic treat <session> --execute        # Apply (default is dry-run)")
+    print("    winnow treat <session> -rx gentle      # Safe, minimal pruning")
+    print("    winnow treat <session> -rx standard     # Recommended (default)")
+    print("    winnow treat <session> -rx aggressive   # Maximum savings")
+    print("    winnow treat <session> --execute        # Apply (default is dry-run)")
     print()
 
 
@@ -1869,7 +1869,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_guard.add_argument("--no-reload", action="store_true", help="Prune without auto-reload at hard threshold")
     p_guard.add_argument("--no-reactive", action="store_true", help="Disable reactive overflow recovery (kqueue/polling watcher)")
     p_guard.add_argument("--daemon", action="store_true", help="Run in background (PID file prevents double-starts)")
-    p_guard.add_argument("--reload-self", action="store_true", help="Gracefully restart the running daemon for this session (used after upgrading cozempic in place)")
+    p_guard.add_argument("--reload-self", action="store_true", help="Gracefully restart the running daemon for this session (used after upgrading winnow in place)")
     p_guard.add_argument("--session", help="Explicit session ID or path (bypasses auto-detection)")
     p_guard.add_argument("--claude-pid", type=int, default=None, help=argparse.SUPPRESS)
     p_guard.add_argument("--system-overhead-tokens", type=int, default=None, help="Override system overhead token estimate (default: 21000). Increase for heavy configs with many rules files, MCP servers, or large CLAUDE.md")
@@ -1879,14 +1879,14 @@ def build_parser() -> argparse.ArgumentParser:
     # init
     p_init = sub.add_parser("init", help="Auto-wire hooks and slash command into this project (or globally with --global)")
     p_init.add_argument("--cwd", help="Project directory (default: current)")
-    p_init.add_argument("--no-slash-command", action="store_true", help="Skip installing /cozempic slash command")
+    p_init.add_argument("--no-slash-command", action="store_true", help="Skip installing /winnow slash command")
     p_init.add_argument("--global", dest="global_install", action="store_true", help="Wire hooks into ~/.claude/settings.json so every Claude Code session in every project is protected")
-    p_init.add_argument("--uninstall-global", action="store_true", help="(deprecated) use `cozempic uninstall`")
+    p_init.add_argument("--uninstall-global", action="store_true", help="(deprecated) use `winnow uninstall`")
 
-    p_uninstall = sub.add_parser("uninstall", help="Reverse `cozempic init` — remove hooks, slash command, markers (global by default)")
+    p_uninstall = sub.add_parser("uninstall", help="Reverse `winnow init` — remove hooks, slash command, markers (global by default)")
     p_uninstall.add_argument("--project", action="store_true", help="Uninstall from THIS project's .claude/settings.json (default is global ~/.claude)")
     p_uninstall.add_argument("--all", action="store_true", help="Uninstall from both global and project")
-    p_uninstall.add_argument("--purge", action="store_true", help="ALSO delete ~/.cozempic data + savings ledger (irreversible; prompts)")
+    p_uninstall.add_argument("--purge", action="store_true", help="ALSO delete ~/.winnow data + savings ledger (irreversible; prompts)")
     p_uninstall.add_argument("--dry-run", action="store_true", help="Show what would be removed without changing anything")
 
     # doctor
@@ -1910,7 +1910,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_comp.add_argument("shell", choices=["bash", "zsh"], help="Shell type")
 
     # self-update
-    sub.add_parser("self-update", help="Upgrade cozempic to the latest version from PyPI")
+    sub.add_parser("self-update", help="Upgrade winnow to the latest version from PyPI")
 
     # remind
     p_remind = sub.add_parser("remind", help="Output active behavioral rules (for PostToolUse hook)")
@@ -2036,14 +2036,14 @@ _AUTO_INIT_SKIP_CMDS = frozenset({
     "nudge",         # Stop-hook protocol command; never mutate state as a side effect
     "guard-watchdog",  # read-only log scan; never mutate project state
     "uninstall",     # the whole point is to REMOVE wiring — must never auto-init
-    "dashboard",     # report-only; reads/writes only ~/.cozempic, never project state
+    "dashboard",     # report-only; reads/writes only ~/.winnow, never project state
 })
 
-_GLOBAL_INIT_MARKER = Path.home() / ".cozempic_global_initialized"
+_GLOBAL_INIT_MARKER = Path.home() / ".winnow_global_initialized"
 
 
 def _prompt_with_timeout(msg: str, timeout: int = 30, default: str = "n") -> str:
-    """input() wrapped with a hard timeout so we never hang a cozempic invocation.
+    """input() wrapped with a hard timeout so we never hang a winnow invocation.
 
     Returns `default` on timeout, EOF, or Ctrl-C. TTY-detection should have
     already been done by the caller; this is a belt-and-suspenders guard
@@ -2088,16 +2088,16 @@ def _prompt_with_timeout(msg: str, timeout: int = 30, default: str = "n") -> str
 
 
 def _maybe_global_init(argv: list[str]) -> None:
-    """Wire cozempic into ~/.claude/settings.json on first cozempic invocation
+    """Wire winnow into ~/.claude/settings.json on first winnow invocation
     on this machine — guarantees protection for every Claude Code session in
-    every project, including projects the user has never run cozempic in.
+    every project, including projects the user has never run winnow in.
 
     Bail-outs (in order):
       1. WINNOW_NO_GLOBAL_INIT=1 in env (also set by --no-global-init)
       2. Marker file exists (already done once)
       3. Subcommand is in _AUTO_INIT_SKIP_CMDS
       4. ~/.claude/ doesn't exist (Claude Code not installed yet)
-      5. Cozempic hooks are already in ~/.claude/settings.json (e.g. plugin
+      5. winnow hooks are already in ~/.claude/settings.json (e.g. plugin
          marketplace install)
 
     Otherwise: writes hooks (skip slash command — project-level only) and
@@ -2118,7 +2118,7 @@ def _maybe_global_init(argv: list[str]) -> None:
 
     # Trigger conditions:
     #   - any subcommand not in the skip list, OR
-    #   - bare `cozempic --version` (the canonical post-install verification check)
+    #   - bare `winnow --version` (the canonical post-install verification check)
     if cmd in _AUTO_INIT_SKIP_CMDS:
         return
     if cmd is None and not is_version_check:
@@ -2128,7 +2128,7 @@ def _maybe_global_init(argv: list[str]) -> None:
     if not home_claude.exists():
         return  # Claude Code not yet installed — defer until it is
 
-    if _project_is_cozempic_current(home_claude):
+    if _project_is_winnow_current(home_claude):
         # Already wired (probably via plugin marketplace install). Mark as done.
         try:
             _GLOBAL_INIT_MARKER.touch()
@@ -2144,12 +2144,12 @@ def _maybe_global_init(argv: list[str]) -> None:
     if interactive:
         try:
             print(
-                "\n  Cozempic — enable background protection for every Claude Code session?",
+                "\n  winnow — enable background protection for every Claude Code session?",
                 file=sys.stderr,
             )
             print(
                 "  Wires hooks into ~/.claude/settings.json. Reverse any time with "
-                "`cozempic init --uninstall-global`.",
+                "`winnow init --uninstall-global`.",
                 file=sys.stderr,
             )
             response = _prompt_with_timeout("  Enable? [Y/n] ", timeout=30, default="n")
@@ -2164,7 +2164,7 @@ def _maybe_global_init(argv: list[str]) -> None:
             except OSError:
                 pass
             print(
-                "  Skipped. Run `cozempic init --global` later if you change your mind.\n",
+                "  Skipped. Run `winnow init --global` later if you change your mind.\n",
                 file=sys.stderr,
             )
             return
@@ -2173,16 +2173,16 @@ def _maybe_global_init(argv: list[str]) -> None:
         result = run_init(str(Path.home()), skip_slash=True)
     except Exception as exc:
         # Touch the marker even on failure — prevents a DoS loop where every
-        # single cozempic invocation re-attempts a failing run_init and spams
-        # stderr. User can `rm ~/.cozempic_global_initialized` to retry after
+        # single winnow invocation re-attempts a failing run_init and spams
+        # stderr. User can `rm ~/.winnow_global_initialized` to retry after
         # addressing the underlying problem (read-only file, permissions, etc).
         try:
             _GLOBAL_INIT_MARKER.touch()
         except OSError:
             pass
         print(
-            f"  Cozempic: global init failed ({exc}). Run `cozempic init --global` manually "
-            "after fixing; `rm ~/.cozempic_global_initialized` to re-ask on next invocation.",
+            f"  winnow: global init failed ({exc}). Run `winnow init --global` manually "
+            "after fixing; `rm ~/.winnow_global_initialized` to re-ask on next invocation.",
             file=sys.stderr,
         )
         return
@@ -2194,9 +2194,9 @@ def _maybe_global_init(argv: list[str]) -> None:
 
     if load_error:
         # Don't claim we "enabled" anything we didn't actually install. Do NOT
-        # touch the marker — let the user retry after `cozempic self-update`.
+        # touch the marker — let the user retry after `winnow self-update`.
         print(
-            f"  Cozempic: global init FAILED — {load_error}",
+            f"  winnow: global init FAILED — {load_error}",
             file=sys.stderr,
         )
         return
@@ -2218,38 +2218,38 @@ def _maybe_global_init(argv: list[str]) -> None:
 
     if interactive:
         print(
-            f"  Cozempic enabled — {summary} hook(s) wired into ~/.claude/settings.json.",
+            f"  winnow enabled — {summary} hook(s) wired into ~/.claude/settings.json.",
             file=sys.stderr,
         )
         print(
-            "  Disable any time with `cozempic init --uninstall-global` "
+            "  Disable any time with `winnow init --uninstall-global` "
             "or WINNOW_NO_GLOBAL_INIT=1.\n",
             file=sys.stderr,
         )
     else:
         print(
-            f"  Cozempic: protecting every Claude Code session globally "
+            f"  winnow: protecting every Claude Code session globally "
             f"({summary} hook(s) wired into ~/.claude/settings.json). "
-            "Disable with `cozempic init --uninstall-global` or WINNOW_NO_GLOBAL_INIT=1.",
+            "Disable with `winnow init --uninstall-global` or WINNOW_NO_GLOBAL_INIT=1.",
             file=sys.stderr,
         )
 
 
-def _project_is_cozempic_current(claude_dir: Path) -> bool:
+def _project_is_winnow_current(claude_dir: Path) -> bool:
     """Predicate: "should we leave this settings dir alone?"
 
     Returns True iff the settings files (settings.json + settings.local.json)
-    already have cozempic hooks AT THE CURRENT SCHEMA VERSION and none are
+    already have winnow hooks AT THE CURRENT SCHEMA VERSION and none are
     stale. Returns False when refresh OR initial install is needed.
 
-    NOTE: This is a "do nothing" predicate, not a "has any cozempic config"
-    query. If one file is current and another has stale cozempic hooks, we
+    NOTE: This is a "do nothing" predicate, not a "has any winnow config"
+    query. If one file is current and another has stale winnow hooks, we
     return False so wire_hooks is called and refreshes the stale one.
     """
     import json as _json
-    from .init import _is_cozempic_command, HOOK_SCHEMA_MARKER
+    from .init import _is_winnow_command, HOOK_SCHEMA_MARKER
 
-    any_cozempic_found = False
+    any_winnow_found = False
     for name in ("settings.json", "settings.local.json"):
         p = claude_dir / name
         if not p.exists():
@@ -2273,26 +2273,26 @@ def _project_is_cozempic_current(claude_dir: Path) -> bool:
                     if not isinstance(h, dict):
                         continue
                     cmd = str(h.get("command", ""))
-                    if not _is_cozempic_command(cmd):
+                    if not _is_winnow_command(cmd):
                         continue
-                    any_cozempic_found = True
-                    # Any non-current cozempic hook (missing or stale marker)
+                    any_winnow_found = True
+                    # Any non-current winnow hook (missing or stale marker)
                     # means a refresh is due.
                     if HOOK_SCHEMA_MARKER not in cmd:
                         return False
 
-    return any_cozempic_found
+    return any_winnow_found
 
 
 def _maybe_auto_init(argv: list[str]) -> None:
-    """Auto-wire cozempic into the current Claude project on first use.
+    """Auto-wire winnow into the current Claude project on first use.
 
     Bail-outs (in order):
       1. WINNOW_NO_AUTO_INIT=1 in env (also set by --no-auto-init via _prescan_argv)
       2. cwd has no .claude/ directory (not a Claude project)
       3. Subcommand is in _AUTO_INIT_SKIP_CMDS or no subcommand was given
       4. Global hooks are current in ~/.claude/settings.json (local would be redundant)
-      5. Cozempic hooks are already wired in this project's settings
+      5. winnow hooks are already wired in this project's settings
 
     Otherwise: runs init silently and prints a single one-line notice to stderr.
     Failures are non-fatal — the user's original command still runs.
@@ -2312,25 +2312,25 @@ def _maybe_auto_init(argv: list[str]) -> None:
     # Guard: if cwd IS the home dir, home_claude == claude_dir -- fall through
     # to the normal local check instead.
     home_claude = Path.home() / ".claude"
-    if home_claude != claude_dir and _project_is_cozempic_current(home_claude):
+    if home_claude != claude_dir and _project_is_winnow_current(home_claude):
         # Warn if redundant local hooks are also present.
-        if _project_is_cozempic_current(claude_dir):
+        if _project_is_winnow_current(claude_dir):
             print(
-                "  Cozempic: local hooks redundant (global hooks active) — "
+                "  winnow: local hooks redundant (global hooks active) — "
                 "they are harmless but can be removed from this project's "
                 ".claude/settings.json.",
                 file=sys.stderr,
             )
         return
 
-    if _project_is_cozempic_current(claude_dir):
+    if _project_is_winnow_current(claude_dir):
         return  # already initialized
 
     try:
         result = run_init(str(Path.cwd()))
     except Exception as exc:
         print(
-            f"  Cozempic: auto-init skipped ({exc}). Run `cozempic init` manually to enable background protection.",
+            f"  winnow: auto-init skipped ({exc}). Run `winnow init` manually to enable background protection.",
             file=sys.stderr,
         )
         return
@@ -2339,7 +2339,7 @@ def _maybe_auto_init(argv: list[str]) -> None:
     load_error = hooks_result.get("error")
     if load_error:
         print(
-            f"  Cozempic: auto-init FAILED — {load_error}",
+            f"  winnow: auto-init FAILED — {load_error}",
             file=sys.stderr,
         )
         return
@@ -2353,7 +2353,7 @@ def _maybe_auto_init(argv: list[str]) -> None:
         if updated:
             parts.append(f"{len(updated)} refreshed from stale schema")
         print(
-            f"  Cozempic: auto-initialized this project ({', '.join(parts)}). "
+            f"  winnow: auto-initialized this project ({', '.join(parts)}). "
             "Disable with --no-auto-init or WINNOW_NO_AUTO_INIT=1.",
             file=sys.stderr,
         )
@@ -2378,7 +2378,7 @@ def cmd_dashboard(args):
     ledger = None if agent else load_lifetime()
     data = aggregate(receipts)
     ts = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-    label = "~/.cozempic/receipts" + (f" · agent={agent}" if agent else "")
+    label = "~/.winnow/receipts" + (f" · agent={agent}" if agent else "")
     html_str = render_html(data, generated_ts=ts, source_label=label, ledger=ledger)
     try:
         path = write_dashboard(html_str)
@@ -2403,7 +2403,7 @@ def cmd_dashboard(args):
     elif agent:
         print(f"  No prunes recorded for agent '{agent}'.")
     else:
-        print("  No prunes recorded yet — run `cozempic treat --execute` first.")
+        print("  No prunes recorded yet — run `winnow treat --execute` first.")
 
     if not getattr(args, "no_open", False):
         try:

@@ -5,7 +5,7 @@ GC-1 — SIGTERM handler leaks pidfile + armed sentinel if the signal fires
         call _safe_unlink_session_pidfile and clear_armed.
 
 GC-2 — test_guard_robustness.py:56 + test_guard_reload_watcher_poll.py:159
-        use hardcoded Path("/tmp/cozempic_guard_*.log") — real files that
+        use hardcoded Path("/tmp/winnow_guard_*.log") — real files that
         escape test teardown on macOS (where gettempdir() is /var/folders/…,
         not /tmp). Both tests should patch _guard_tmp_root so the log paths
         live in a TemporaryDirectory.
@@ -88,7 +88,7 @@ class TestSigtermHandlerCleansUp(unittest.TestCase):
 
 class TestWatcherLogUsesGuardTmpRoot(unittest.TestCase):
     """guard_log in test_guard_reload_watcher_poll.py:159 must use _guard_tmp_root,
-    not the hardcoded Path('/tmp/cozempic_guard.log').
+    not the hardcoded Path('/tmp/winnow_guard.log').
 
     RED: the test file still has the hardcoded string, so reading it shows '/tmp'.
     GREEN: the file is patched to use _guard_tmp_root() / '...' instead.
@@ -99,12 +99,12 @@ class TestWatcherLogUsesGuardTmpRoot(unittest.TestCase):
         import inspect
         import tests.test_guard_reload_watcher_poll as mod
         src = inspect.getsource(mod)
-        # The GC-2 fix removes: Path("/tmp/cozempic_guard.log")
+        # The GC-2 fix removes: Path("/tmp/winnow_guard.log")
         # After fix: _guard_tmp_root() or tmp_path is used instead.
         self.assertNotIn(
-            'Path("/tmp/cozempic_guard.log")',
+            'Path("/tmp/winnow_guard.log")',
             src,
-            "test_guard_reload_watcher_poll.py still has hardcoded Path('/tmp/cozempic_guard.log') "
+            "test_guard_reload_watcher_poll.py still has hardcoded Path('/tmp/winnow_guard.log') "
             "at line 159 — this leaks a real file on macOS. GC-2 not applied (RED).",
         )
 
@@ -118,11 +118,11 @@ class TestRobustnessTestNoLeak(unittest.TestCase):
         import tests.test_guard_robustness as mod
         src = inspect.getsource(mod)
         # The GC-2 fix replaces:
-        #   session_log = Path("/tmp") / f"cozempic_guard_{uuid[:12]}.log"
-        #   session_pid = Path("/tmp") / f"cozempic_guard_{uuid[:12]}.pid"
+        #   session_log = Path("/tmp") / f"winnow_guard_{uuid[:12]}.log"
+        #   session_pid = Path("/tmp") / f"winnow_guard_{uuid[:12]}.pid"
         # with _guard_tmp_root()-based paths inside the patch context.
         self.assertNotIn(
-            'Path("/tmp") / f"cozempic_guard_{uuid[:12]}.log"',
+            'Path("/tmp") / f"winnow_guard_{uuid[:12]}.log"',
             src,
             "test_guard_robustness.py still has hardcoded Path('/tmp') session_log at line 56 "
             "— real file leaks on macOS. GC-2 not applied (RED).",
@@ -230,10 +230,10 @@ class TestRecordActiveTranscriptRetainsLivePids(unittest.TestCase):
     """
 
     def setUp(self):
-        self._tmpdir = tempfile.mkdtemp(prefix="cozempic_rat_")
+        self._tmpdir = tempfile.mkdtemp(prefix="winnow_rat_")
         self._claude_dir = Path(self._tmpdir) / ".claude"
         self._claude_dir.mkdir()
-        self._sessions_file = self._claude_dir / "cozempic-active-sessions.json"
+        self._sessions_file = self._claude_dir / "winnow-active-sessions.json"
 
         # Pre-seed with two live PIDs (current process + parent).  Both are
         # guaranteed alive throughout the test.

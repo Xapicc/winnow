@@ -83,7 +83,7 @@ from typing import Iterator
 # multiple peers re-spawn against the same session.
 #
 # 5 seconds is the default — generous for a clean macOS laptop where a
-# Python cold-start + cozempic import is well under 1s. On slower setups
+# Python cold-start + winnow import is well under 1s. On slower setups
 # (CI hosted runners, macOS with Crowdstrike/SentinelOne EDR scanning the
 # Python binary, cold filesystem cache after pip install) Popen can take
 # several seconds. Operators can override via the
@@ -112,7 +112,7 @@ def _read_fresh_window_seconds() -> float:
     — the daemon must be restarted (or the module re-imported via
     ``importlib.reload``) to pick up the new value. This mirrors the
     "config frozen at process start" convention used for other
-    cozempic env vars (e.g. ``WINNOW_GUARD_HARD_EXIT_K`` in guard.py).
+    winnow env vars (e.g. ``WINNOW_GUARD_HARD_EXIT_K`` in guard.py).
     Operators tuning the fresh window for a fleet should set the env
     var in their shell rc BEFORE launching Claude Code, not after.
 
@@ -146,14 +146,14 @@ _FRESH_PIDFILE_SECONDS = _read_fresh_window_seconds()
 #   spawn-claim-daemon  — written by the atomic ``os.rename`` hand-off
 #                         in ``start_guard_daemon`` after Popen
 #
-# Operators inspecting a stale pidfile can ``cat /tmp/cozempic_guard_*.pid``
+# Operators inspecting a stale pidfile can ``cat /tmp/winnow_guard_*.pid``
 # and see immediately who wrote it and when (PR #93 commit 3, item #5).
 INIT_SPAWN_PARENT = "spawn-claim-parent"
 INIT_SPAWN_DAEMON = "spawn-claim-daemon"
 
 
 def _parse_pidfile_pid(pid_path: Path) -> int:
-    """Read PID from a cozempic guard pidfile (1-line or 3-line format).
+    """Read PID from a winnow guard pidfile (1-line or 3-line format).
 
     Tolerates both:
       - legacy single-line ``<pid>\\n`` (v1.8.14 and earlier)
@@ -221,7 +221,7 @@ def _spawn_lock_path(session_id: str) -> Path:
     ``DaemonSpawnClaim`` which accepts an explicit ``pid_file`` so the
     claim file is the same inode the rest of guard.py reads/writes.
     """
-    return Path(tempfile.gettempdir()) / f"cozempic_guard_{_slug_for(session_id)}.pid"
+    return Path(tempfile.gettempdir()) / f"winnow_guard_{_slug_for(session_id)}.pid"
 
 
 def _is_process_alive(pid: int) -> bool:

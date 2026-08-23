@@ -1,8 +1,8 @@
 """Wrong-session detection RCA + regression (2026-06-10).
 
-`/cozempic reload` resolved the WRONG session: the active session (f464a40c) lived
+`/winnow reload` resolved the WRONG session: the active session (f464a40c) lived
 under project dir ``-Users-ruya`` while the invocation's cwd mapped to
-``-Users-ruya-Documents-Advisor-Cozempic``, whose most-recent session was a STALE
+``-Users-ruya-Documents-Advisor-winnow``, whose most-recent session was a STALE
 one (f641174c). ``find_current_session`` fell through Strategy 1 (lsof on open
 ``.claude/tasks/`` dirs — empty when no agent team is running) to Strategy 3 (cwd
 slug → most-recent in that project dir) and picked the stale session.
@@ -59,15 +59,15 @@ class _Base(unittest.TestCase):
 
 class TestWrongSessionBugShape(_Base):
     def test_cwd_mismatch_picks_wrong_session_without_active_record(self):
-        # Active session lives under -Users-ruya; cwd maps to the Cozempic dir whose
+        # Active session lives under -Users-ruya; cwd maps to the winnow dir whose
         # most-recent session is the STALE one. No active record, no live pid.
         active = _write_session(self.projects / "-Users-ruya", "f464a40c")
         os.utime(active, (1000, 1000))
-        stale = _write_session(self.projects / "-Users-ruya-Documents-Advisor-Cozempic", "f641174c")
+        stale = _write_session(self.projects / "-Users-ruya-Documents-Advisor-winnow", "f641174c")
         os.utime(stale, (2000, 2000))  # newer mtime in the cwd's project dir
         with mock.patch.object(S, "_session_id_from_process", lambda: None), \
              mock.patch.object(S, "find_claude_pid", lambda: None):
-            got = S.find_current_session("/Users/ruya/Documents/Advisor/Cozempic", strict=True)
+            got = S.find_current_session("/Users/ruya/Documents/Advisor/winnow", strict=True)
         self.assertEqual(got["session_id"], "f641174c",
                          "documents the bug: cwd-inference picks the stale session")
         self.assertNotEqual(str(got["path"]), str(active))
@@ -77,21 +77,21 @@ class TestActiveTranscriptFix(_Base):
     def test_active_record_overrides_cwd_inference(self):
         active = _write_session(self.projects / "-Users-ruya", "f464a40c")
         os.utime(active, (1000, 1000))
-        stale = _write_session(self.projects / "-Users-ruya-Documents-Advisor-Cozempic", "f641174c")
+        stale = _write_session(self.projects / "-Users-ruya-Documents-Advisor-winnow", "f641174c")
         os.utime(stale, (2000, 2000))
         # The live claude pid (54513) recorded its active transcript via the hook.
         S.record_active_transcript(str(active), claude_pid=54513)
         with mock.patch.object(S, "_session_id_from_process", lambda: None), \
              mock.patch.object(S, "find_claude_pid", lambda: 54513), \
              mock.patch.object(S, "_pid_alive", lambda pid: True):
-            got = S.find_current_session("/Users/ruya/Documents/Advisor/Cozempic", strict=True)
+            got = S.find_current_session("/Users/ruya/Documents/Advisor/winnow", strict=True)
         self.assertEqual(got["session_id"], "f464a40c",
                          "the active transcript must win over cwd-inference")
         self.assertEqual(str(got["path"]), str(active))
 
     def test_two_terminals_two_pids_resolve_independently(self):
         a = _write_session(self.projects / "-Users-ruya", "aaaaaaaa")
-        b = _write_session(self.projects / "-Users-ruya-Documents-Advisor-Cozempic", "bbbbbbbb")
+        b = _write_session(self.projects / "-Users-ruya-Documents-Advisor-winnow", "bbbbbbbb")
         # `_pid_alive` must be patched around the record calls too — not only the
         # lookups below. `record_active_transcript` prunes dead pids on write, so
         # with the real `os.kill` the first entry (pid 111) is dropped during the
@@ -111,13 +111,13 @@ class TestStalenessGuards(_Base):
     def test_dead_pid_record_is_ignored(self):
         active = _write_session(self.projects / "-Users-ruya", "f464a40c")
         os.utime(active, (1000, 1000))
-        stale = _write_session(self.projects / "-Users-ruya-Documents-Advisor-Cozempic", "f641174c")
+        stale = _write_session(self.projects / "-Users-ruya-Documents-Advisor-winnow", "f641174c")
         os.utime(stale, (2000, 2000))
         S.record_active_transcript(str(active), claude_pid=54513)
         with mock.patch.object(S, "_session_id_from_process", lambda: None), \
              mock.patch.object(S, "find_claude_pid", lambda: 54513), \
              mock.patch.object(S, "_pid_alive", lambda pid: False):  # pid died
-            got = S.find_current_session("/Users/ruya/Documents/Advisor/Cozempic", strict=True)
+            got = S.find_current_session("/Users/ruya/Documents/Advisor/winnow", strict=True)
         self.assertEqual(got["session_id"], "f641174c",
                          "a dead-pid record must be ignored (fall through to cwd)")
 
@@ -125,11 +125,11 @@ class TestStalenessGuards(_Base):
         active = _write_session(self.projects / "-Users-ruya", "f464a40c")
         S.record_active_transcript(str(active), claude_pid=54513)
         active.unlink()  # transcript vanished
-        stale = _write_session(self.projects / "-Users-ruya-Documents-Advisor-Cozempic", "f641174c")
+        stale = _write_session(self.projects / "-Users-ruya-Documents-Advisor-winnow", "f641174c")
         with mock.patch.object(S, "_session_id_from_process", lambda: None), \
              mock.patch.object(S, "find_claude_pid", lambda: 54513), \
              mock.patch.object(S, "_pid_alive", lambda pid: True):
-            got = S.find_current_session("/Users/ruya/Documents/Advisor/Cozempic", strict=True)
+            got = S.find_current_session("/Users/ruya/Documents/Advisor/winnow", strict=True)
         self.assertEqual(got["session_id"], "f641174c")
 
 

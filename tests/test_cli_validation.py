@@ -126,7 +126,7 @@ class TestPrescanArgvValidation:
 
 
 class TestGuardArgparseValidation:
-    """`cozempic guard` numeric flags must reject nonsensical values at
+    """`winnow guard` numeric flags must reject nonsensical values at
     parse time rather than silently triggering a reload storm or crashing
     deep in `time.sleep(interval)` on the first cycle."""
 
@@ -206,7 +206,7 @@ class TestGuardArgparseValidation:
         self._assert_argparse_rejects(["guard", "--soft-threshold-tokens", "-1"])
 
     def test_remind_interval_rejects_zero(self):
-        """Separate `--interval` on `cozempic remind` — same validation."""
+        """Separate `--interval` on `winnow remind` — same validation."""
         self._assert_argparse_rejects(["remind", "--interval", "0"])
 
     def test_remind_interval_rejects_negative(self):
@@ -240,7 +240,7 @@ class TestStartGuardOrderingValidation:
 
     def setup_method(self):
         import tempfile
-        self._tmpdir = tempfile.mkdtemp(prefix="_cozempic_ordering_test_")
+        self._tmpdir = tempfile.mkdtemp(prefix="_winnow_ordering_test_")
 
     def teardown_method(self):
         import shutil
@@ -295,7 +295,7 @@ class TestStartGuardNanInfValidation:
                           A tempdir is still created and cleaned up in teardown to
                           defend against future code reorderings.
       start_guard_daemon: ALL I/O primitives between function entry and Popen are mocked
-                          to prevent any /tmp/cozempic_guard_* file creation at base:
+                          to prevent any /tmp/winnow_guard_* file creation at base:
                             _cleanup_legacy_pid      (legacy pid cleanup)
                             _reload_sentinel_active  (sentinel file read)
                             find_current_session     (jsonl directory scan)
@@ -304,13 +304,13 @@ class TestStartGuardNanInfValidation:
                             winnow.legacy.spawn_lock.DaemonSpawnClaim (O_CREAT|O_EXCL on .pid)
                             subprocess.Popen         (daemon spawn)
                           Teardown removes the tempdir unconditionally.
-                          Acceptance: BEFORE/AFTER ls /tmp/cozempic_guard_* count equal
+                          Acceptance: BEFORE/AFTER ls /tmp/winnow_guard_* count equal
                           when daemon tests run against unpatched (base) source.
     """
 
     def setup_method(self):
         import tempfile
-        self._tmpdir = tempfile.mkdtemp(prefix="_cozempic_guard_nan_test_")
+        self._tmpdir = tempfile.mkdtemp(prefix="_winnow_guard_nan_test_")
 
     def teardown_method(self):
         import shutil
@@ -351,11 +351,11 @@ class TestStartGuardNanInfValidation:
     def test_start_guard_daemon_threshold_mb_nan_raises_config_error(self):
         """start_guard_daemon(threshold_mb=float('nan')) must raise ConfigError before spawn.
         RED at base: nan <= 0 is False, validation silently passes; execution reaches
-        DaemonSpawnClaim which creates /tmp/cozempic_guard_*.pid via O_CREAT|O_EXCL,
-        and open(log_file) creates /tmp/cozempic_guard_*.log — two real /tmp artifacts.
+        DaemonSpawnClaim which creates /tmp/winnow_guard_*.pid via O_CREAT|O_EXCL,
+        and open(log_file) creates /tmp/winnow_guard_*.log — two real /tmp artifacts.
 
         All I/O primitives between function entry and Popen are mocked to guarantee
-        zero /tmp/cozempic_guard_* files even when running against the unpatched source:
+        zero /tmp/winnow_guard_* files even when running against the unpatched source:
           - _cleanup_legacy_pid      (legacy pid cleanup)
           - _reload_sentinel_active  (sentinel file read — only fires when session_id set)
           - find_current_session     (jsonl directory scan — fires when no session_id)
@@ -425,7 +425,7 @@ class TestReloadSelfDaemonNanInfValidation:
 
         Mocked:
           - _is_guard_running_for_session → 99999 (fake PID — daemon appears running)
-          - _is_cozempic_guard_process     → True  (PID identity verified)
+          - _is_winnow_guard_process     → True  (PID identity verified)
           - os.kill                         → recorded, must NOT be called on nan/inf
           - _wait_for_exit                  → True  (clean exit on SIGTERM)
           - _pid_file_points_to             → False (CAS: leave pid file alone)
@@ -439,7 +439,7 @@ class TestReloadSelfDaemonNanInfValidation:
         def ctx():
             with (
                 patch("winnow.legacy.guard._is_guard_running_for_session", return_value=99999),
-                patch("winnow.legacy.guard._is_cozempic_guard_process", return_value=True),
+                patch("winnow.legacy.guard._is_winnow_guard_process", return_value=True),
                 patch("winnow.legacy.guard.os.kill") as mock_kill,
                 patch("winnow.legacy.guard._wait_for_exit", return_value=True),
                 patch("winnow.legacy.guard._pid_file_points_to", return_value=False),
@@ -532,7 +532,7 @@ def _run_main_with_argv(argv):
     stdout_buf = io.StringIO()
     stderr_buf = io.StringIO()
 
-    with patch("sys.argv", ["cozempic"] + argv), \
+    with patch("sys.argv", ["winnow"] + argv), \
          patch("winnow.legacy.cli._maybe_global_init"), \
          patch("winnow.legacy.cli._maybe_auto_init"), \
          patch("winnow.legacy.updater.ping_install_if_new"), \
@@ -564,7 +564,7 @@ class TestValueErrorDispatch:
         """guard ValueError message must appear on stderr prefixed with 'Error:'."""
         stderr_buf = io.StringIO()
         with patch("winnow.legacy.cli.cmd_guard", side_effect=ValueError("bad session id")), \
-             patch("sys.argv", ["cozempic", "guard"]), \
+             patch("sys.argv", ["winnow", "guard"]), \
              patch("winnow.legacy.cli._maybe_global_init"), \
              patch("winnow.legacy.cli._maybe_auto_init"), \
              patch("winnow.legacy.updater.ping_install_if_new"), \
@@ -605,7 +605,7 @@ class TestValueErrorDispatch:
         """The ValueError message text must appear in stderr output."""
         stderr_buf = io.StringIO()
         with patch("winnow.legacy.cli.cmd_guard", side_effect=ValueError("session_id malformed: @@")), \
-             patch("sys.argv", ["cozempic", "guard"]), \
+             patch("sys.argv", ["winnow", "guard"]), \
              patch("winnow.legacy.cli._maybe_global_init"), \
              patch("winnow.legacy.cli._maybe_auto_init"), \
              patch("winnow.legacy.updater.ping_install_if_new"), \
@@ -704,7 +704,7 @@ class TestDigestSessionResolution:
         non-strict default.
 
         digest flush/inject are write operations. Without strict=True, a user running
-        `cozempic digest flush` in a project whose Strategy-3 lookup fails would
+        `winnow digest flush` in a project whose Strategy-3 lookup fails would
         silently inject rules into another project's session (Strategy-4 fallback).
 
         Spy asserts keyword `strict=True` is passed; no behavior gap if omitted.

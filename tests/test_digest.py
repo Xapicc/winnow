@@ -620,7 +620,7 @@ class TestSystemNoiseFilter(unittest.TestCase):
         is_noise = _import_system_noise()
         self.assertTrue(is_noise(
             "The following skills are available for use with the Skill tool:\n"
-            "- cozempic: Diagnose and prune bloated Claude Code context."
+            "- winnow: Diagnose and prune bloated Claude Code context."
         ))
 
     def test_genuine_corrections_are_not_noise(self):
@@ -1205,7 +1205,7 @@ class TestMemdirHonorsConfigDir(unittest.TestCase):
 
     def test_sync_to_memdir_writes_under_config_dir(self):
         """End-to-end: with CLAUDE_CONFIG_DIR set, `sync_to_memdir` writes
-        `cozempic_digest.md` under that directory, not under ~/.claude."""
+        `winnow_digest.md` under that directory, not under ~/.claude."""
         store = DigestStore(project=self.slug_cwd)
         store.strategy_rules.append(DigestRule(
             id="R001", rule="Do not add Co-Authored-By",
@@ -1216,7 +1216,7 @@ class TestMemdirHonorsConfigDir(unittest.TestCase):
         with patch.dict("os.environ", {"CLAUDE_CONFIG_DIR": str(self.config_dir)}):
             n = sync_to_memdir(store, cwd=self.slug_cwd)
             self.assertGreater(n, 0, "sync_to_memdir should have written 1 rule")
-            digest_md = self.expected_memdir / "cozempic_digest.md"
+            digest_md = self.expected_memdir / "winnow_digest.md"
             self.assertTrue(
                 digest_md.exists(),
                 f"digest should be written under CLAUDE_CONFIG_DIR at {digest_md}")
@@ -1243,7 +1243,7 @@ class TestMemdirHonorsConfigDir(unittest.TestCase):
             "HOME": str(fake_home),
         }):
             sync_to_memdir(store, cwd=self.slug_cwd)
-            leaked = shadow_memdir / "cozempic_digest.md"
+            leaked = shadow_memdir / "winnow_digest.md"
             self.assertFalse(
                 leaked.exists(),
                 "under CLAUDE_CONFIG_DIR, ~/.claude must NOT receive a cross-profile write")
@@ -1253,7 +1253,7 @@ class TestMemdirHonorsConfigDir(unittest.TestCase):
 # RED TESTS — Phase 2b round 2 — Phase 2d adversarial findings (2026-05-05)
 # ===========================================================================
 #
-# Post-fix adversarial review (team `cozempic-digest-fix`, devils-advocate)
+# Post-fix adversarial review (team `winnow-digest-fix`, devils-advocate)
 # surfaced one CRITICAL and one HIGH that the Phase 2b/2c cycle did NOT
 # close. These RED tests must fail against commit range
 # `86f6c4d..HEAD (7a0dc27)` and flip GREEN only after Phase 2c-r2 lands the
@@ -1742,7 +1742,7 @@ class TestLoadRevalidatesRulesAgainstHardening(unittest.TestCase):
     Real-world pollution seen pre-fix:
     - Long multi-paragraph prompts ("# BMAD — Big Model Adversarial Debate...")
     - Pasted messages ("regarde ce message slack de notre po Hello team...")
-    - cozempic-self meta noise ("[Cozempic Guard: context was pruned...]")
+    - winnow-self meta noise ("[winnow Guard: context was pruned...]")
     - Compaction-resume banners ("This session is being continued...")
 
     None of these pass _to_prohibition (>200 chars, multi-line, markdown-lead)
@@ -1826,11 +1826,11 @@ class TestLoadRevalidatesRulesAgainstHardening(unittest.TestCase):
                 self.assertEqual(len(reloaded.active_rules()), 0,
                                  "multi-line rule must be demoted on load")
 
-    def test_load_demotes_cozempic_meta_noise(self):
-        """Cozempic's own compaction-restoration banner is self-noise."""
+    def test_load_demotes_winnow_meta_noise(self):
+        """winnow's own compaction-restoration banner is self-noise."""
         is_noise = _import_system_noise()
         # Part 1: direct test of the marker
-        self.assertTrue(is_noise("[Cozempic Guard: context was pruned. Team state restored below]"))
+        self.assertTrue(is_noise("[winnow Guard: context was pruned. Team state restored below]"))
 
         # Part 2: integration via load
         import tempfile
@@ -1840,8 +1840,8 @@ class TestLoadRevalidatesRulesAgainstHardening(unittest.TestCase):
             digest_md = Path(tmp) / "behavioral-digest.md"
             store = DigestStore(project="/test")
             store.strategy_rules.append(DigestRule(
-                id="R001", rule="Do not [Cozempic Guard: context was pruned",
-                evidence="[Cozempic Guard: context was pruned. Team state restored below for your reference — do not echo it back]",
+                id="R001", rule="Do not [winnow Guard: context was pruned",
+                evidence="[winnow Guard: context was pruned. Team state restored below for your reference — do not echo it back]",
                 priority="hard", scope="general",
                 source_reliability=1.0, type_prior=0.8,
                 occurrence_count=1, status="active",
@@ -1852,7 +1852,7 @@ class TestLoadRevalidatesRulesAgainstHardening(unittest.TestCase):
                 save_digest_store(store)
                 reloaded = load_digest_store("/test")
                 self.assertEqual(len(reloaded.active_rules()), 0,
-                                 "cozempic-meta noise rule must be demoted on load")
+                                 "winnow-meta noise rule must be demoted on load")
 
     def test_load_demotes_session_resume_banner(self):
         """Claude Code compaction-resume banner is noise, not a correction."""
@@ -2587,7 +2587,7 @@ class TestPolishV2_Bug12ToProhibitionDigitPrefix(unittest.TestCase):
 
         Closes the data-migration loop: the fix doesn't just reject NEW
         digit-prefix input, it also cleans UP existing malformed active
-        rules on next cozempic invocation."""
+        rules on next winnow invocation."""
         tmpdir = Path(tempfile.mkdtemp())
         self.addCleanup(
             lambda: __import__("shutil").rmtree(tmpdir, ignore_errors=True)
@@ -3051,7 +3051,7 @@ class TestGetMemdirUnderscoreProject(unittest.TestCase):
 
 
 class TestMemdirIsReadOnly(unittest.TestCase):
-    """1.8.22: cozempic does NOT create the memory dir — Claude Code owns it. A
+    """1.8.22: winnow does NOT create the memory dir — Claude Code owns it. A
     brand-new folder is not proactively populated with the (global) digest; sync
     waits until Claude Code's memory dir exists. (Reverted an earlier eager-create.)"""
 

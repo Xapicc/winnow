@@ -38,7 +38,7 @@ def _args(**over):
 
 
 def _only_receipt(home):
-    d = Path(home) / ".cozempic" / "receipts"
+    d = Path(home) / ".winnow" / "receipts"
     files = [p for p in d.glob("*.jsonl") if p.name != "index.jsonl"]
     return json.loads(files[0].read_text().splitlines()[0])
 
@@ -74,7 +74,7 @@ class TestGuardReceipt(unittest.TestCase):
             with patch.dict(os.environ, {"HOME": home}):
                 os.environ.pop("WINNOW_NO_RECEIPTS", None)
                 guard._emit_guard_receipt(**_args(pre_te=None))  # must not raise
-                recdir = Path(home) / ".cozempic" / "receipts"
+                recdir = Path(home) / ".winnow" / "receipts"
                 self.assertFalse(recdir.exists() and any(
                     p for p in recdir.glob("*.jsonl") if p.name != "index.jsonl"))
 
@@ -82,7 +82,7 @@ class TestGuardReceipt(unittest.TestCase):
         with tempfile.TemporaryDirectory() as home:
             with patch.dict(os.environ, {"HOME": home, "WINNOW_NO_RECEIPTS": "1"}):
                 guard._emit_guard_receipt(**_args())
-                self.assertFalse((Path(home) / ".cozempic" / "receipts").exists())
+                self.assertFalse((Path(home) / ".winnow" / "receipts").exists())
 
 
 class TestGuardReceiptIntegration(unittest.TestCase):
@@ -146,7 +146,7 @@ class TestGuardReceiptIntegration(unittest.TestCase):
                     patch("winnow.legacy.helpers.record_savings"):
                 os.environ.pop("WINNOW_NO_RECEIPTS", None)
                 writer()
-        recdir = Path(home) / ".cozempic" / "receipts"
+        recdir = Path(home) / ".winnow" / "receipts"
         if not recdir.exists():
             return []
         return [p for p in recdir.glob("*.jsonl") if p.name != "index.jsonl"]

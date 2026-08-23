@@ -1,6 +1,6 @@
-"""Mechanical reproducers for the 2026-05-18 cozempic guard crash.
+"""Mechanical reproducers for the 2026-05-18 winnow guard crash.
 
-Source handoff: /Users/yanisnaamane/sanofi/silc-data/.claude/handoffs/cozempic-guard-crash-2026-05-18.md
+Source handoff: /Users/yanisnaamane/sanofi/silc-data/.claude/handoffs/winnow-guard-crash-2026-05-18.md
 
 Two bugs to reproduce on the current v1.8.11 / main-branch code:
 

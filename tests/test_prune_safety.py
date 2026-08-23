@@ -584,7 +584,7 @@ class TestTagLeakInvariant:
     def test_no_team_protected_tag_in_floor_readds(self):
         """Tags applied by prune_with_team_protect must be stripped from floor re-adds.
 
-        The floor re-adds entries from msgs_before which carry __cozempic_team_protected__
+        The floor re-adds entries from msgs_before which carry __winnow_team_protected__
         tags (applied by prune_with_team_protect before passing to run_prescription).
         The guard's strip loop at guard.py:314-316 iterates pruned_messages (=
         run_prescription's output, which includes floor re-adds) and removes the tag.
@@ -601,10 +601,10 @@ class TestTagLeakInvariant:
         # Simulate what prune_with_team_protect does: tag messages with team-protected
         before = [
             (0, {"type": "user", "uuid": "u-root", "parentUuid": None,
-                 "__cozempic_team_protected__": True,
+                 "__winnow_team_protected__": True,
                  "message": {"content": "hi", "role": "user"}}, 80),
             (1, {"type": "assistant", "uuid": "a-001", "parentUuid": "u-root",
-                 "__cozempic_team_protected__": True,
+                 "__winnow_team_protected__": True,
                  "message": {"content": "ok", "role": "assistant"}}, 80),
         ]
 
@@ -617,19 +617,19 @@ class TestTagLeakInvariant:
 
         # Simulate guard.py:314-316 strip loop
         for _, msg, _ in result:
-            msg.pop("__cozempic_team_protected__", None)
+            msg.pop("__winnow_team_protected__", None)
 
         # After strip: no tag should remain
         for _, msg, _ in result:
-            assert "__cozempic_team_protected__" not in msg, (
-                f"__cozempic_team_protected__ remained after guard strip on uuid={msg.get('uuid')!r}"
+            assert "__winnow_team_protected__" not in msg, (
+                f"__winnow_team_protected__ remained after guard strip on uuid={msg.get('uuid')!r}"
             )
-            assert "__cozempic_metadata_singleton__" not in msg, (
-                f"__cozempic_metadata_singleton__ leaked on uuid={msg.get('uuid')!r}"
+            assert "__winnow_metadata_singleton__" not in msg, (
+                f"__winnow_metadata_singleton__ leaked on uuid={msg.get('uuid')!r}"
             )
 
     def test_no_singleton_tag_in_run_prescription_output(self):
-        """__cozempic_metadata_singleton__ must never appear in run_prescription output."""
+        """__winnow_metadata_singleton__ must never appear in run_prescription output."""
         import winnow.legacy.strategies  # noqa: F401
         from winnow.legacy.executor import run_prescription
         from winnow.legacy.config import FloorConfig
@@ -642,9 +642,9 @@ class TestTagLeakInvariant:
         result, _ = run_prescription(msgs, [], {}, floor_config=FloorConfig.disabled())
 
         for _, msg, _ in result:
-            assert "__cozempic_metadata_singleton__" not in msg
+            assert "__winnow_metadata_singleton__" not in msg
         for _, msg, _ in msgs:
-            assert "__cozempic_metadata_singleton__" not in msg
+            assert "__winnow_metadata_singleton__" not in msg
 
 
 # ── Class 10: enforce_floor 2-root DAG fork on compacted sessions (L7) ────────

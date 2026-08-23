@@ -1,4 +1,12 @@
-"""Auto-update: check PyPI once per day and upgrade in-place if a newer version is available."""
+"""Auto-update: check PyPI once per day and upgrade in-place if a newer version is available.
+
+Every ``cozempic`` below is a name owned by somebody else — the upstream PyPI
+distribution, the tap that ships it, the paths the installers put it under, the
+counter host it reports to, and the two dotfiles it leaves in ``$HOME``
+(FORK.md §6.1, which deletes those with this module in phase 2). Renaming them
+to ``winnow`` would not rename anything: it would point an unattended installer
+at a different project on PyPI. They stay until the module goes.
+"""
 
 from __future__ import annotations
 
@@ -59,7 +67,7 @@ def _mark_checked() -> None:
 
 
 def _install_method() -> str:
-    """Best-effort detection of HOW cozempic was installed, so we pick an upgrade
+    """Best-effort detection of HOW this package was installed, so we pick an upgrade
     mechanism that actually works. Homebrew kegs and `uv tool` installs cannot be
     upgraded by pip — the running binary never moves — which is why a brew/uvx
     install silently stays behind on the pip-based auto-updater.
@@ -93,7 +101,7 @@ def _upgrade_hint(method: str | None = None) -> str:
 
 
 def _do_upgrade(latest: str) -> bool:
-    """Upgrade cozempic using the mechanism that matches the install method.
+    """Upgrade this package using the mechanism that matches the install method.
 
     brew is intentionally NOT auto-run (it needs a tap refresh and can be slow /
     interactive — wrong to fire from a SessionStart hook); the caller surfaces an
@@ -223,7 +231,7 @@ def _pinned_version() -> str | None:
 
 
 def maybe_auto_update(force: bool = False, silent: bool = False) -> None:
-    """Check PyPI and auto-update cozempic if a newer version is available.
+    """Check PyPI and auto-update this package if a newer version is available.
 
     Throttled to one check per 24 hours. No-ops silently on network failures.
 
@@ -248,7 +256,7 @@ def maybe_auto_update(force: bool = False, silent: bool = False) -> None:
         norm = pin.strip().lstrip("vV")[:64]  # cap display so a multi-KB pin can't spam the terminal
         if norm != __version__ and not silent and _should_check() and _VERSION_SHAPE.match(pin.strip()):
             _mark_checked()
-            print(f"  Cozempic: pinned to {norm} but running {__version__} — "
+            print(f"  winnow: pinned to {norm} but running {__version__} — "
                   f"reconcile with: pip install 'cozempic=={norm}'", flush=True)
         return
     # Removed TTY check — auto-update should work from hooks, daemons, and CLI.
@@ -268,12 +276,12 @@ def maybe_auto_update(force: bool = False, silent: bool = False) -> None:
     # Homebrew kegs can't be auto-upgraded in place — don't claim we're "updating".
     if method == "brew":
         if not silent:
-            print(f"  Cozempic: v{latest} available — run: {_upgrade_hint('brew')} "
+            print(f"  winnow: v{latest} available — run: {_upgrade_hint('brew')} "
                   f"(Homebrew installs don't auto-update).", flush=True)
         return
 
     if not silent:
-        print(f"  Cozempic: updating {__version__} → {latest}...", flush=True)
+        print(f"  winnow: updating {__version__} → {latest}...", flush=True)
     if _do_upgrade(latest):
         if not os.environ.get("WINNOW_NO_TELEMETRY"):
             try:
@@ -285,7 +293,7 @@ def maybe_auto_update(force: bool = False, silent: bool = False) -> None:
             # new code is active on next invocation. Say so explicitly so
             # users don't think the upgrade failed when --version still prints
             # the old number.
-            print(f"  Cozempic: updated to v{latest} — active on next run (this process still v{__version__}).", flush=True)
+            print(f"  winnow: updated to v{latest} — active on next run (this process still v{__version__}).", flush=True)
     else:
         if not silent:
-            print(f"  Cozempic: auto-update failed. Run: {_upgrade_hint(method)}", flush=True)
+            print(f"  winnow: auto-update failed. Run: {_upgrade_hint(method)}", flush=True)

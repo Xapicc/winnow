@@ -276,7 +276,7 @@ def run_prescription(
     # Wrap from this point in try/finally so the singleton-tag strip ALWAYS runs
     # even if a downstream step (validation) raises. Without the finally, a
     # PruneValidationError leaves the caller's input list carrying the internal
-    # __cozempic_metadata_singleton__ flag, which would leak to disk on the next
+    # __winnow_metadata_singleton__ flag, which would leak to disk on the next
     # successful save_messages call (REVIEW-max A.3).
     try:
         # Step 1: run strategies. Each strategy is ISOLATED — a crash on a
@@ -301,7 +301,7 @@ def run_prescription(
                 raise
             except Exception as _strat_exc:
                 import sys as _sys
-                print(f"  Cozempic: strategy '{sname}' skipped after an unexpected error "
+                print(f"  winnow: strategy '{sname}' skipped after an unexpected error "
                       f"(malformed message?): {_strat_exc!r}", file=_sys.stderr)
                 continue
             results.append(sr)

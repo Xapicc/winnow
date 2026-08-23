@@ -8,7 +8,7 @@ Turns the D2 aggregate() views into ONE self-contained HTML document:
     hashed + capped at the contract boundary).
 
 ``render_html`` is pure (views in, HTML string out). ``write_dashboard`` does the
-I/O (atomic write) and is what the D4 ``cozempic dashboard`` command calls.
+I/O (atomic write) and is what the D4 ``winnow dashboard`` command calls.
 """
 
 from __future__ import annotations
@@ -211,7 +211,7 @@ def _lifetime_band(ledger: dict | None) -> str:
     return (
         '<section class="lifetime"><div class="lt-title">Lifetime</div>'
         f'<div class="lt-row">{cells}</div>'
-        f'<div class="lt-since">Running totals from ~/.cozempic_savings.json{since}</div></section>'
+        f'<div class="lt-since">Running totals from ~/.winnow_savings.json{since}</div></section>'
     )
 
 
@@ -229,14 +229,14 @@ def render_html(data: dict, *, generated_ts: str, source_label: str = "",
     # strategies, tiers, sessions), NOT a second set of summary cards.
     _RECORDED_INTRO = (
         '<div class="sub2"><b style="color:var(--fg)">Recorded Prunes</b> — per-prune '
-        "detail from receipts (~/.cozempic/receipts), separate from the all-time totals "
-        "above; fills in as cozempic prunes.</div>"
+        "detail from receipts (~/.winnow/receipts), separate from the all-time totals "
+        "above; fills in as winnow prunes.</div>"
     )
     if not lt.get("prunes_total"):
         body = (
             _RECORDED_INTRO +
             '<section><p class="empty">No prunes recorded yet. Run '
-            "<span class=\"mono\">cozempic treat --execute</span> and they'll appear here.</p></section>"
+            "<span class=\"mono\">winnow treat --execute</span> and they'll appear here.</p></section>"
         )
     else:
         strat_bars = _bar_rows(per_strategy, "id", "tokens_reclaimed", _fmt_tokens)
@@ -278,13 +278,13 @@ def render_html(data: dict, *, generated_ts: str, source_label: str = "",
     return f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Cozempic Dashboard</title><style>{_STYLE}</style></head>
+<title>winnow Dashboard</title><style>{_STYLE}</style></head>
 <body><div class="wrap">
-<h1>Cozempic Dashboard</h1>
+<h1>winnow Dashboard</h1>
 <p class="sub">Generated {_esc(generated_ts)}{src}</p>
 {_lifetime_band(ledger)}
 {body}
-<p class="foot">Local-only · ~/.cozempic · regenerate by running <code>cozempic dashboard</code></p>
+<p class="foot">Local-only · ~/.winnow · regenerate by running <code>winnow dashboard</code></p>
 </div></body></html>"""
 
 
@@ -296,18 +296,18 @@ def render_dashboard(base_dir: Path | None = None, *, generated_ts: str) -> str:
     return render_html(
         aggregate(load_receipts(base_dir)),
         generated_ts=generated_ts,
-        source_label="~/.cozempic/receipts",
+        source_label="~/.winnow/receipts",
         ledger=load_lifetime(),
     )
 
 
 def dashboard_path(base_dir: Path | None = None) -> Path:
-    base = base_dir if base_dir is not None else (Path.home() / ".cozempic")
+    base = base_dir if base_dir is not None else (Path.home() / ".winnow")
     return Path(base) / DEFAULT_FILENAME
 
 
 def write_dashboard(html_str: str, *, base_dir: Path | None = None) -> Path:
-    """Atomically write the HTML to ~/.cozempic/dashboard.html; return the path."""
+    """Atomically write the HTML to ~/.winnow/dashboard.html; return the path."""
     path = dashboard_path(base_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".dashboard-", suffix=".html")

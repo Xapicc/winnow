@@ -2,7 +2,7 @@
 safe-point reload gate.
 
 THE BUG CLASS this catches (the one that produced the 1.8.22 Agent-marker blindness
-AND PR #117's Agent-team blindness): cozempic's safety gate recognizes Claude Code
+AND PR #117's Agent-team blindness): winnow's safety gate recognizes Claude Code
 harness activity by *hardcoded, assumed* tool names / input keys / result-string
 markers (`name` vs `team_name`; `agent_id:` vs `agentId:`; "Async agent launched"
 vs "Spawned successfully"). When the assumed shape is wrong or drifts, the matcher
@@ -101,7 +101,7 @@ class TestReloadGateContract(unittest.TestCase):
 
     def setUp(self):
         import tempfile
-        self.tmp = Path(tempfile.mkdtemp(prefix="cozempic_contract_"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="winnow_contract_"))
 
     def tearDown(self):
         import shutil
@@ -232,11 +232,11 @@ class TestReloadGateHardening1824(unittest.TestCase):
     The two P0s these pin (fleet, 2026-06-09): the deny-by-default net must NOT
     fire on a marker-shaped string in a Read/Grep/log result (`agent_id:` in code)
     nor on prose merely *discussing* the protocol — those over-blocked teamless
-    sessions and turned the guard inert (the exact failure cozempic prevents)."""
+    sessions and turned the guard inert (the exact failure winnow prevents)."""
 
     def setUp(self):
         import tempfile
-        self.tmp = Path(tempfile.mkdtemp(prefix="cozempic_h1824_"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="winnow_h1824_"))
 
     def tearDown(self):
         import shutil
@@ -390,7 +390,7 @@ class TestForegroundAgentCompletion1825(unittest.TestCase):
 
     def setUp(self):
         import tempfile
-        self.tmp = Path(tempfile.mkdtemp(prefix="cozempic_fg1825_"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="winnow_fg1825_"))
 
     def tearDown(self):
         import shutil
@@ -470,7 +470,7 @@ class TestTaskNotificationRealFormat1825(unittest.TestCase):
 
     def setUp(self):
         import tempfile
-        self.tmp = Path(tempfile.mkdtemp(prefix="cozempic_tn1825_"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="winnow_tn1825_"))
 
     def tearDown(self):
         import shutil

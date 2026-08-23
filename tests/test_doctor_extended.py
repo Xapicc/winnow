@@ -32,22 +32,22 @@ class TestStaleBackupsScope(unittest.TestCase):
 
     def test_fix_only_deletes_jsonl_bak(self):
         """Only *.jsonl.bak files are deleted; other .bak files survive."""
-        cozempic_bak = self.projects_dir / "abc123.20240101_120000.jsonl.bak"
+        winnow_bak = self.projects_dir / "abc123.20240101_120000.jsonl.bak"
         other_bak = self.projects_dir / "something_else.bak"
-        cozempic_bak.write_text("cozempic backup")
-        other_bak.write_text("not a cozempic backup")
+        winnow_bak.write_text("winnow backup")
+        other_bak.write_text("not a winnow backup")
 
         with self._patch_claude_dir():
             result = fix_stale_backups()
 
-        assert not cozempic_bak.exists(), "cozempic *.jsonl.bak should be deleted"
-        assert other_bak.exists(), "non-cozempic *.bak should survive"
+        assert not winnow_bak.exists(), "winnow *.jsonl.bak should be deleted"
+        assert other_bak.exists(), "non-winnow *.bak should survive"
         assert "1" in result  # deleted 1 file
 
     def test_check_only_counts_jsonl_bak(self):
         """check_stale_backups only counts *.jsonl.bak, not arbitrary *.bak files."""
         (self.projects_dir / "foreign.bak").write_text("x" * (200 * 1024 * 1024))  # 200MB
-        (self.projects_dir / "cozempic.20240101.jsonl.bak").write_text("small")
+        (self.projects_dir / "winnow.20240101.jsonl.bak").write_text("small")
 
         with self._patch_claude_dir():
             result = check_stale_backups()
@@ -57,7 +57,7 @@ class TestStaleBackupsScope(unittest.TestCase):
         assert result.status == "ok"  # small size — no warning
 
     def test_fix_no_op_when_no_jsonl_bak(self):
-        """Reports nothing to clean when only non-cozempic .bak files exist."""
+        """Reports nothing to clean when only non-winnow .bak files exist."""
         (self.projects_dir / "foreign.bak").write_text("data")
 
         with self._patch_claude_dir():

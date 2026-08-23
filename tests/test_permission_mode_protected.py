@@ -158,7 +158,7 @@ class TestLastOfTypeTagProtectsPermissionMode:
 
         # Verify the tag function exists and tags pm-5 as the last permission-mode
         _tag_last_of_metadata_types(session)
-        tagged = [msg for _, msg, _ in session if msg.get("__cozempic_metadata_singleton__")]
+        tagged = [msg for _, msg, _ in session if msg.get("__winnow_metadata_singleton__")]
         tagged_uuids = {msg.get("uuid") for msg in tagged}
         assert "pm-5" in tagged_uuids, (
             "_tag_last_of_metadata_types did not tag pm-5 as the last permission-mode. "
@@ -167,7 +167,7 @@ class TestLastOfTypeTagProtectsPermissionMode:
 
         # Clean up the tags we set (run_prescription will handle this normally)
         for _, msg, _ in session:
-            msg.pop("__cozempic_metadata_singleton__", None)
+            msg.pop("__winnow_metadata_singleton__", None)
 
         # Now run through the full prescription and confirm pm-5 survives
         result, _ = run_prescription(
@@ -183,7 +183,7 @@ class TestLastOfTypeTagProtectsPermissionMode:
         )
 
     def test_singleton_tag_does_not_leak_to_output(self):
-        """The internal __cozempic_metadata_singleton__ tag must never appear in run_prescription output."""
+        """The internal __winnow_metadata_singleton__ tag must never appear in run_prescription output."""
         import winnow.legacy.strategies  # noqa: F401
         from winnow.legacy.executor import run_prescription
         from winnow.legacy.config import FloorConfig
@@ -196,11 +196,11 @@ class TestLastOfTypeTagProtectsPermissionMode:
             floor_config=FloorConfig.disabled(),
         )
         for _, msg, _ in result:
-            assert "__cozempic_metadata_singleton__" not in msg, (
+            assert "__winnow_metadata_singleton__" not in msg, (
                 f"Internal singleton tag leaked to output on msg uuid={msg.get('uuid')!r}"
             )
         # Also verify source session is clean
         for _, msg, _ in session:
-            assert "__cozempic_metadata_singleton__" not in msg, (
+            assert "__winnow_metadata_singleton__" not in msg, (
                 f"Internal singleton tag leaked back to source messages on uuid={msg.get('uuid')!r}"
             )

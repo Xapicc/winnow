@@ -20,7 +20,7 @@ Test classes:
 Isolation:
   All tests go through _extract() which patches load_team_configs to return []
   (no live ~/.claude/teams/ config merge contamination — L11 isolation principle).
-  No real 'cozempic guard --daemon', no os.kill on real PIDs.
+  No real 'winnow guard --daemon', no os.kill on real PIDs.
 """
 
 import unittest

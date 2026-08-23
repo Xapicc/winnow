@@ -17,7 +17,7 @@ class TestAutoInitGlobalSkip(unittest.TestCase):
         return project
 
     def _write_current_hooks(self, claude_dir):
-        """Write a settings.json with current-schema cozempic hooks."""
+        """Write a settings.json with current-schema winnow hooks."""
         from winnow.legacy.init import HOOK_SCHEMA_MARKER
         settings = claude_dir / "settings.json"
         settings.write_text(json.dumps({
@@ -26,14 +26,14 @@ class TestAutoInitGlobalSkip(unittest.TestCase):
                     "matcher": "",
                     "hooks": [{
                         "type": "command",
-                        "command": f"cozempic guard --daemon # {HOOK_SCHEMA_MARKER}",
+                        "command": f"winnow guard --daemon # {HOOK_SCHEMA_MARKER}",
                     }],
                 }],
             }
         }))
 
     def _write_stale_hooks(self, claude_dir):
-        """Write a settings.json with stale (pre-schema) cozempic hooks."""
+        """Write a settings.json with stale (pre-schema) winnow hooks."""
         settings = claude_dir / "settings.json"
         settings.write_text(json.dumps({
             "hooks": {
@@ -41,7 +41,7 @@ class TestAutoInitGlobalSkip(unittest.TestCase):
                     "matcher": "",
                     "hooks": [{
                         "type": "command",
-                        "command": "{ cozempic guard --daemon 2>/dev/null || python3 -m cozempic guard --daemon 2>/dev/null; } || true",
+                        "command": "{ winnow guard --daemon 2>/dev/null || python3 -m winnow guard --daemon 2>/dev/null; } || true",
                     }],
                 }],
             }
@@ -153,7 +153,7 @@ class TestAutoInitGlobalSkip(unittest.TestCase):
     def test_no_skip_when_cwd_is_home(self):
         """When cwd is home dir, global == local -- guard must prevent
         the global-skip branch from firing. We verify by making
-        _project_is_cozempic_current return False so run_init is called,
+        _project_is_winnow_current return False so run_init is called,
         proving the global-skip branch (which would return early) was NOT taken."""
         from winnow.legacy import cli
         with tempfile.TemporaryDirectory() as tmp:
@@ -169,7 +169,7 @@ class TestAutoInitGlobalSkip(unittest.TestCase):
                     # If the guard were missing, the global-skip branch would fire
                     # (real hooks ARE current) and return early -- run_init would
                     # never be called. So run_init being called proves the guard works.
-                    with mock.patch.object(cli, "_project_is_cozempic_current", return_value=False):
+                    with mock.patch.object(cli, "_project_is_winnow_current", return_value=False):
                         with mock.patch.object(cli, "run_init", return_value={"hooks": {"added": ["SessionStart[]"], "updated": []}}) as ri:
                             cli._maybe_auto_init(["list"])
                             ri.assert_called_once()

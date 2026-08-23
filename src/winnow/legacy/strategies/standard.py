@@ -141,7 +141,7 @@ def strategy_tool_output_trim(messages: list[Message], config: dict) -> Strategy
                             keep = max_lines // 2
                             trimmed = (
                                 lines[:keep]
-                                + [f"\n... [{len(lines) - max_lines} lines trimmed by cozempic] ...\n"]
+                                + [f"\n... [{len(lines) - max_lines} lines trimmed by winnow] ...\n"]
                                 + lines[-keep:]
                             )
                             new_content = "\n".join(trimmed)
@@ -149,7 +149,7 @@ def strategy_tool_output_trim(messages: list[Message], config: dict) -> Strategy
                             half = max_bytes // 2
                             new_content = (
                                 content[:half]
-                                + f"\n... [{content_bytes - max_bytes} bytes trimmed by cozempic] ...\n"
+                                + f"\n... [{content_bytes - max_bytes} bytes trimmed by winnow] ...\n"
                                 + content[-half:]
                             )
                         new_blocks.append({**block, "content": new_content})
@@ -164,7 +164,7 @@ def strategy_tool_output_trim(messages: list[Message], config: dict) -> Strategy
                                 text = sub.get("text", "")
                                 if isinstance(text, str) and len(text.encode("utf-8", "surrogateescape")) > max_bytes:
                                     half = max_bytes // 2
-                                    sub = {**sub, "text": text[:half] + "\n...[trimmed by cozempic]...\n" + text[-half:]}
+                                    sub = {**sub, "text": text[:half] + "\n...[trimmed by winnow]...\n" + text[-half:]}
                             trimmed_content.append(sub)
                         new_blocks.append({**block, "content": trimmed_content})
                         changed = True
@@ -248,7 +248,7 @@ def strategy_stale_reads(messages: list[Message], config: dict) -> StrategyResul
                         if fb.get("type") == "tool_result" and fb.get("tool_use_id") == tool_use_id:
                             content = fb.get("content", "")
                             if isinstance(content, str) and len(content) > 500:
-                                new_fb = {**fb, "content": "[stale read - file was later edited, trimmed by cozempic]"}
+                                new_fb = {**fb, "content": "[stale read - file was later edited, trimmed by winnow]"}
                                 new_blocks = []
                                 did_replace = False
                                 for ob in get_content_blocks(fmsg):
@@ -510,7 +510,7 @@ def _build_stub(block: dict, all_blocks: list[dict], messages: list[Message], po
                 )
                 break
 
-    parts = ["[cozempic"]
+    parts = ["[winnow"]
     if tool_name:
         parts.append(f": {tool_name}")
     if tool_path:

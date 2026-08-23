@@ -33,7 +33,7 @@ def _is_receipt(obj) -> bool:
 
 
 def load_receipts(base_dir: Path | None = None) -> list[dict]:
-    """Load every receipt from ``~/.cozempic/receipts/*.jsonl`` (excluding the
+    """Load every receipt from ``~/.winnow/receipts/*.jsonl`` (excluding the
     index). Unparseable / non-receipt lines are skipped, never fatal."""
     directory = receipts_dir(base_dir)
     receipts: list[dict] = []

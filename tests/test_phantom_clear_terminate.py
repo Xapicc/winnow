@@ -148,7 +148,7 @@ class TestPhantomClear(unittest.TestCase):
     """
 
     def setUp(self):
-        self.tmp = pathlib.Path(tempfile.mkdtemp(prefix="cozempic_c1_"))
+        self.tmp = pathlib.Path(tempfile.mkdtemp(prefix="winnow_c1_"))
 
     def tearDown(self):
         import shutil
@@ -275,7 +275,7 @@ class TestPhantomTerminate(unittest.TestCase):
     """
 
     def setUp(self):
-        self.tmp = pathlib.Path(tempfile.mkdtemp(prefix="cozempic_c2_"))
+        self.tmp = pathlib.Path(tempfile.mkdtemp(prefix="winnow_c2_"))
 
     def tearDown(self):
         import shutil
@@ -420,7 +420,7 @@ class TestQueueOpRobustness(unittest.TestCase):
     """
 
     def setUp(self):
-        self.tmp = pathlib.Path(tempfile.mkdtemp(prefix="cozempic_qop_"))
+        self.tmp = pathlib.Path(tempfile.mkdtemp(prefix="winnow_qop_"))
 
     def tearDown(self):
         import shutil
@@ -498,7 +498,7 @@ class TestTrailerSkipRegressionGuards(unittest.TestCase):
     """
 
     def setUp(self):
-        self.tmp = pathlib.Path(tempfile.mkdtemp(prefix="cozempic_c3g_"))
+        self.tmp = pathlib.Path(tempfile.mkdtemp(prefix="winnow_c3g_"))
 
     def tearDown(self):
         import shutil

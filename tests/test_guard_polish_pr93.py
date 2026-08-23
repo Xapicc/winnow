@@ -569,7 +569,7 @@ class TestPolishPR93_SpawnClaimMetadataParity(unittest.TestCase):
         # Force the guard-identity gate to True so we exercise the parse
         # path through to a positive return rather than the fresh-window
         # fallback at line 1314.
-        with patch("winnow.legacy.guard._is_cozempic_guard_process", return_value=True):
+        with patch("winnow.legacy.guard._is_winnow_guard_process", return_value=True):
             result = _is_guard_running_for_session(self.SESSION_ID)
         self.assertEqual(
             result, my_pid,
@@ -584,14 +584,13 @@ class TestPolishPR93_HookSchemaV9(unittest.TestCase):
     pattern would break on the new 3-line pidfile format. Migrated to
     `head -1` which is POSIX and extracts only line 1 (the PID)."""
 
-    def test_hook_schema_version_v9(self):
+    def test_hook_schema_version_is_well_formed(self):
         from winnow.legacy.init import HOOK_SCHEMA_VERSION
-        # Durable floor check (was a hardcoded allow-list that broke on every bump).
-        self.assertEqual(HOOK_SCHEMA_VERSION[0], "v"[0])
-        self.assertGreaterEqual(
-            int(HOOK_SCHEMA_VERSION.lstrip("v")), 9,
-            "HOOK_SCHEMA_VERSION must be v9 or higher (PR #93 head -1 change, PR #94 Phase B bump, #109 NO_AUTO_INIT)",
-        )
+        # Was a floor of v9 standing in for "the head -1 change is still in the
+        # hook". winnow restarts the counter at v1 (FORK.md §6.2), so the floor
+        # is gone and the change itself is asserted by
+        # test_hooks_json_uses_head_minus_1 below, which is where it belonged.
+        self.assertRegex(HOOK_SCHEMA_VERSION, r"^v\d+$")
 
     def test_hooks_json_uses_head_minus_1(self):
         """The bash hook MUST use `head -n 1` (or `head -1`) to read the PID,
@@ -634,10 +633,15 @@ class TestPolishPR93_HookSchemaV9(unittest.TestCase):
                     HOOK_SCHEMA_MARKER, body,
                     f"{hooks_rel}: must carry the current schema marker {HOOK_SCHEMA_MARKER}",
                 )
+                # Was "no v8 marker". The inherited marker is what a shipped
+                # hooks.json must never carry now: the ownership shim in
+                # init.py recognises it so `init` can replace it, and a
+                # canonical hook still carrying it would be replaced by itself
+                # forever (FORK.md §6.2).
                 self.assertNotIn(
-                    "cozempic-hook-schema=v8",
+                    "cozempic-hook-schema=",
                     body,
-                    f"{hooks_rel}: v8 marker must be migrated to v9+",
+                    f"{hooks_rel}: must carry winnow's marker, not the inherited one",
                 )
 
 

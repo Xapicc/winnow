@@ -132,7 +132,7 @@ class TestWriteReceipt(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = _emit(tmp, tool_version=None)
             rec = json.loads(path.read_text().splitlines()[0])
-            self.assertEqual(rec["tool"]["name"], "cozempic")
+            self.assertEqual(rec["tool"]["name"], "winnow")
             self.assertTrue(rec["tool"]["version"])  # non-empty, auto-filled
 
     def test_survives_preexisting_corrupt_index(self):

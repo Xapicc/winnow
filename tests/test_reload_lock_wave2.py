@@ -251,7 +251,7 @@ class TestReloadLockSessionIdSanitization(unittest.TestCase):
         from winnow.legacy.reload_lock import _lock_path_for
         path = _lock_path_for("abc123")
         self.assertEqual(path.parent, Path(tempfile.gettempdir()))
-        self.assertEqual(path.name, "cozempic_reload_abc123.lock")
+        self.assertEqual(path.name, "winnow_reload_abc123.lock")
 
     def test_slug_parity_three_producers_agree_on_uppercase_input(self):
         """All three slug producers must produce identical output for an uppercase input.
@@ -276,7 +276,7 @@ class TestReloadLockSessionIdSanitization(unittest.TestCase):
         # Call the REAL guard function — not an inlined copy of its formula.
         # If _reload_armed_path drifts (different regex, truncation, path-stripping),
         # this test will catch it. An inline formula copy would not.
-        _PREFIX = "cozempic_reload_armed_"
+        _PREFIX = "winnow_reload_armed_"
         _SUFFIX = ".json"
         armed_path = _reload_armed_path(raw)
         guard_slug = armed_path.name[len(_PREFIX):-len(_SUFFIX)]
@@ -312,7 +312,7 @@ class TestReloadLockSessionIdSanitization(unittest.TestCase):
         expected = "f641174c-d78"  # first 12 chars, all lowercase already
 
         # Call the REAL guard function — not an inlined copy of its formula.
-        _PREFIX = "cozempic_reload_armed_"
+        _PREFIX = "winnow_reload_armed_"
         _SUFFIX = ".json"
         armed_path = _reload_armed_path(uuid)
         guard_slug = armed_path.name[len(_PREFIX):-len(_SUFFIX)]
@@ -338,7 +338,7 @@ class TestReloadLockSessionIdSanitization(unittest.TestCase):
         pre_fix_slug = re.sub(r"[^a-z0-9_-]", "_", str(uuid).lower())[:12] or "session"
 
         armed_path = _reload_armed_path(uuid)
-        _PREFIX = "cozempic_reload_armed_"
+        _PREFIX = "winnow_reload_armed_"
         _SUFFIX = ".json"
         post_fix_slug = armed_path.name[len(_PREFIX):-len(_SUFFIX)]
 
@@ -362,7 +362,7 @@ class TestReloadLockSessionIdSanitization(unittest.TestCase):
 
         path_input = '/Users/foo/MySession-ABC.jsonl'
         armed_path = _reload_armed_path(path_input)
-        _PREFIX = "cozempic_reload_armed_"
+        _PREFIX = "winnow_reload_armed_"
         _SUFFIX = ".json"
         armed_slug = armed_path.name[len(_PREFIX):-len(_SUFFIX)]
 
@@ -382,7 +382,7 @@ class TestReloadLockSessionIdSanitization(unittest.TestCase):
 
         path_input = '/Users/foo/MySession-ABC.jsonl'
         ledger_path = _reload_ledger_path(path_input, Path('/dummy'))
-        _PREFIX = "cozempic_reload_"
+        _PREFIX = "winnow_reload_"
         _SUFFIX = ".history"
         ledger_slug = ledger_path.name[len(_PREFIX):-len(_SUFFIX)]
 
@@ -426,8 +426,8 @@ class TestReloadLockSessionIdSanitization(unittest.TestCase):
         armed_path = _reload_armed_path(path_input)
         ledger_path = _reload_ledger_path(path_input, Path('/dummy'))
 
-        armed_slug = armed_path.name[len("cozempic_reload_armed_"):-len(".json")]
-        ledger_slug = ledger_path.name[len("cozempic_reload_"):-len(".history")]
+        armed_slug = armed_path.name[len("winnow_reload_armed_"):-len(".json")]
+        ledger_slug = ledger_path.name[len("winnow_reload_"):-len(".history")]
         expected_slug = rl_slug(path_input)
 
         self.assertEqual(armed_slug, expected_slug,
@@ -463,7 +463,7 @@ class TestReloadLockSessionIdSanitization(unittest.TestCase):
 
         raw = "ABCD1234EFGH-XX"
         ledger_path = _reload_ledger_path(raw, Path("/tmp/ignored.jsonl"))
-        _PREFIX = "cozempic_reload_"
+        _PREFIX = "winnow_reload_"
         _SUFFIX = ".history"
         ledger_slug = ledger_path.name[len(_PREFIX):-len(_SUFFIX)]
         self.assertEqual(ledger_slug, rl_slug(raw),
@@ -591,7 +591,7 @@ class TestRound2ReviewerFindings(unittest.TestCase):
         wide_slug = "abcdefghijklmno"  # 15 chars
         with patch('winnow.legacy.reload_lock._slug_for', return_value=wide_slug):
             sentinel_slug = _reload_sentinel_path_for("my-test-session-99").name[
-                len("cozempic_reload_"):-len(".in-flight")
+                len("winnow_reload_"):-len(".in-flight")
             ]
         self.assertEqual(
             sentinel_slug, wide_slug,
@@ -617,7 +617,7 @@ class TestRound2ReviewerFindings(unittest.TestCase):
                 "Non-str session_id should be coerced to str at the call site."
             )
         # Ensure we got a real path back
-        self.assertIn("cozempic_reload_armed_", result.name)
+        self.assertIn("winnow_reload_armed_", result.name)
 
     def test_reload_ledger_path_non_str_session_id_does_not_raise(self):
         """M-2 parity: _reload_ledger_path(123, ...) must not raise TypeError."""
@@ -630,14 +630,14 @@ class TestRound2ReviewerFindings(unittest.TestCase):
                 f"_reload_ledger_path(123, ...) raised TypeError: {exc!r}. "
                 "Non-str session_id should be coerced to str at the call site."
             )
-        self.assertIn("cozempic_reload_", result.name)
+        self.assertIn("winnow_reload_", result.name)
 
 
 # ─── CLI integration: --wait flag exists ─────────────────────────────────────
 
 class TestReloadCliWaitFlag(unittest.TestCase):
     def test_cmd_reload_has_wait_argument(self):
-        """`cozempic reload --wait` flag must exist on the parser."""
+        """`winnow reload --wait` flag must exist on the parser."""
         from winnow.legacy.cli import build_parser
         parser = build_parser()
         # Parse a minimal `reload --wait 10` to confirm the flag exists

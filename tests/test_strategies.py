@@ -1,4 +1,4 @@
-"""Tests for Cozempic strategies."""
+"""Tests for winnow strategies."""
 
 from __future__ import annotations
 

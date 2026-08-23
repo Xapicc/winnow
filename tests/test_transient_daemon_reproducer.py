@@ -4,14 +4,14 @@ This test is the architect's PRIMARY verification item ("Not verified" section
 of AUDIT_REPORT_pr94_transient_daemon_race.md).
 
 The hypothesis (architect, confidence 86%):
-    The upgrade-chain re-fire of SessionStart fired `cozempic guard --daemon`
+    The upgrade-chain re-fire of SessionStart fired `winnow guard --daemon`
     against the OLD session while OLD Claude (PID 89113) was still dying.
     `find_claude_pid()` in the daemon-spawn subprocess walked ancestors,
     found 89113 still in the process tree (slow graceful exit = 68 seconds),
     and spawned a "transient" daemon for session 86cb258b with claude_pid=89113.
     This transient daemon claimed the pidfile slot via DaemonSpawnClaim.
     When NEW Claude (PID 94466) started at 14:38:18 and its SessionStart
-    hook ran `cozempic guard --daemon`, DaemonAlreadyStarting was raised
+    hook ran `winnow guard --daemon`, DaemonAlreadyStarting was raised
     (transient daemon was alive) → NEW Claude ended up UNPROTECTED.
 
 This test constructs the exact sequence using unit-level mocks and asserts:
@@ -54,11 +54,11 @@ NEW_CLAUDE_PID = 94466   # the new Claude that started at 14:38:18
 
 
 def _pid_path() -> Path:
-    return Path(f"/tmp/cozempic_guard_{REPRO_SID12}.pid")
+    return Path(f"/tmp/winnow_guard_{REPRO_SID12}.pid")
 
 
 def _sentinel_path() -> Path:
-    return Path(f"/tmp/cozempic_reload_{REPRO_SID12}.in-flight")
+    return Path(f"/tmp/winnow_reload_{REPRO_SID12}.in-flight")
 
 
 class TestTransientDaemonReproducer(unittest.TestCase):

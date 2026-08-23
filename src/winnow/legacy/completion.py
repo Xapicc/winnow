@@ -1,4 +1,4 @@
-"""Shell completion script generators for cozempic."""
+"""Shell completion script generators for winnow."""
 
 from __future__ import annotations
 
@@ -15,8 +15,8 @@ def bash_completion() -> str:
     prescriptions = " ".join(PRESCRIPTIONS.keys())
     strategies = " ".join(STRATEGIES.keys())
 
-    return f'''# cozempic bash completion
-_cozempic() {{
+    return f'''# winnow bash completion
+_winnow() {{
     local cur prev
     cur="${{COMP_WORDS[COMP_CWORD]}}"
     prev="${{COMP_WORDS[COMP_CWORD-1]}}"
@@ -29,12 +29,12 @@ _cozempic() {{
     case "$prev" in
         -rx) COMPREPLY=($(compgen -W "{prescriptions}" -- "$cur")) ;;
         strategy) COMPREPLY=($(compgen -W "{strategies}" -- "$cur")) ;;
-        treat|diagnose) COMPREPLY=($(compgen -W "$(cozempic list 2>/dev/null | awk 'NR>2 {{print $1}}') current" -- "$cur")) ;;
+        treat|diagnose) COMPREPLY=($(compgen -W "$(winnow list 2>/dev/null | awk 'NR>2 {{print $1}}') current" -- "$cur")) ;;
         completions) COMPREPLY=($(compgen -W "bash zsh" -- "$cur")) ;;
         --thinking-mode) COMPREPLY=($(compgen -W "remove truncate signature-only" -- "$cur")) ;;
     esac
 }}
-complete -F _cozempic cozempic
+complete -F _winnow winnow
 '''
 
 
@@ -50,8 +50,8 @@ def zsh_completion() -> str:
     prescriptions = " ".join(PRESCRIPTIONS.keys())
     strategies = " ".join(STRATEGIES.keys())
 
-    return f'''#compdef cozempic
-_cozempic() {{
+    return f'''#compdef winnow
+_winnow() {{
     local -a subcommands
     subcommands=({subcommands})
     _arguments -C '1:command:compadd -a subcommands' '*::arg:->args'
@@ -64,5 +64,5 @@ _cozempic() {{
             esac ;;
     esac
 }}
-_cozempic "$@"
+_winnow "$@"
 '''

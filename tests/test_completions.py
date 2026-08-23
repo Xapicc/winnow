@@ -5,7 +5,7 @@ from winnow.legacy.completion import bash_completion, zsh_completion
 
 class TestBashCompletion(unittest.TestCase):
     def test_contains_complete_directive(self):
-        self.assertIn("complete -F _cozempic cozempic", bash_completion())
+        self.assertIn("complete -F _winnow winnow", bash_completion())
 
     def test_includes_subcommands(self):
         script = bash_completion()
@@ -20,7 +20,7 @@ class TestBashCompletion(unittest.TestCase):
 
 class TestZshCompletion(unittest.TestCase):
     def test_contains_compdef(self):
-        self.assertIn("#compdef cozempic", zsh_completion())
+        self.assertIn("#compdef winnow", zsh_completion())
 
 
 if __name__ == "__main__":

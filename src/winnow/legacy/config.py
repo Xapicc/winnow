@@ -1,4 +1,4 @@
-"""Runtime configuration for cozempic safety guards.
+"""Runtime configuration for winnow safety guards.
 
 Single source of truth for the floor preservation tunables introduced by the
 prune-safety defense-in-depth fix (P0-B/C/D port onto v1.8.18 terminate-first):
@@ -6,7 +6,7 @@ prune-safety defense-in-depth fix (P0-B/C/D port onto v1.8.18 terminate-first):
   - ``floor``: per-prune protections — max % of user/assistant messages that
     may drop, last-K turns guaranteed to survive, first-message guarantee.
 
-Precedence: environment variable > ``~/.cozempic/config.json`` > built-in default.
+Precedence: environment variable > ``~/.winnow/config.json`` > built-in default.
 
 Invalid values (out-of-range, garbage strings, wrong type) silently fall back
 to the default. Reading config never raises — a daemon mid-flight must not
@@ -34,7 +34,7 @@ _FLOOR_MAX_DROP_PCT_RANGE: tuple[float, float] = (0.0, 1.0)
 _FLOOR_PRESERVE_LAST_K_DEFAULT: int = 10
 _FLOOR_PRESERVE_LAST_K_RANGE: tuple[int, int] = (1, 1000)
 
-_CONFIG_FILE_PATH = Path.home() / ".cozempic" / "config.json"
+_CONFIG_FILE_PATH = Path.home() / ".winnow" / "config.json"
 
 
 @dataclass(frozen=True)
@@ -67,7 +67,7 @@ class FloorConfig:
 
 @dataclass(frozen=True)
 class Config:
-    """Top-level cozempic runtime config."""
+    """Top-level winnow runtime config."""
 
     floor: FloorConfig = field(default_factory=FloorConfig)
 
@@ -152,7 +152,7 @@ def _parse_bool(raw: str, *, default: bool) -> bool:
 
 
 def _read_config_file() -> dict[str, Any]:
-    """Read ~/.cozempic/config.json. Returns {} on any failure."""
+    """Read ~/.winnow/config.json. Returns {} on any failure."""
     try:
         if not _CONFIG_FILE_PATH.exists():
             return {}
@@ -232,7 +232,7 @@ def _resolve_floor_with(file_data: dict[str, Any]) -> FloorConfig:
 def load_config() -> Config:
     """Load the active runtime config (env → file → default).
 
-    REVIEW-max E.9: reads ``~/.cozempic/config.json`` exactly ONCE and
+    REVIEW-max E.9: reads ``~/.winnow/config.json`` exactly ONCE and
     passes the parsed dict to all resolvers. The prior per-resolver file read
     was wasteful and had a TOCTOU window where mid-cycle config edits flipped
     floor behavior between reads.

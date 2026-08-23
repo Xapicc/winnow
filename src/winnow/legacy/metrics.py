@@ -124,7 +124,7 @@ class ClaudeMetricsAdapter:
     schema_version = "1"
 
     def agent_version(self) -> str | None:
-        # Claude Code's own version is not reliably visible to cozempic.
+        # Claude Code's own version is not reliably visible to winnow.
         return None
 
     def count_tokens(self, entries: list[Message]) -> TokenCount:
@@ -345,7 +345,7 @@ def build_receipt(
         "schema_version": SCHEMA_VERSION,
         "receipt_id": receipt_id if receipt_id is not None else new_receipt_id(),
         "ts": ts if ts is not None else utc_now_iso(),
-        "tool": {"name": "cozempic", "version": tool_version},
+        "tool": {"name": "winnow", "version": tool_version},
         "agent": {
             "name": adapter.name,
             "version": adapter.agent_version(),

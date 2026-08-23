@@ -1,0 +1,44 @@
+winnow
+Copyright (c) 2026 the winnow contributors
+
+This product is a fork of Cozempic and contains code originally written for it.
+
+  Cozempic 1.8.39
+  Copyright (c) 2026 Ruya AI
+  MIT License
+  https://github.com/Ruya-AI/cozempic
+
+Cozempic was imported into this repository at commit 210b026 ("merge from
+cozempic"), 21,700 lines of Python, and this project subsequently forked it
+rather than keeping it as a vendored dependency. The reversal, and what it
+costs, is recorded in docs/DECISIONS.md section 0. The rename is mapped in
+docs/FORK.md.
+
+The upstream git sha of the 1.8.39 release is not recorded here, because it was
+not recorded at import and cannot be recovered from what was imported. Anyone
+needing an exact diff against upstream should take it against the 1.8.39 source
+distribution published on PyPI.
+
+Derived code, by directory, as of the fork decision:
+
+  src/cozempic/    the whole of it, moving to src/winnow/legacy/ (docs/FORK.md)
+  plugin/          hooks, skills and the MCP server
+  npm/             scheduled for deletion, docs/FORK.md phase 2
+  packaging/       scheduled for deletion, docs/FORK.md phase 2
+  tests/           the suite that arrived with the tree
+  docs/behavioral-digest-design.md, docs/qa-fleet.md
+                   Cozempic's own design notes, arrived with the merge
+
+Written by this project and not derived: src/winnow/ (cli.py,
+orchestrator_safe.py and their tests), docs/SPEC.md, docs/DECISIONS.md,
+docs/MILESTONES.md, docs/COZEMPIC.md, docs/USAGEFOUNDRY.md, docs/FORK.md,
+README.md and this file.
+
+CONTRIBUTORS.md credits the people who wrote the inherited code, by name and by
+pull-request number. That attribution is not conditional on the code staying
+unmodified and is not removable. It applies to code that is now winnow's, which
+makes it more load-bearing rather than less.
+
+MIT requires that the copyright notice and the permission notice travel with the
+software. Both copyright lines and one permission notice are in LICENSE at the
+root of this repository, which is the file this notice points at.

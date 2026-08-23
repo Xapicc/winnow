@@ -7,7 +7,94 @@ is first because it is the one that can end it on arithmetic alone.
 Citation convention as in [SPEC.md](SPEC.md) §11: `[[Note]] (confidence)` for vault notes,
 `ContextControl/NN-` for `/workspace/UsageFoundry/proposals/ContextControl/`.
 
+> §0 was added 2026-08-23 after the Cozempic merge (`210b026`) deleted this file. §1 onward is
+> restored verbatim and unamended; where the code contradicts it, [COZEMPIC.md](COZEMPIC.md)
+> adjudicates rather than this document quietly changing its mind.
+
 ---
+
+## 0. What Cozempic is doing in this repository
+
+Commit `210b026` imported 21,700 lines of a working, published tool — Cozempic 1.8.39, MIT,
+copyright Ruya AI — into `src/cozempic/`, and deleted this project's four shaping documents in the
+same commit. That leaves one question that has to be answered before any other: is winnow now a
+fork of Cozempic, or is Cozempic prior art that winnow keeps and measures?
+
+**Decided: vendored prior art. Pinned, unmodified, uninstalled, and one arm of the measurement.**
+
+Concretely:
+
+- `src/cozempic/` is treated as a **read-only third-party tree**. Nothing in it is edited. Bug
+  fixes to it are not winnow's work; if one is needed, it goes upstream or it goes in a patch file
+  beside the tree, never inline.
+- Winnow's own code, when it exists, goes in `src/winnow/`. There is no shared module, no common
+  base class and no refactor to extract one. The two trees do not know about each other.
+- Nothing in `src/cozempic/` is installed, wired, or started by default. Its hooks are not
+  registered, its daemon is not launched, and its auto-update is off. [USAGEFOUNDRY.md](USAGEFOUNDRY.md)
+  names the environment variables that hold that true.
+- It stays in-tree, at a recorded upstream commit, because `winnow bench` needs a byte-stable
+  baseline and a PyPI dependency is not one — Cozempic upgrades itself from PyPI on every session
+  start (`plugin/hooks/hooks.json:9`) and on every CLI invocation (`src/cozempic/cli.py:2399` →
+  `src/cozempic/updater.py:225`), so `cozempic==1.8.39` names a version that does not stay put.
+  A vendored tree at a known sha is reproducible; a pin on a self-updating package is not.
+
+**Why not a fork.** A fork inherits the maintenance, and the maintenance is the part nobody costed.
+It is 4,314 lines of daemon that sends `SIGKILL` to a live editor session
+(`src/cozempic/guard.py:2377-2400`), with no test CI anywhere in the repository, `pytest`
+undeclared as a dependency, and an undeclared `psutil` import whose absence makes the anti-PID-reuse
+check in front of that `SIGKILL` fail **open** (`src/cozempic/guard.py:2268`). It also inherits a
+version number, a PyPI name, a telemetry endpoint on a third party's Cloudflare Worker
+(`src/cozempic/helpers.py:240-261`), six packaging channels and another project's release process.
+Winnow's appetite is two weeks and its deliverable is a number ([MILESTONES.md](MILESTONES.md)).
+Adopting a 21,700-line codebase spends the whole appetite on custody.
+
+The deeper reason is that the two designs disagree at the root, not at the edges. §3 below already
+rejected Cozempic's three central choices by name, before this merge and without reference to it:
+D2 rejects "in-place edit with a timestamped backup (cozempic's design)", D7 rejects "a daemon
+watching for session end", and §2 rejects "[i]gnore the cache and strip whenever asked — This is
+what cozempic does, and it is why no one can say whether cozempic saves money." A fork is a
+commitment to a codebase whose load-bearing decisions this document rejected three times in
+writing. [COZEMPIC.md](COZEMPIC.md) §3 works through all of them.
+
+**Alternatives rejected:**
+
+| Alternative | Why rejected |
+| --- | --- |
+| **Fork and diverge** — rename, re-license, keep the code, replace the parts winnow disagrees with | The parts winnow disagrees with are the guard, the writer and the trigger, which is most of the tool. What is left is the rule set, and §1 already records that "the rules are the cheap part". It also means maintaining a hard fork of a package that auto-updates itself, under a name that has to differ from the one on PyPI, with a contributor list that is not winnow's |
+| **Wrap and configure** — winnow becomes a front-end that drives Cozempic with better defaults | Incoherent with D7, which keeps winnow out of the spawn path entirely, and with §2, which needs the strip to happen at a cold boundary. Cozempic's trigger is a token threshold crossed mid-session. Wrapping it means either not using the guard, in which case there is nothing to wrap, or using it, in which case winnow has adopted the one decision it rejected on arithmetic |
+| **Delete it; recover it from history if the bench needs it** | Tempting and nearly right. Rejected because a measurement arm reachable only by `git show` is an arm that quietly does not get run, and because the code is the clearest available statement of what the rule-based class of tool actually does — reading it is cheaper than re-deriving it. Kept visible, kept inert |
+| **Git submodule against upstream** | Correct on paper and worse in practice: upstream moves, and a submodule pointing at a moving branch reintroduces exactly the reproducibility problem the vendored tree exists to solve. It also does not work in this container, which has no network path to `github.com` established for submodule fetch |
+
+**Cost of being wrong.** Two ways, and they pull opposite.
+
+If winnow's milestone 1 comes back badly and the project falls back to §1's own stated fallback —
+"[c]ontribute the rules to cozempic instead" — then a vendored tree at a stale sha is a fork that
+has drifted with no upstream relationship, and every patch has to be re-derived against a moved
+HEAD. The mitigation is the discipline above: never modify `src/cozempic/`, and record the upstream
+commit so a rebase is a rebase rather than an archaeology exercise.
+
+If instead the vendored tree turns out to be dead weight — 21,700 lines nobody reads and a bench
+arm nobody runs — the cost is repository noise and the standing risk that some later agent takes
+`src/cozempic/` for winnow's own code and edits it. That risk is real and this pass has already
+seen its first instance: the merge left the repository asserting Cozempic's README as winnow's.
+The mitigation is that every document here says which tree is which, in the first paragraph.
+
+**Licensing and attribution, which the merge got wrong in both directions.**
+
+- `LICENSE` is Cozempic's MIT notice, copyright 2026 Ruya AI. Vendoring under MIT requires that
+  notice be retained, so the file stays exactly as it is — but it is **not winnow's licence**, and
+  the repository currently reads as though it were. Winnow's own licence has not been chosen. Until
+  it is, the honest state is one licence file that covers `src/cozempic/`, `plugin/`, `npm/` and
+  `packaging/`, and no licence at all on anything winnow writes. The implementation run should
+  either choose winnow's licence and add it as a second file with the scope of each stated, or
+  record the decision to stay unlicensed.
+- `CONTRIBUTORS.md` credits Cozempic's contributors, by name and pull-request number. That
+  attribution is correct and must not be removed. What was wrong is that it sat at the root of a
+  repository they have not contributed to, reading as winnow's contributor list. A header line now
+  says whose list it is.
+- `README.md` claimed 100,000+ users and carried a downloads badge for a package this repository
+  does not publish. That was the merge asserting another project's numbers as this one's, and it is
+  the failure this pass exists to fix. It has been rewritten.
 
 ## 1. The decision that comes before the others: is this worth building at all
 

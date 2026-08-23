@@ -176,13 +176,14 @@ def cmd_post_compact(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="winnow",
-        description="winnow — see docs/SPEC.md. Only the orchestrator-safe "
-                    "mode is implemented.",
-    )
-    sub = parser.add_subparsers(dest="group", required=True)
+def add_safe_subparser(sub: argparse._SubParsersAction) -> None:
+    """Register the `safe` group onto an existing subparsers action.
+
+    Split out from `build_parser` because winnow is one program: the inherited
+    parser in `winnow.legacy.cli` owns `prog` and the global flags, and calls
+    this so that `winnow --help` lists the safe group alongside the inherited
+    subcommands (docs/FORK.md §2).
+    """
     safe_group = sub.add_parser(
         "safe",
         help="orchestrator-safe mode: the behaviour required when an unattended "
@@ -225,19 +226,48 @@ def build_parser() -> argparse.ArgumentParser:
     p_cp = actions.add_parser(
         "checkpoint",
         help="PreCompact: write team state into winnow's data directory",
+        description="Write the current session's team state into winnow's data "
+                    f"directory ({safe.DATA_DIR_ENV}), never into ~/.claude, which "
+                    "is a bind mount this mode may not write to. `winnow team "
+                    "checkpoint` is the same operation writing into ~/.claude.",
     )
     p_cp.add_argument("--cwd", help="working directory (default: current)")
     p_cp.set_defaults(func=cmd_checkpoint)
 
     p_pc = actions.add_parser(
-        "post-compact", help="PostCompact: print the checkpoint back"
+        "post-compact",
+        help="PostCompact: print the checkpoint back",
+        description="Print back the checkpoint `winnow safe checkpoint` wrote into "
+                    f"winnow's data directory ({safe.DATA_DIR_ENV}). Never reads "
+                    "~/.claude, so it cannot restore another project's state.",
     )
     p_pc.set_defaults(func=cmd_post_compact)
 
+
+def build_parser() -> argparse.ArgumentParser:
+    """A parser for `winnow safe ...` alone.
+
+    `winnow`'s full parser is `winnow.legacy.cli.build_parser`, which registers
+    this group as well. This one exists so that dispatching `safe` never has to
+    build the inherited parser, whose construction is not the problem but whose
+    `main()` does an update ping and an auto-init before it parses.
+    """
+    parser = argparse.ArgumentParser(
+        prog="winnow",
+        description="winnow — see docs/SPEC.md. Only the orchestrator-safe "
+                    "mode is implemented.",
+    )
+    add_safe_subparser(parser.add_subparsers(dest="group", required=True))
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
+    """The `winnow` entry point: the safe group here, everything else inherited."""
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] != ["safe"]:
+        from .legacy.cli import main as legacy_main
+
+        return legacy_main(argv)
     args = build_parser().parse_args(argv)
     return args.func(args)
 

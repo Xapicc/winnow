@@ -992,6 +992,11 @@ def cmd_checkpoint(args):
             print()
 
 
+def cmd_team(args):
+    """Dispatch the `team` group. Its actions kept their old implementations."""
+    {"checkpoint": cmd_checkpoint, "post-compact": cmd_post_compact}[args.team_action](args)
+
+
 def cmd_post_compact(args):
     """Output recovery context after native compaction. Designed for PostCompact hook.
 
@@ -1763,8 +1768,8 @@ def cmd_digest(args):
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="cozempic",
-        description="Context weight-loss tool for Claude Code — prune bloated JSONL conversation files",
+        prog="winnow",
+        description="Prune bloated Claude Code JSONL conversation files",
     )
     parser.add_argument("--version", action="version", version="%(prog)s 1.8.39")
     parser.add_argument("--context-window", type=int, default=None, help="Override context window size in tokens (e.g. 1000000 for 1M beta)")
@@ -1825,13 +1830,31 @@ def build_parser() -> argparse.ArgumentParser:
              "we fail fast with exit code 2.",
     )
 
-    # checkpoint
-    p_cp = sub.add_parser("checkpoint", help="Save team/agent state from the current session (no pruning)")
+    # team — checkpoint and post-compact were top-level names until the fork,
+    # where both collided with `winnow safe checkpoint` / `winnow safe
+    # post-compact`, which do the same thing to a different destination. They
+    # are team-state operations implemented in team.py, so `team` is the
+    # namespace they should have had (docs/FORK.md §2.1).
+    p_team = sub.add_parser("team", help="Team/agent state across compaction")
+    team_actions = p_team.add_subparsers(dest="team_action", required=True)
+
+    p_cp = team_actions.add_parser(
+        "checkpoint",
+        help="Save team/agent state from the current session (no pruning)",
+        description="Save team/agent state from the current session, with no pruning. "
+                    "Writes team-checkpoint.md into ~/.claude/projects/<slug>/. "
+                    "`winnow safe checkpoint` is the same operation writing into "
+                    "winnow's data directory instead.",
+    )
     p_cp.add_argument("--cwd", help="Working directory (default: current)")
     p_cp.add_argument("--show", action="store_true", help="Print the team state after saving")
 
-    # post-compact
-    p_post_compact = sub.add_parser("post-compact", help="Output team state after compaction (for PostCompact hook)")
+    p_post_compact = team_actions.add_parser(
+        "post-compact",
+        help="Output team state after compaction (for PostCompact hook)",
+        description="Print the team state saved by `winnow team checkpoint`, read from "
+                    "~/.claude/projects/<slug>/team-checkpoint.md, for the PostCompact hook.",
+    )
     p_post_compact.add_argument("--cwd", help="Working directory (default: current)")
 
     # guard
@@ -1909,12 +1932,20 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Write the HTML but don't open a browser")
     p_dash.add_argument("--agent", help="Filter to one agent (e.g. claude, codex)")
 
+    # winnow is one program, so `winnow --help` has to list the safe group too.
+    # Registered from here rather than the other way round because this parser
+    # owns `prog` and the global flags; imported inside the function because
+    # winnow.cli imports back into this module (docs/FORK.md §2).
+    from winnow.cli import add_safe_subparser
+
+    add_safe_subparser(sub)
+
     return parser
 
 
 _SUBCOMMANDS = {
     "list", "current", "diagnose", "treat", "strategy", "reload",
-    "checkpoint", "post-compact", "guard", "init", "doctor", "formulary", "completions",
+    "team", "guard", "init", "doctor", "formulary", "completions",
     "digest", "self-update", "remind", "guard-watchdog", "dashboard", "uninstall",
 }
 
@@ -2384,10 +2415,21 @@ def cmd_dashboard(args):
             print("  (open it manually in a browser)")
 
 
-def main():
+def main(argv=None):
     from .updater import maybe_auto_update, ping_install_if_new
 
-    argv = _prescan_argv(sys.argv[1:])
+    argv = _prescan_argv(sys.argv[1:] if argv is None else list(argv))
+
+    # The safe group is winnow's own code and must not pay for anything below:
+    # ping_install_if_new() writes and phones home, and _maybe_auto_init writes
+    # hooks into a settings.json this mode does not own. Handing it over here
+    # rather than further down means no ordering mistake can reintroduce that
+    # (docs/USAGEFOUNDRY.md §8.6).
+    if argv[:1] == ["safe"]:
+        from winnow.cli import main as safe_main
+
+        return safe_main(argv)
+
     # The Stop-hook `nudge` emits a machine-parsed JSON protocol on STDOUT
     # ({"systemMessage": ...}). The auto-updater prints upgrade chatter to STDOUT,
     # which would prepend to that JSON and break the hook parser on the ~daily
@@ -2417,8 +2459,7 @@ def main():
         "treat": cmd_treat,
         "strategy": cmd_strategy,
         "reload": cmd_reload,
-        "checkpoint": cmd_checkpoint,
-        "post-compact": cmd_post_compact,
+        "team": cmd_team,
         "guard": cmd_guard,
         "init": cmd_init,
         "uninstall": cmd_uninstall,

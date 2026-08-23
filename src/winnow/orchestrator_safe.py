@@ -205,18 +205,22 @@ def data_dir(env: dict[str, str] | None = None) -> Path:
 
 # ── The argv gate ────────────────────────────────────────────────────────────
 
-# A frozen mirror of the subcommands cozempic's argparse parser accepts. Frozen
-# rather than imported so that the policy does not depend on importing the CLI
-# to make a decision, and so that an upstream tree with a new subcommand fails a
-# test here instead of silently defaulting that subcommand to allowed.
+# A frozen mirror of the inherited subcommands winnow's argparse parser accepts.
+# Frozen rather than imported so that the policy does not depend on importing
+# the CLI to make a decision, and so that a new subcommand fails a test here
+# instead of silently defaulting to allowed.
 #
 # Mirrors the parser, not cli._SUBCOMMANDS: the two disagree, and the parser is
 # the set that can actually be invoked. `nudge` is in the parser and not in
 # _SUBCOMMANDS, so a gate built on that constant would not see the one command
-# that writes into ~/.claude/cozempic-metrics/.
-COZEMPIC_SUBCOMMANDS = frozenset({
+# that writes into ~/.claude/winnow-metrics/.
+#
+# `safe` is deliberately absent. It is winnow's own group and is dispatched by
+# winnow.cli before the inherited main() runs, so it never arrives here as an
+# argv to classify.
+LEGACY_SUBCOMMANDS = frozenset({
     "list", "current", "diagnose", "treat", "strategy", "reload",
-    "checkpoint", "post-compact", "guard", "init", "doctor", "formulary",
+    "team", "guard", "init", "doctor", "formulary",
     "completions", "digest", "self-update", "remind", "guard-watchdog",
     "dashboard", "uninstall", "nudge",
 })
@@ -247,11 +251,6 @@ _REFUSED_SUBCOMMANDS: dict[str, str] = {
         "mutates a settings.json this mode does not own, in the same "
         "bind-mounted directory. USAGEFOUNDRY §1.7"
     ),
-    "checkpoint": (
-        "writes team-checkpoint.md into ~/.claude/projects/<slug>/ "
-        "(guard.py:389-390). Use `winnow safe checkpoint`, which writes the "
-        "same file into winnow's data directory. USAGEFOUNDRY §1.7"
-    ),
     # The two commands that build a home-directory path inside the function
     # rather than at module level, so `redirect_home_writes` cannot reach them.
     "nudge": (
@@ -277,9 +276,20 @@ _REFUSED_ARGV: tuple[tuple[str, str, str], ...] = (
     (
         "digest",
         "inject",
-        "writes cozempic_digest.md into ~/.claude/projects/<slug>/memory/ and "
+        "writes winnow_digest.md into ~/.claude/projects/<slug>/memory/ and "
         "edits that directory's MEMORY.md, which is loaded into every "
         "session's context (digest.py:954-996). USAGEFOUNDRY §1.7"
+    ),
+    # Keyed on the group rather than the subcommand because `team` also carries
+    # `post-compact`, which only reads. Before the fork this was a whole-command
+    # refusal on `checkpoint`; the command moved under `team` (docs/FORK.md
+    # §2.1) and the refusal has to move with it or invariant 4 opens silently.
+    (
+        "team",
+        "checkpoint",
+        "writes team-checkpoint.md into ~/.claude/projects/<slug>/ "
+        "(guard.py:389-390). Use `winnow safe checkpoint`, which writes the "
+        "same file into winnow's data directory. USAGEFOUNDRY §1.7"
     ),
 )
 
@@ -302,7 +312,7 @@ _LIVE_SESSION_REASON = (
 
 
 def subcommand_of(argv: list[str]) -> str | None:
-    """The cozempic subcommand in `argv`, by the same rule cozempic uses.
+    """The inherited subcommand in `argv`, by the same rule the CLI uses.
 
     cli.py:1945 takes the first token that is a known subcommand, so a value
     that happens to read like one (`--protect-pattern init`) is only mistaken
@@ -310,7 +320,7 @@ def subcommand_of(argv: list[str]) -> str | None:
     anyway.
     """
     for token in argv:
-        if token in COZEMPIC_SUBCOMMANDS:
+        if token in LEGACY_SUBCOMMANDS:
             return token
     return None
 
@@ -342,12 +352,12 @@ def refusal_for(argv: list[str], *, live_pid: int | None) -> str | None:
 
     refused = _REFUSED_SUBCOMMANDS.get(subcommand)
     if refused:
-        return f"`cozempic {subcommand}` is refused under orchestrator-safe mode: {refused}."
+        return f"`winnow {subcommand}` is refused under orchestrator-safe mode: {refused}."
 
     for name, token, why in _REFUSED_ARGV:
         if subcommand == name and token in argv:
             return (
-                f"`cozempic {name} {token}` is refused under orchestrator-safe "
+                f"`winnow {name} {token}` is refused under orchestrator-safe "
                 f"mode: {why}."
             )
 
@@ -356,7 +366,7 @@ def refusal_for(argv: list[str], *, live_pid: int | None) -> str | None:
     for name, token in _MUTATING_ARGV:
         if subcommand == name and token in argv:
             return (
-                f"`cozempic {name} {token}` is refused right now: "
+                f"`winnow {name} {token}` is refused right now: "
                 + _LIVE_SESSION_REASON.format(pid=live_pid)
                 + "."
             )

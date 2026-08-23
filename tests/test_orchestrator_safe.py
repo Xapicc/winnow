@@ -134,25 +134,29 @@ class TestSubcommandMirror(unittest.TestCase):
 
         for action in build_parser()._actions:
             if isinstance(action, argparse._SubParsersAction):
-                return set(action.choices)
-        raise AssertionError("cozempic's parser has no subparsers any more")
+                # `safe` is winnow's own group, registered onto this parser so
+                # that `winnow --help` lists one program. winnow.cli dispatches
+                # it before the inherited main() runs, so it is never an argv
+                # the gate classifies and never reaches `winnow safe run --`.
+                return set(action.choices) - {"safe"}
+        raise AssertionError("the inherited parser has no subparsers any more")
 
-    def test_the_mirror_matches_the_vendored_parser(self):
-        # If upstream adds a subcommand, this fails and somebody classifies it.
+    def test_the_mirror_matches_the_parser(self):
+        # If a subcommand is added, this fails and somebody classifies it.
         # The alternative is a new subcommand defaulting to allowed, silently.
-        self.assertEqual(set(safe.COZEMPIC_SUBCOMMANDS), self._parser_subcommands())
+        self.assertEqual(set(safe.LEGACY_SUBCOMMANDS), self._parser_subcommands())
 
     def test_the_mirror_covers_what_cli_subcommands_misses(self):
         # cli._SUBCOMMANDS is missing `nudge`, so a gate mirroring that constant
         # would let through the one command that writes into the bind mount.
-        # Asserted rather than worked around, so the day upstream reconciles the
-        # two this stops being a special case and says so.
+        # Asserted rather than worked around, so the day the two are reconciled
+        # this stops being a special case and says so.
         from winnow.legacy.cli import _SUBCOMMANDS
 
         self.assertEqual(self._parser_subcommands() - set(_SUBCOMMANDS), {"nudge"})
-        self.assertIn("nudge", safe.COZEMPIC_SUBCOMMANDS)
+        self.assertIn("nudge", safe.LEGACY_SUBCOMMANDS)
 
-    def test_finds_the_subcommand_the_way_cozempic_does(self):
+    def test_finds_the_subcommand_the_way_the_cli_does(self):
         self.assertEqual(safe.subcommand_of(["treat", "abc", "--execute"]), "treat")
         self.assertEqual(safe.subcommand_of(["--context-window", "1", "list"]), "list")
         self.assertIsNone(safe.subcommand_of(["--version"]))
@@ -189,8 +193,16 @@ class TestArgvGate(unittest.TestCase):
         self.assert_refused(["init", "--global"], naming="settings.json")
         self.assert_refused(["uninstall"], naming="settings.json")
 
-    def test_cozempics_own_checkpoint_is_refused_in_favour_of_winnows(self):
-        self.assert_refused(["checkpoint"], naming="winnow safe checkpoint")
+    def test_the_inherited_checkpoint_is_refused_in_favour_of_winnows(self):
+        # The command moved under `team` at the fork (docs/FORK.md §2.1). The
+        # refusal has to follow it, or the argv that writes into the bind mount
+        # is the one nobody classified.
+        self.assert_refused(["team", "checkpoint"], naming="winnow safe checkpoint")
+
+    def test_reading_the_team_checkpoint_back_is_not_refused(self):
+        # `team post-compact` only reads, so refusing the whole group would
+        # refuse a command that does nothing this mode objects to.
+        self.assert_allowed(["team", "post-compact"])
 
     def test_digest_inject_is_refused_but_reading_the_digest_is_not(self):
         # Invariant 6: MEMORY.md is loaded into every session's context.

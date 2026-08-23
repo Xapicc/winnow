@@ -38,7 +38,16 @@ not have to write in order to reach milestone 1.
 | B1 superseded read | an earlier read of a file read again later | `strategies/standard.py:202`, same index | **Partial.** Covers read-then-edit; read-then-read is not in the event set |
 | G2 size floor | do not touch a result below 2,048 bytes | three separate floors: `tool-output-trim` at 8 KB or 100 lines (`standard.py:95`), `document-dedup` at 1,024 bytes, `mega-block-trim` at 32 KB (`aggressive.py:332`) | **Answered per strategy, not globally.** A floor exists everywhere it matters; there is no single number to reason about |
 | G5 pairing preserved | every surviving `tool_use` keeps its `tool_result` | `safety.py:179` invariant C8, inside `validate_post_prune` | **Better than the spec asked for.** C8 is one of nine post-prune invariants, and the orphan-shell analysis at `safety.py:99-149` handles the cross-session case the spec did not anticipate |
-| G1 keep-the-tail | never touch the last 6 turns | no global rule. `is_protected` (`helpers.py:407-430`) protects record *types* and last-of-type singletons, never recency. Recency lives inside individual strategies: `tool-result-age` leaves the newest 15 turns alone (`standard.py:385`), `image-strip` keeps the newest 20% (`aggressive.py:523`) | **Not answered.** Two strategies are recency-aware by their own defaults; nothing enforces a tail across a prune |
+| G1 keep-the-tail | never touch the last 6 turns, default 6 | `safety.py:462-545`, the floor pass, with `preserve_last_k_turns` defaulting to **10** (`config.py:34`) plus a survival cap of 50% of user and assistant messages (`config.py:31`), pair-counterpart closure and parent-chain relinking | **Answered, and wider than the spec asked**, with one narrow gap: see below |
+
+**The one gap in G1, stated precisely, because it is easy to overstate in either direction.** The
+floor is a *re-add* pass: it runs after the strategies, computes which uuids must survive, and puts
+the original records back. That is a stronger architecture than winnow's planned check-before-remove,
+because it catches a bug in any strategy rather than trusting each one. But it protects **existence,
+not content**. A record truncated in place keeps its uuid, so it is already in `kept_uuids` and the
+floor does not revert it; the docstring says so outright at `safety.py:485-487`. So
+`tool-output-trim` may shorten a `tool_result` inside the last turn and nothing restores it. Winnow's
+G1 says "never touch", and touching includes truncating. The gap is one word wide and it is real.
 
 Two further things the code supplies that the spec asked for and did not have.
 
@@ -353,10 +362,12 @@ both rule sets, and it is one labelling sheet, not two.
 
 **Does a stub cost more than it saves?** `tool-result-age` replaces old content with a compact stub;
 winnow's D4 substitutes a pointer. Both add tokens where they remove them, and G4 (no net inflation)
-exists to catch the pathological case. Cozempic checks a minimum benefit before pruning
-(`guard.py:818-822` refuses when a hard prune would free too little) but `safety.py`'s nine
-invariants do not include a size comparison, so nothing structurally forbids a prune that inflates.
-Open on both sides.
+exists to catch the pathological case. Cozempic has two partial answers rather than none: the guard
+refuses a hard prune that would free too little (`guard.py:818-822`) and `COZEMPIC_MIN_PRUNE_RATIO`
+sets the floor under that (`guard.py:118-130`). Both are minimum-*benefit* tests, which is a
+different predicate from no-inflation: a prune that removes 20 MB and adds 21 MB of stubs clears a
+ratio test on what it removed. `safety.py`'s nine invariants do not compare sizes, so nothing
+structurally forbids the inflating case. Open on both sides, and cheap to close on either.
 
 ### 3.3 Where Q1 to Q6 stand
 

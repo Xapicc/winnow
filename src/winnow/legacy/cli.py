@@ -1368,28 +1368,6 @@ def cmd_init(args):
     print()
 
 
-def cmd_self_update(args):
-    """Force-upgrade winnow from PyPI regardless of install method."""
-    from .updater import _get_latest_version, _do_upgrade, _version_tuple
-    from . import __version__
-
-    latest = _get_latest_version()
-    if latest is None:
-        print("  Could not reach PyPI.")
-        sys.exit(1)
-
-    if _version_tuple(latest) <= _version_tuple(__version__):
-        print(f"  winnow v{__version__} is already the latest.")
-        return
-
-    print(f"  Upgrading {__version__} → {latest}...")
-    if _do_upgrade(latest):
-        print(f"  winnow v{latest} installed. Restart to use the new version.")
-    else:
-        print(f"  Upgrade failed. Try: pip install --upgrade cozempic")
-        sys.exit(1)
-
-
 _NUDGE_DEFAULT_TIERS = (0.25, 0.55, 0.80)
 # A fired tier re-arms only after context drops this far below it (hysteresis), so
 # jitter/oscillation around a tier boundary can't re-fire the nudge repeatedly.
@@ -1869,7 +1847,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_guard.add_argument("--no-reload", action="store_true", help="Prune without auto-reload at hard threshold")
     p_guard.add_argument("--no-reactive", action="store_true", help="Disable reactive overflow recovery (kqueue/polling watcher)")
     p_guard.add_argument("--daemon", action="store_true", help="Run in background (PID file prevents double-starts)")
-    p_guard.add_argument("--reload-self", action="store_true", help="Gracefully restart the running daemon for this session (used after upgrading winnow in place)")
+    p_guard.add_argument("--reload-self", action="store_true", help="Gracefully restart the running daemon for this session (picks up an in-place code change)")
     p_guard.add_argument("--session", help="Explicit session ID or path (bypasses auto-detection)")
     p_guard.add_argument("--claude-pid", type=int, default=None, help=argparse.SUPPRESS)
     p_guard.add_argument("--system-overhead-tokens", type=int, default=None, help="Override system overhead token estimate (default: 21000). Increase for heavy configs with many rules files, MCP servers, or large CLAUDE.md")
@@ -1909,9 +1887,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_comp = sub.add_parser("completions", help="Generate shell completion script")
     p_comp.add_argument("shell", choices=["bash", "zsh"], help="Shell type")
 
-    # self-update
-    sub.add_parser("self-update", help="Upgrade winnow to the latest version from PyPI")
-
     # remind
     p_remind = sub.add_parser("remind", help="Output active behavioral rules (for PostToolUse hook)")
     p_remind.add_argument("--interval", type=_positive_int, default=25, help="Output every N tool calls (default: 25)")
@@ -1946,7 +1921,7 @@ def build_parser() -> argparse.ArgumentParser:
 _SUBCOMMANDS = {
     "list", "current", "diagnose", "treat", "strategy", "reload",
     "team", "guard", "init", "doctor", "formulary", "completions",
-    "digest", "self-update", "remind", "guard-watchdog", "dashboard", "uninstall",
+    "digest", "remind", "guard-watchdog", "dashboard", "uninstall",
 }
 
 
@@ -2024,14 +1999,9 @@ def _prescan_argv(argv: list[str]) -> list[str]:
     return cleaned
 
 
-# Commands whose STDOUT is a machine-parsed protocol (not human text): the
-# auto-updater and auto-init must stay silent / off so nothing prepends to it.
-_STDOUT_PROTOCOL_CMDS = frozenset({"nudge"})
-
 _AUTO_INIT_SKIP_CMDS = frozenset({
     "init",          # would loop / shadow user intent
     "completions",   # generates shell completion, no project state needed
-    "self-update",   # internal upgrade
     "doctor",        # diagnostic-only; doctor surfaces missing init via its own check
     "nudge",         # Stop-hook protocol command; never mutate state as a side effect
     "guard-watchdog",  # read-only log scan; never mutate project state
@@ -2194,7 +2164,7 @@ def _maybe_global_init(argv: list[str]) -> None:
 
     if load_error:
         # Don't claim we "enabled" anything we didn't actually install. Do NOT
-        # touch the marker — let the user retry after `winnow self-update`.
+        # touch the marker — let the user retry after reinstalling.
         print(
             f"  winnow: global init FAILED — {load_error}",
             file=sys.stderr,
@@ -2416,29 +2386,17 @@ def cmd_dashboard(args):
 
 
 def main(argv=None):
-    from .updater import maybe_auto_update, ping_install_if_new
-
     argv = _prescan_argv(sys.argv[1:] if argv is None else list(argv))
 
     # The safe group is winnow's own code and must not pay for anything below:
-    # ping_install_if_new() writes and phones home, and _maybe_auto_init writes
-    # hooks into a settings.json this mode does not own. Handing it over here
-    # rather than further down means no ordering mistake can reintroduce that
-    # (docs/USAGEFOUNDRY.md §8.6).
+    # _maybe_auto_init writes hooks into a settings.json this mode does not own.
+    # Handing it over here rather than further down means no ordering mistake can
+    # reintroduce that (docs/USAGEFOUNDRY.md §8.6).
     if argv[:1] == ["safe"]:
         from winnow.cli import main as safe_main
 
         return safe_main(argv)
 
-    # The Stop-hook `nudge` emits a machine-parsed JSON protocol on STDOUT
-    # ({"systemMessage": ...}). The auto-updater prints upgrade chatter to STDOUT,
-    # which would prepend to that JSON and break the hook parser on the ~daily
-    # upgrade tick. Skip the updater (and auto-init) entirely for stdout-protocol
-    # commands — they still run on the user's next interactive invocation.
-    _cmd0 = next((a for a in argv if not a.startswith("-")), None)
-    if _cmd0 not in _STDOUT_PROTOCOL_CMDS:
-        ping_install_if_new()
-        maybe_auto_update()
     _maybe_global_init(argv)
     _maybe_auto_init(argv)
     parser = build_parser()
@@ -2468,7 +2426,6 @@ def main(argv=None):
         "formulary": cmd_formulary,
         "completions": cmd_completions,
         "digest": cmd_digest,
-        "self-update": cmd_self_update,
         "remind": cmd_remind,
         "nudge": cmd_nudge,
         "dashboard": cmd_dashboard,

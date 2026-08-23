@@ -182,7 +182,6 @@ class TestTransientDaemonReproducer(unittest.TestCase):
                  "path": Path("/tmp/fake_86cb258b.jsonl"),
              }), \
              patch("winnow.legacy.guard._cleanup_legacy_pid"), \
-             patch("winnow.legacy.guard.maybe_auto_update", return_value=False), \
              patch("winnow.legacy.spawn_lock._is_process_alive", return_value=True):
             # _is_process_alive=True simulates the transient daemon still running
             # (it's watching OLD_CLAUDE_PID which hasn't fully exited yet)

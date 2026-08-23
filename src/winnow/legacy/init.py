@@ -79,7 +79,7 @@ def _load_canonical_hooks() -> dict:
     except Exception as exc:
         _LOAD_ERROR = (
             f"could not load bundled hook definitions ({exc}). "
-            "Run `winnow self-update` to repair the install."
+            "Reinstall winnow to repair the install."
         )
         return {}
 
@@ -399,7 +399,7 @@ def wire_hooks(project_dir: str) -> dict:
         return {
             "added": [], "updated": [], "skipped": [],
             "settings_path": str(path), "backup_path": None,
-            "error": _LOAD_ERROR or "bundled hook definitions unavailable — run `winnow self-update`",
+            "error": _LOAD_ERROR or "bundled hook definitions unavailable — reinstall winnow",
         }
 
     with _SettingsLock(path):

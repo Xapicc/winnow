@@ -404,8 +404,7 @@ class TestSentinelMtimeGCAfterStaleWindow(unittest.TestCase):
                  "session_id": self.sid,
                  "path": Path("/tmp/fake.jsonl"),
              }), \
-             patch("winnow.legacy.guard._cleanup_legacy_pid"), \
-             patch("winnow.legacy.guard.maybe_auto_update", return_value=False):
+             patch("winnow.legacy.guard._cleanup_legacy_pid"):
 
             # Stale sentinel should NOT suppress spawn
             result = start_guard_daemon(session_id=self.sid, claude_pid=94466)
@@ -590,7 +589,6 @@ class TestReproducer86cb258bNoTransientUnprotectedState(unittest.TestCase):
                  "path": Path("/tmp/fake_86cb258b.jsonl"),
              }), \
              patch("winnow.legacy.guard._cleanup_legacy_pid"), \
-             patch("winnow.legacy.guard.maybe_auto_update", return_value=False), \
              patch("winnow.legacy.spawn_lock._is_process_alive", return_value=True):
 
             result = start_guard_daemon(
@@ -723,8 +721,7 @@ class TestRaceUnderContention(unittest.TestCase):
                  "session_id": self.sid,
                  "path": Path("/tmp/fake.jsonl"),
              }), \
-             patch("winnow.legacy.guard._cleanup_legacy_pid"), \
-             patch("winnow.legacy.guard.maybe_auto_update", return_value=False):
+             patch("winnow.legacy.guard._cleanup_legacy_pid"):
 
             for i in range(5):
                 t = threading.Thread(target=_worker, args=(True, i), daemon=True)

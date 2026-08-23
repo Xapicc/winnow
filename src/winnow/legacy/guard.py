@@ -222,11 +222,6 @@ from .team import (
     _AGENT_DONE_TRAILER_RE,
 )
 from .tokens import default_token_thresholds, quick_token_estimate
-# Eager import: ensures the daemon's upgrade check uses code from the daemon's
-# OWN install state (frozen at import time), not whatever happens to be on
-# disk when this function runs post-upgrade. Prevents old-daemon/new-updater
-# version skew.
-from .updater import maybe_auto_update, ping_install_if_new
 # NEW-1 sentinel: imported at module level so start_guard_daemon can call
 # _reload_sentinel_active without a nested import, and _terminate_and_resume
 # can call write_reload_sentinel from all code paths (tmux, screen, plain terminal).
@@ -707,10 +702,6 @@ def start_guard(
 
     # Clean up stale reload watchers from previous versions
     _cleanup_stale_watchers()
-
-    # Auto-update check — force=True so it works even when guard runs via hook (no TTY)
-    ping_install_if_new()
-    maybe_auto_update(force=True)
 
     # Format context window for display
     if context_window >= 1_000_000:

@@ -87,10 +87,10 @@ def is_enabled(env: dict[str, str] | None = None) -> bool:
 
 # ── The environment the mode runs the vendored tree under ────────────────────
 
-# The version this tree was inherited at. Provenance first — it is what
-# `derived_from` in the generated plugin manifest records — and the pin second:
-# WINNOW_PIN names it so that a self-update cannot move the measured artefact
-# even if the no-update switch is somehow missed (USAGEFOUNDRY §1.8).
+# The version this tree was inherited at. Provenance only: it is what
+# `derived_from` in the generated plugin manifest records. It used to be the
+# value this mode forced into WINNOW_PIN, to stop an upgrade moving the measured
+# artefact mid-cycle; the upgrade path is gone, so the pin is too (FORK.md §5.1).
 UPSTREAM_VERSION = "1.8.39"
 
 _SAFE_ENV_SPEC: tuple[tuple[str, str, str], ...] = (
@@ -106,18 +106,6 @@ _SAFE_ENV_SPEC: tuple[tuple[str, str, str], ...] = (
         "1",
         "cli.py:2269 — keeps a settings.json out of the agent's worktree. "
         "USAGEFOUNDRY §4",
-    ),
-    (
-        "WINNOW_NO_AUTO_UPDATE",
-        "1",
-        "updater.py:239 — a session that mutates its own runtime cannot have "
-        "its result attributed to a version. USAGEFOUNDRY §1.8",
-    ),
-    (
-        "WINNOW_PIN",
-        UPSTREAM_VERSION,
-        "updater.py:217 — names the vendored tree, so the second update path "
-        "(the SessionStart hook's own guard) is closed too. USAGEFOUNDRY §1.8",
     ),
     (
         "WINNOW_NO_TELEMETRY",
@@ -227,7 +215,7 @@ def data_dir(env: dict[str, str] | None = None) -> Path:
 LEGACY_SUBCOMMANDS = frozenset({
     "list", "current", "diagnose", "treat", "strategy", "reload",
     "team", "guard", "init", "doctor", "formulary",
-    "completions", "digest", "self-update", "remind", "guard-watchdog",
+    "completions", "digest", "remind", "guard-watchdog",
     "dashboard", "uninstall", "nudge",
 })
 
@@ -244,10 +232,6 @@ _REFUSED_SUBCOMMANDS: dict[str, str] = {
         "prunes, then spawns a watcher that runs `claude --resume` "
         "(cli.py:927-931). Session identity and --resume belong to the "
         "harness, which persists the id and re-passes it. USAGEFOUNDRY §1.3"
-    ),
-    "self-update": (
-        "installs from PyPI mid-run. The measured artefact must not move. "
-        "USAGEFOUNDRY §1.8"
     ),
     "init": (
         "writes hooks into a settings.json — ~/.claude/settings.json with "
@@ -915,9 +899,10 @@ def _check_home_state(home: Path | None = None) -> Finding:
     winnow run that did not go through this mode, so the finding says the
     mode was bypassed rather than that it failed.
 
-    Both prefixes, because the rename did not reach all of it: the updater's
-    ``~/.cozempic_installed`` and ``~/.cozempic_update_check`` keep upstream's
-    names until the updater is deleted (FORK.md §5.1, §6.1). ``~/.winnow``
+    Both prefixes, because an install that predates the rename left state under
+    the old one — including the two dotfiles the deleted updater wrote,
+    ``~/.cozempic_installed`` and ``~/.cozempic_update_check``, which nothing
+    writes any more but which this container may still be holding. ``~/.winnow``
     itself is excluded — since the rename it is `data_dir()`, which is where
     `redirect_home_writes` sends this state on purpose, so finding it is the
     mode working rather than being bypassed.
@@ -1001,11 +986,9 @@ def resolve_session_path(payload: dict, cwd: str | None = None) -> Path | None:
 # that a second module imported by value would silently keep the old path.
 #
 # The reason for redirecting rather than refusing: none of this state is
-# dangerous, it is just in the wrong place. A cycle's savings tally and update
-# sentinel belong to the cycle, and $HOME in this container outlives it.
+# dangerous, it is just in the wrong place. A cycle's savings tally belongs to
+# the cycle, and $HOME in this container outlives it.
 _HOME_WRITE_REDIRECTS: tuple[tuple[str, str, str], ...] = (
-    ("winnow.legacy.updater", "_CACHE_FILE", "cozempic-update-check"),
-    ("winnow.legacy.updater", "_INSTALL_SENTINEL", "cozempic-installed"),
     ("winnow.legacy.config", "_CONFIG_FILE_PATH", "winnow/config.json"),
     ("winnow.legacy.digest", "DIGEST_DIR", "winnow"),
     ("winnow.legacy.digest", "DIGEST_FILE", "winnow/behavioral-digest.json"),
@@ -1026,14 +1009,14 @@ def home_write_targets(target_dir: Path) -> dict[tuple[str, str], Path]:
 
 
 def redirect_home_writes(target_dir: Path) -> dict[str, Path]:
-    """Point the vendored tree's home-directory state at `target_dir`.
+    """Point the inherited tree's home-directory state at `target_dir`.
 
-    `winnow.legacy.cli.main` calls `ping_install_if_new()` before it parses argv
-    (cli.py:2398), and that writes ~/.cozempic_installed with no env switch in
-    front of it — `WINNOW_NO_TELEMETRY` stops the network ping, one line
-    later, not the write (updater.py:186). So the refusal table cannot cover
-    this and the environment overlay cannot either: the only lever left is the
-    path itself.
+    None of the state below has an environment switch in front of it, so
+    neither the refusal table nor the overlay can reach it: the only lever is
+    the path itself (USAGEFOUNDRY §8.6). This used to be a stronger claim —
+    `main()` wrote ~/.cozempic_installed before it parsed argv, one line ahead
+    of the only switch that could have stopped it — and that write is gone with
+    the updater. The remaining entries are ordinary state in the wrong place.
 
     Returns the redirects applied, keyed `module.attribute`.
     """

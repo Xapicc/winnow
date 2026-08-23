@@ -535,8 +535,6 @@ def _run_main_with_argv(argv):
     with patch("sys.argv", ["winnow"] + argv), \
          patch("winnow.legacy.cli._maybe_global_init"), \
          patch("winnow.legacy.cli._maybe_auto_init"), \
-         patch("winnow.legacy.updater.ping_install_if_new"), \
-         patch("winnow.legacy.updater.maybe_auto_update"), \
          patch("sys.stdout", stdout_buf), \
          patch("sys.stderr", stderr_buf):
         from winnow.legacy.cli import main
@@ -567,8 +565,6 @@ class TestValueErrorDispatch:
              patch("sys.argv", ["winnow", "guard"]), \
              patch("winnow.legacy.cli._maybe_global_init"), \
              patch("winnow.legacy.cli._maybe_auto_init"), \
-             patch("winnow.legacy.updater.ping_install_if_new"), \
-             patch("winnow.legacy.updater.maybe_auto_update"), \
              patch("sys.stderr", stderr_buf):
             from winnow.legacy.cli import main
             try:
@@ -608,8 +604,6 @@ class TestValueErrorDispatch:
              patch("sys.argv", ["winnow", "guard"]), \
              patch("winnow.legacy.cli._maybe_global_init"), \
              patch("winnow.legacy.cli._maybe_auto_init"), \
-             patch("winnow.legacy.updater.ping_install_if_new"), \
-             patch("winnow.legacy.updater.maybe_auto_update"), \
              patch("sys.stderr", stderr_buf):
             from winnow.legacy.cli import main
             try:

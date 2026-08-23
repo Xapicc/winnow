@@ -87,7 +87,7 @@ Six things it guarantees, each argued and evidenced in
 
 - **It never terminates the session it runs inside.** The guard daemon cannot be started and `guard-watchdog --fix`, which signals, is refused. Not deferred: the harness spawns headless, so there is no interactive quit to defer to.
 - **It never resumes a session.** `--resume` and session identity belong to the harness, so `reload`, which spawns a `claude --resume` watcher, is refused.
-- **No auto-update, no PyPI check, no version drift.** Off by default in the mode's own environment overlay and pinned to the vendored 1.8.39, with `self-update` refused outright.
+- **No auto-update, no PyPI check, no version drift.** Not switched off — removed. There is no updater module, no `self-update` subcommand and no upgrade step in the SessionStart hook, so no code path installs a package.
 - **No writes to `~/.claude`.** That directory is a bind mount shared with the host. No global hook installation, no `settings.json` the mode does not own; loading happens through `--plugin-dir`, and the checkpoint the vendored tool would write inside the mount goes to winnow's own data directory instead.
 - **It does not compete with the harness's context and cost controls.** The harness owns `--autocompact` and the per-cycle budget, so a mutating prune is refused while a Claude process is live and belongs between cycles.
 - **Nothing is written into the model's memory.** `digest inject` writes to `~/.claude/projects/*/memory/`; it is refused, and the plugin directory drops the skills and the MCP server.

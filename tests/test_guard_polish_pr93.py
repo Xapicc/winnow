@@ -241,8 +241,6 @@ class TestPolishPR93_PidfileUnlinkedOnExit(unittest.TestCase):
             patch.object(guard_mod, "load_messages", return_value=[]),
             patch("winnow.legacy.session.record_session"),
             patch.object(guard_mod, "_cleanup_stale_watchers"),
-            patch.object(guard_mod, "ping_install_if_new"),
-            patch.object(guard_mod, "maybe_auto_update"),
             patch.object(guard_mod, "cleanup_old_backups"),
             patch("winnow.legacy.tokens.detect_context_window", return_value=1_000_000),
         ):
@@ -371,8 +369,6 @@ class TestPolishPR93_K10DeferWhenAgentsActive(unittest.TestCase):
             patch.object(guard_mod, "load_messages", return_value=[]),
             patch("winnow.legacy.session.record_session"),
             patch.object(guard_mod, "_cleanup_stale_watchers"),
-            patch.object(guard_mod, "ping_install_if_new"),
-            patch.object(guard_mod, "maybe_auto_update"),
             patch.object(guard_mod, "cleanup_old_backups"),
             patch("winnow.legacy.tokens.detect_context_window", return_value=1_000_000),
         ):

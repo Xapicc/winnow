@@ -70,8 +70,6 @@ class TestLongitudinalUnprunableLoop(unittest.TestCase):
             "quick_token_estimate": token_estimator or (lambda *a, **k: 600_000),   # >= 55% of 1M, < 80%
             "guard_prune_cycle": self._futile_prune,
             "cleanup_old_backups": lambda *a, **k: None,
-            "ping_install_if_new": lambda *a, **k: None,
-            "maybe_auto_update": lambda *a, **k: None,
             "_cleanup_stale_watchers": lambda *a, **k: None,
             "_detect_interactive": lambda *a, **k: False,      # headless → no defer
             "find_claude_pid": lambda *a, **k: None,

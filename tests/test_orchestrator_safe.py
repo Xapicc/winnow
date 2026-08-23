@@ -51,21 +51,19 @@ class TestEnvironmentOverlay(unittest.TestCase):
         for name in (
             "WINNOW_NO_GLOBAL_INIT",
             "WINNOW_NO_AUTO_INIT",
-            "WINNOW_NO_AUTO_UPDATE",
-            "WINNOW_PIN",
             "WINNOW_NO_TELEMETRY",
             "WINNOW_NO_RECEIPTS",
         ):
             self.assertIn(name, safe.SAFE_ENV)
 
-    def test_the_pin_names_the_vendored_version(self):
-        pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        self.assertIn(
-            f'version = "{safe.SAFE_ENV["WINNOW_PIN"]}"',
-            pyproject,
-            "WINNOW_PIN must name the tree in src/, or the pin points at a "
-            "version that is not the one being measured",
-        )
+    def test_the_deleted_switches_are_not_in_the_overlay(self):
+        # Setting a variable the tree no longer reads would say the mode is
+        # holding something off that nothing does any more (FORK.md §5.1).
+        for name in (
+            "WINNOW_NO_AUTO_UPDATE",
+            "WINNOW_PIN",
+        ):
+            self.assertNotIn(name, safe.SAFE_ENV)
 
     def test_interactive_is_forced_on_not_off(self):
         # guard.py:1410 — interactive mode only ever makes the guard MORE
@@ -82,9 +80,11 @@ class TestEnvironmentOverlay(unittest.TestCase):
             self.assertTrue(why.strip(), name)
 
     def test_overlay_wins_and_nothing_is_removed(self):
-        merged = safe.safe_environment({"PATH": "/bin", "WINNOW_PIN": "0.0.1"})
+        merged = safe.safe_environment({"PATH": "/bin", "WINNOW_NO_RECEIPTS": "0"})
         self.assertEqual(merged["PATH"], "/bin")
-        self.assertEqual(merged["WINNOW_PIN"], safe.SAFE_ENV["WINNOW_PIN"])
+        self.assertEqual(
+            merged["WINNOW_NO_RECEIPTS"], safe.SAFE_ENV["WINNOW_NO_RECEIPTS"]
+        )
 
     def test_apply_puts_it_in_the_process_environment(self):
         with mock.patch.dict(os.environ, {}, clear=False):
@@ -185,9 +185,6 @@ class TestArgvGate(unittest.TestCase):
     def test_reload_is_refused_and_the_reason_names_resume(self):
         # Invariant 2: --resume belongs to the harness.
         self.assert_refused(["reload", "-rx", "gentle"], naming="--resume")
-
-    def test_self_update_is_refused(self):
-        self.assert_refused(["self-update"], naming="PyPI")
 
     def test_commands_that_write_settings_json_are_refused(self):
         self.assert_refused(["init", "--global"], naming="settings.json")
@@ -344,8 +341,8 @@ class TestHomeStateRedirect(unittest.TestCase):
     def test_the_paths_are_resolved_under_the_target_directory(self):
         targets = safe.home_write_targets(Path("/data/winnow"))
         self.assertEqual(
-            targets[("winnow.legacy.updater", "_INSTALL_SENTINEL")],
-            Path("/data/winnow/cozempic-installed"),
+            targets[("winnow.legacy.helpers", "_SAVINGS_FILE")],
+            Path("/data/winnow/winnow-savings.json"),
         )
         for destination in targets.values():
             self.assertIn(Path("/data/winnow"), destination.parents)
@@ -360,24 +357,24 @@ class TestHomeStateRedirect(unittest.TestCase):
                 targets[("winnow.legacy.digest", attribute)].parent, digest_dir
             )
 
-    def test_applying_it_moves_the_install_sentinel_off_home(self):
-        import winnow.legacy.updater
+    def test_applying_it_moves_the_savings_ledger_off_home(self):
+        # The ledger is the one redirected constant a plain prune writes to, so
+        # it is the one that proves the rebinding reaches a real write rather
+        # than only the table. (It replaced the updater's install sentinel as
+        # this test's subject when the updater went — FORK.md §5.1.)
+        import winnow.legacy.helpers
 
         with _temp_dir() as tmp:
             applied = safe.redirect_home_writes(tmp)
             self.assertEqual(
-                winnow.legacy.updater._INSTALL_SENTINEL, tmp / "cozempic-installed"
+                winnow.legacy.helpers._SAVINGS_FILE, tmp / "winnow-savings.json"
             )
             self.assertEqual(
-                applied["winnow.legacy.updater._INSTALL_SENTINEL"],
-                tmp / "cozempic-installed",
+                applied["winnow.legacy.helpers._SAVINGS_FILE"],
+                tmp / "winnow-savings.json",
             )
-            # ping_install_if_new writes the sentinel before it looks at
-            # WINNOW_NO_TELEMETRY (updater.py:186), so the write is the thing
-            # to relocate, not the network call one line after it.
-            with mock.patch.dict(os.environ, {"WINNOW_NO_TELEMETRY": "1"}):
-                winnow.legacy.updater.ping_install_if_new()
-            self.assertTrue((tmp / "cozempic-installed").is_file())
+            winnow.legacy.helpers.record_savings(1000)
+            self.assertTrue((tmp / "winnow-savings.json").is_file())
 
     def test_it_creates_the_parents_so_a_write_cannot_fall_back(self):
         with _temp_dir() as tmp:
@@ -706,13 +703,13 @@ class TestCheckReport(unittest.TestCase):
         # The overlay supplies it to every `winnow safe run`, which is the only
         # path this mode opens to the vendored tree.
         findings = self._by_name(safe.check({safe.ENV_SWITCH: "1"}))
-        finding = findings["env:WINNOW_NO_AUTO_UPDATE"]
+        finding = findings["env:WINNOW_NO_AUTO_INIT"]
         self.assertTrue(finding.ok)
         self.assertIn("overlay supplies", finding.detail)
 
     def test_a_conflicting_overlay_variable_is_a_violation(self):
-        env = {safe.ENV_SWITCH: "1", "WINNOW_NO_AUTO_UPDATE": "0"}
-        finding = self._by_name(safe.check(env))["env:WINNOW_NO_AUTO_UPDATE"]
+        env = {safe.ENV_SWITCH: "1", "WINNOW_NO_AUTO_INIT": "0"}
+        finding = self._by_name(safe.check(env))["env:WINNOW_NO_AUTO_INIT"]
         self.assertFalse(finding.ok)
         self.assertIn("conflicts", finding.detail)
 

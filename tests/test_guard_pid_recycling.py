@@ -260,8 +260,6 @@ class TestRecordClaudeIdentityOnStartGuard(unittest.TestCase):
                  patch("winnow.legacy.tokens.default_token_thresholds_4tier", return_value=(50000, 110000, 160000)), \
                  patch("winnow.legacy.session.record_session"), \
                  patch("winnow.legacy.guard._cleanup_stale_watchers"), \
-                 patch("winnow.legacy.guard.ping_install_if_new"), \
-                 patch("winnow.legacy.guard.maybe_auto_update"), \
                  patch("winnow.legacy.guard.checkpoint_team"), \
                  patch("winnow.legacy.guard.time.sleep", side_effect=RuntimeError("stop loop")):
                 try:

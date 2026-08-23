@@ -9,9 +9,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from cozempic import cli
-from cozempic.metrics import validate_receipt
-from cozempic.types import PrescriptionResult, StrategyResult
+from winnow.legacy import cli
+from winnow.legacy.metrics import validate_receipt
+from winnow.legacy.types import PrescriptionResult, StrategyResult
 
 
 def _pr():

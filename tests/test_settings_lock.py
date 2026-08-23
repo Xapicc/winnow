@@ -29,7 +29,7 @@ from unittest import mock
 
 import pytest
 
-from cozempic.init import _SettingsLock
+from winnow.legacy.init import _SettingsLock
 
 
 # ─── Fixtures ────────────────────────────────────────────────────────────────

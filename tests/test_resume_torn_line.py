@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from cozempic.session import repair_torn_trailing_line
+from winnow.legacy.session import repair_torn_trailing_line
 
 
 def _write(path, lines):
@@ -89,7 +89,7 @@ class TestRepairHelper(unittest.TestCase):
         # CC's JS JSON.stringify emits U+2028/U+2029/U+0085 raw inside strings.
         # str.splitlines() would tear such a VALID last line into fragments and
         # corrupt it; _split_physical_lines must not. (Fleet HIGH regression.)
-        from cozempic.doctor import _has_torn_trailing_line
+        from winnow.legacy.doctor import _has_torn_trailing_line
 
         for sep in (chr(0x2028), chr(0x2029), chr(0x85), chr(0x0b), chr(0x1e)):
             p = self.tmp / f"u{ord(sep)}.jsonl"
@@ -139,7 +139,7 @@ class TestAutoRepairIdleGate(unittest.TestCase):
         return p
 
     def test_repairs_when_idle(self):
-        from cozempic.session import auto_repair_unresumable
+        from winnow.legacy.session import auto_repair_unresumable
         import os as _os
 
         p = self._torn()
@@ -152,7 +152,7 @@ class TestAutoRepairIdleGate(unittest.TestCase):
     def test_does_NOT_repair_fresh_file(self):
         # a torn line on a just-written file may be Claude mid-append — must NOT
         # be touched (would race/clobber a live write, #106).
-        from cozempic.session import auto_repair_unresumable
+        from winnow.legacy.session import auto_repair_unresumable
 
         p = self._torn()  # mtime = now
         self.assertFalse(auto_repair_unresumable(p, min_idle_seconds=10))
@@ -160,7 +160,7 @@ class TestAutoRepairIdleGate(unittest.TestCase):
         self.assertFalse((self.tmp / "s.jsonl.torn.bak").exists())
 
     def test_idle_valid_file_untouched(self):
-        from cozempic.session import auto_repair_unresumable
+        from winnow.legacy.session import auto_repair_unresumable
         import os as _os
 
         p = self.tmp / "ok.jsonl"
@@ -179,7 +179,7 @@ class TestCliAutoHeal(unittest.TestCase):
 
     def test_cmd_diagnose_heals_idle_torn_session(self):
         import os as _os
-        from cozempic import cli
+        from winnow.legacy import cli
 
         p = self.tmp / "sess.jsonl"
         _write(p, [_valid("a"), _valid("b", "a")])
@@ -187,9 +187,9 @@ class TestCliAutoHeal(unittest.TestCase):
             f.write('{"torn')
         old = time.time() - 3600
         _os.utime(p, (old, old))  # idle/dead
-        with patch("cozempic.cli.resolve_session", return_value=p), \
-                patch("cozempic.cli.load_config"), \
-                patch("cozempic.cli.print_diagnosis"), patch("cozempic.cli.diagnose_session", return_value={}):
+        with patch("winnow.legacy.cli.resolve_session", return_value=p), \
+                patch("winnow.legacy.cli.load_config"), \
+                patch("winnow.legacy.cli.print_diagnosis"), patch("winnow.legacy.cli.diagnose_session", return_value={}):
             from types import SimpleNamespace
             try:
                 cli.cmd_diagnose(SimpleNamespace(session="x", project=None))
@@ -202,7 +202,7 @@ class TestCliAutoHeal(unittest.TestCase):
     def test_cmd_diagnose_does_NOT_heal_FRESH_torn_session(self):
         # safety property through the REAL cli wrapper: a torn line on a fresh
         # (mtime=now) file may be a live mid-write — cmd_diagnose must NOT touch it.
-        from cozempic import cli
+        from winnow.legacy import cli
         from types import SimpleNamespace
 
         p = self.tmp / "live.jsonl"
@@ -210,9 +210,9 @@ class TestCliAutoHeal(unittest.TestCase):
         with open(p, "a") as f:
             f.write('{"torn')  # mtime is now -> looks live
         before = p.read_bytes()
-        with patch("cozempic.cli.resolve_session", return_value=p), \
-                patch("cozempic.cli.load_config"), \
-                patch("cozempic.cli.print_diagnosis"), patch("cozempic.cli.diagnose_session", return_value={}):
+        with patch("winnow.legacy.cli.resolve_session", return_value=p), \
+                patch("winnow.legacy.cli.load_config"), \
+                patch("winnow.legacy.cli.print_diagnosis"), patch("winnow.legacy.cli.diagnose_session", return_value={}):
             try:
                 cli.cmd_diagnose(SimpleNamespace(session="x", project=None))
             except Exception:
@@ -234,7 +234,7 @@ class TestDoctorUnresumable(unittest.TestCase):
         return {"session_id": name.replace(".jsonl", ""), "path": p}
 
     def test_check_flags_and_fix_repairs(self):
-        from cozempic import doctor
+        from winnow.legacy import doctor
 
         torn = self._session("aaaaaaaa-torn.jsonl", [_valid("a"), '{"type":"user","par'])
         clean = self._session("bbbbbbbb-ok.jsonl", [_valid("x")])
@@ -250,14 +250,14 @@ class TestDoctorUnresumable(unittest.TestCase):
         self.assertFalse((self.tmp / "bbbbbbbb-ok.jsonl.torn.bak").exists())
 
     def test_check_ok_when_all_clean(self):
-        from cozempic import doctor
+        from winnow.legacy import doctor
 
         s = self._session("cccccccc.jsonl", [_valid("a"), _valid("b", "a")])
         with patch.object(doctor, "find_sessions", return_value=[s]):
             self.assertEqual(doctor.check_unresumable_session().status, "ok")
 
     def test_registered_in_all_checks(self):
-        from cozempic import doctor
+        from winnow.legacy import doctor
 
         names = [n for n, _, _ in doctor.ALL_CHECKS]
         self.assertIn("unresumable-session", names)
@@ -280,9 +280,9 @@ class TestGuardRepairsOnTerminate(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_conflict_skip_repairs_torn_line(self):
-        from cozempic.guard import guard_prune_cycle
-        from cozempic.session import PruneConflictError
-        from cozempic.team import TeamState
+        from winnow.legacy.guard import guard_prune_cycle
+        from winnow.legacy.session import PruneConflictError
+        from winnow.legacy.team import TeamState
         from types import SimpleNamespace
 
         team = MagicMock(spec=TeamState)
@@ -301,14 +301,14 @@ class TestGuardRepairsOnTerminate(unittest.TestCase):
             return SimpleNamespace(total=t, context_pct=0.0, method="exact",
                                    confidence="high", model="claude-opus-4-8", context_window=200000)
 
-        with patch("cozempic.guard._guard_tmp_root", return_value=self.tmp), \
-                patch("cozempic.guard.load_messages_and_snapshot", return_value=(orig, MagicMock())), \
-                patch("cozempic.guard.load_messages", return_value=orig), \
-                patch("cozempic.guard.prune_with_team_protect", return_value=(pruned, [], team)), \
-                patch("cozempic.guard.snapshot_session", return_value=MagicMock()), \
-                patch("cozempic.tokens.estimate_session_tokens", side_effect=est), \
-                patch("cozempic.tokens.calibrate_ratio", return_value=0.5), \
-                patch("cozempic.guard.save_messages", side_effect=PruneConflictError("changed")):
+        with patch("winnow.legacy.guard._guard_tmp_root", return_value=self.tmp), \
+                patch("winnow.legacy.guard.load_messages_and_snapshot", return_value=(orig, MagicMock())), \
+                patch("winnow.legacy.guard.load_messages", return_value=orig), \
+                patch("winnow.legacy.guard.prune_with_team_protect", return_value=(pruned, [], team)), \
+                patch("winnow.legacy.guard.snapshot_session", return_value=MagicMock()), \
+                patch("winnow.legacy.tokens.estimate_session_tokens", side_effect=est), \
+                patch("winnow.legacy.tokens.calibrate_ratio", return_value=0.5), \
+                patch("winnow.legacy.guard.save_messages", side_effect=PruneConflictError("changed")):
             result = guard_prune_cycle(session_path=self.session, rx_name="gentle",
                                        config=None, auto_reload=False)
             writer = result.get("_deferred_writer")
@@ -325,8 +325,8 @@ class TestGuardRepairsOnTerminate(unittest.TestCase):
         # the OSError branch (disk-full/EIO at the post-kill write) also leaves
         # Claude's file in place -> it must repair the torn line too, and must
         # not raise (it runs after terminate, before the resume watcher spawns).
-        from cozempic.guard import guard_prune_cycle
-        from cozempic.team import TeamState
+        from winnow.legacy.guard import guard_prune_cycle
+        from winnow.legacy.team import TeamState
         from types import SimpleNamespace
 
         team = MagicMock(spec=TeamState)
@@ -345,14 +345,14 @@ class TestGuardRepairsOnTerminate(unittest.TestCase):
             return SimpleNamespace(total=t, context_pct=0.0, method="exact",
                                    confidence="high", model="claude-opus-4-8", context_window=200000)
 
-        with patch("cozempic.guard._guard_tmp_root", return_value=self.tmp), \
-                patch("cozempic.guard.load_messages_and_snapshot", return_value=(orig, MagicMock())), \
-                patch("cozempic.guard.load_messages", return_value=orig), \
-                patch("cozempic.guard.prune_with_team_protect", return_value=(pruned, [], team)), \
-                patch("cozempic.guard.snapshot_session", return_value=MagicMock()), \
-                patch("cozempic.tokens.estimate_session_tokens", side_effect=est), \
-                patch("cozempic.tokens.calibrate_ratio", return_value=0.5), \
-                patch("cozempic.guard.save_messages", side_effect=OSError("disk full")):
+        with patch("winnow.legacy.guard._guard_tmp_root", return_value=self.tmp), \
+                patch("winnow.legacy.guard.load_messages_and_snapshot", return_value=(orig, MagicMock())), \
+                patch("winnow.legacy.guard.load_messages", return_value=orig), \
+                patch("winnow.legacy.guard.prune_with_team_protect", return_value=(pruned, [], team)), \
+                patch("winnow.legacy.guard.snapshot_session", return_value=MagicMock()), \
+                patch("winnow.legacy.tokens.estimate_session_tokens", side_effect=est), \
+                patch("winnow.legacy.tokens.calibrate_ratio", return_value=0.5), \
+                patch("winnow.legacy.guard.save_messages", side_effect=OSError("disk full")):
             result = guard_prune_cycle(session_path=self.session, rx_name="gentle",
                                        config=None, auto_reload=False)
             result.get("_deferred_writer")()  # OSError -> skip write -> repair, must not raise

@@ -32,7 +32,7 @@ class TestNudge(unittest.TestCase):
         shutil.rmtree(self.home, ignore_errors=True)
 
     def _run(self, total: int, session: str = "s1", env: dict | None = None):
-        from cozempic.cli import cmd_nudge
+        from winnow.legacy.cli import cmd_nudge
         t = _transcript(self.tmp, total)
         payload = json.dumps({"transcript_path": str(t), "session_id": session})
         out = io.StringIO()
@@ -116,7 +116,7 @@ class TestNudge(unittest.TestCase):
         self.assertIsNone(self._run(560_000, "soff", env={"COZEMPIC_NUDGE_OFF": "1"}))
 
     def test_non_blocking_bad_stdin(self):
-        from cozempic.cli import cmd_nudge
+        from winnow.legacy.cli import cmd_nudge
         out = io.StringIO()
         with patch("sys.stdin", io.StringIO("not json")), patch("sys.stdout", out), \
              patch("pathlib.Path.home", return_value=self.home):
@@ -126,7 +126,7 @@ class TestNudge(unittest.TestCase):
     def test_non_blocking_wrong_shape_stdin(self):
         # valid JSON but not an object (list/int/str) must not crash — "always
         # exit 0" contract (the Stop hook swallows stderr, but the contract holds).
-        from cozempic.cli import cmd_nudge
+        from winnow.legacy.cli import cmd_nudge
         for payload in ("[1,2,3]", "42", '"hello"', "null"):
             out = io.StringIO()
             with patch("sys.stdin", io.StringIO(payload)), patch("sys.stdout", out), \
@@ -136,7 +136,7 @@ class TestNudge(unittest.TestCase):
 
     def test_non_blocking_malformed_state_file(self):
         # A corrupt/foreign nudge-state.json must not crash the nudge.
-        from cozempic.cli import cmd_nudge
+        from winnow.legacy.cli import cmd_nudge
         sf = self.home / ".claude" / "cozempic-metrics" / "nudge-state.json"
         sf.parent.mkdir(parents=True, exist_ok=True)
         for bad in ('[1,2,3]', '{"s1": "not-a-dict"}', '{"s1": {"tiers_fired": ["x","y"]}}'):
@@ -155,7 +155,7 @@ class TestNudge(unittest.TestCase):
     def test_tiers_from_sidecar(self):
         # The guard records its resolved reload-tier fractions; the nudge fires at
         # THOSE points (so a raised threshold moves the nudges), not the defaults.
-        from cozempic.session import record_session
+        from winnow.legacy.session import record_session
         with patch("pathlib.Path.home", return_value=self.home), \
              patch.dict(os.environ, {k: v for k, v in os.environ.items()
                                      if k != "CLAUDE_CONFIG_DIR"}, clear=True):
@@ -168,7 +168,7 @@ class TestNudge(unittest.TestCase):
     def test_inflight_softens_copy(self):
         # When a background Agent is in flight, the 55% copy must NOT promise an
         # idle reload — it says the reload waits for agents/tools to finish.
-        from cozempic.cli import cmd_nudge
+        from winnow.legacy.cli import cmd_nudge
         p = self.tmp / "t.jsonl"
         assist = {"type": "assistant", "message": {"role": "assistant",
                   "model": "claude-sonnet-4-6", "content": [{"type": "text", "text": "x"}],
@@ -190,8 +190,8 @@ class TestNudge(unittest.TestCase):
 
     def test_projected_pct_from_armed_sentinel(self):
         # when the daemon armed with a projected_pct, the 55% message shows it
-        from cozempic import guard
-        with patch("cozempic.guard._guard_tmp_root", return_value=self.tmp):
+        from winnow.legacy import guard
+        with patch("winnow.legacy.guard._guard_tmp_root", return_value=self.tmp):
             guard.write_armed("sp1", None, 55, 38.0)
             m = self._run(560_000, "sp1")
         self.assertIsNotNone(m)

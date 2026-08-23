@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from cozempic.digest import (
+from winnow.legacy.digest import (
     PROTECTION_TAG,
     DigestRule,
     DigestStore,
@@ -19,9 +19,9 @@ from cozempic.digest import (
     save_digest_store,
     sync_to_memdir,
 )
-from cozempic.helpers import msg_bytes
+from winnow.legacy.helpers import msg_bytes
 
-import cozempic.strategies  # noqa: F401
+import winnow.legacy.strategies  # noqa: F401
 
 
 def make_message(line_idx: int, msg: dict) -> tuple[int, dict, int]:
@@ -116,7 +116,7 @@ class TestSyncToMemdir(unittest.TestCase):
 
     def test_writes_memory_file(self):
         store = _make_store_with_rules()
-        with patch("cozempic.digest._get_memdir", return_value=self.mem_dir):
+        with patch("winnow.legacy.digest._get_memdir", return_value=self.mem_dir):
             synced = sync_to_memdir(store)
         self.assertEqual(synced, 2)  # 2 active rules
         digest_mem = self.mem_dir / "cozempic_digest.md"
@@ -131,21 +131,21 @@ class TestSyncToMemdir(unittest.TestCase):
         digest_mem = self.mem_dir / "cozempic_digest.md"
         digest_mem.write_text("old content")
         store = DigestStore()
-        with patch("cozempic.digest._get_memdir", return_value=self.mem_dir):
+        with patch("winnow.legacy.digest._get_memdir", return_value=self.mem_dir):
             synced = sync_to_memdir(store)
         self.assertEqual(synced, 0)
         self.assertFalse(digest_mem.exists())
 
     def test_returns_zero_when_no_memdir(self):
         store = _make_store_with_rules()
-        with patch("cozempic.digest._get_memdir", return_value=None):
+        with patch("winnow.legacy.digest._get_memdir", return_value=None):
             synced = sync_to_memdir(store)
         self.assertEqual(synced, 0)
 
     def test_updates_last_injection(self):
         store = _make_store_with_rules()
         self.assertIsNone(store.strategy_rules[0].last_injection)
-        with patch("cozempic.digest._get_memdir", return_value=self.mem_dir):
+        with patch("winnow.legacy.digest._get_memdir", return_value=self.mem_dir):
             sync_to_memdir(store)
         self.assertIsNotNone(store.strategy_rules[0].last_injection)
 
@@ -176,10 +176,10 @@ class TestFlushRecover(unittest.TestCase):
         digest_file = self.tmpdir / "behavioral-digest.json"
         digest_md = self.tmpdir / "behavioral-digest.md"
 
-        with patch("cozempic.digest.DIGEST_DIR", self.tmpdir), \
-             patch("cozempic.digest.DIGEST_FILE", digest_file), \
-             patch("cozempic.digest.DIGEST_MD_FILE", digest_md), \
-             patch("cozempic.digest._get_memdir", return_value=self.mem_dir):
+        with patch("winnow.legacy.digest.DIGEST_DIR", self.tmpdir), \
+             patch("winnow.legacy.digest.DIGEST_FILE", digest_file), \
+             patch("winnow.legacy.digest.DIGEST_MD_FILE", digest_md), \
+             patch("winnow.legacy.digest._get_memdir", return_value=self.mem_dir):
             added, upvoted, rejected = flush_digest(messages, project_dir="/test")
             self.assertGreater(added + upvoted, 0)
             self.assertTrue(digest_file.exists())
@@ -192,10 +192,10 @@ class TestFlushRecover(unittest.TestCase):
         digest_md = self.tmpdir / "behavioral-digest.md"
 
         store = _make_store_with_rules()
-        with patch("cozempic.digest.DIGEST_DIR", self.tmpdir), \
-             patch("cozempic.digest.DIGEST_FILE", digest_file), \
-             patch("cozempic.digest.DIGEST_MD_FILE", digest_md), \
-             patch("cozempic.digest._get_memdir", return_value=self.mem_dir):
+        with patch("winnow.legacy.digest.DIGEST_DIR", self.tmpdir), \
+             patch("winnow.legacy.digest.DIGEST_FILE", digest_file), \
+             patch("winnow.legacy.digest.DIGEST_MD_FILE", digest_md), \
+             patch("winnow.legacy.digest._get_memdir", return_value=self.mem_dir):
             save_digest_store(store)
             synced = recover_digest(project_dir="/test")
             self.assertGreater(synced, 0)
@@ -211,10 +211,10 @@ class TestFlushRecover(unittest.TestCase):
         digest_file = self.tmpdir / "behavioral-digest.json"
         digest_md = self.tmpdir / "behavioral-digest.md"
 
-        with patch("cozempic.digest.DIGEST_DIR", self.tmpdir), \
-             patch("cozempic.digest.DIGEST_FILE", digest_file), \
-             patch("cozempic.digest.DIGEST_MD_FILE", digest_md), \
-             patch("cozempic.digest._get_memdir", return_value=self.mem_dir):
+        with patch("winnow.legacy.digest.DIGEST_DIR", self.tmpdir), \
+             patch("winnow.legacy.digest.DIGEST_FILE", digest_file), \
+             patch("winnow.legacy.digest.DIGEST_MD_FILE", digest_md), \
+             patch("winnow.legacy.digest._get_memdir", return_value=self.mem_dir):
 
             # Flush: extract corrections (2 occurrences → promote via upvote)
             messages = [

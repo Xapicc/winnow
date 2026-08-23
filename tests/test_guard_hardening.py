@@ -49,7 +49,7 @@ class TestG1_CleanupLegacyPidRequiresArgvVerify(unittest.TestCase):
 
     def _write_legacy_pidfile(self, pid: int) -> Path:
         """Write a legacy-format pidfile; return its Path."""
-        from cozempic.guard import _pid_file_for_cwd
+        from winnow.legacy.guard import _pid_file_for_cwd
         legacy = _pid_file_for_cwd(self.cwd)
         legacy.write_text(str(pid))
         self.addCleanup(legacy.unlink, missing_ok=True)
@@ -60,12 +60,12 @@ class TestG1_CleanupLegacyPidRequiresArgvVerify(unittest.TestCase):
 
         With the fix, SIGTERM MUST NOT be sent. The legacy file is still unlinked.
         """
-        from cozempic.guard import _cleanup_legacy_pid
+        from winnow.legacy.guard import _cleanup_legacy_pid
         self._write_legacy_pidfile(31337)
 
         with (
-            patch("cozempic.guard._is_cozempic_guard_process", return_value=False),
-            patch("cozempic.guard.os.kill") as mock_kill,
+            patch("winnow.legacy.guard._is_cozempic_guard_process", return_value=False),
+            patch("winnow.legacy.guard.os.kill") as mock_kill,
         ):
             _cleanup_legacy_pid(self.cwd)
 
@@ -81,13 +81,13 @@ class TestG1_CleanupLegacyPidRequiresArgvVerify(unittest.TestCase):
 
     def test_sigterms_legitimate_guard_pid(self):
         """Positive case: pidfile points at a real cozempic guard — SIGTERM is allowed."""
-        from cozempic.guard import _cleanup_legacy_pid
+        from winnow.legacy.guard import _cleanup_legacy_pid
         self._write_legacy_pidfile(42000)
 
         with (
-            patch("cozempic.guard._is_cozempic_guard_process", return_value=True),
-            patch("cozempic.guard.os.kill") as mock_kill,
-            patch("cozempic.guard.time.sleep"),
+            patch("winnow.legacy.guard._is_cozempic_guard_process", return_value=True),
+            patch("winnow.legacy.guard.os.kill") as mock_kill,
+            patch("winnow.legacy.guard.time.sleep"),
         ):
             _cleanup_legacy_pid(self.cwd)
 
@@ -114,7 +114,7 @@ class TestG2_CleanupStaleWatchersRequiresArgvVerify(unittest.TestCase):
 
     def test_does_not_sigterm_false_positive_pgrep_match(self):
         """pgrep returns a PID whose argv is not a real watcher; no SIGTERM."""
-        from cozempic.guard import _cleanup_stale_watchers
+        from winnow.legacy.guard import _cleanup_stale_watchers
 
         # pgrep returns the PID — but the argv that ps resolves is a vim editor
         false_pid = "77777"
@@ -132,8 +132,8 @@ class TestG2_CleanupStaleWatchersRequiresArgvVerify(unittest.TestCase):
             return mock
 
         with (
-            patch("cozempic.guard.subprocess.run", side_effect=fake_run),
-            patch("cozempic.guard.os.kill") as mock_kill,
+            patch("winnow.legacy.guard.subprocess.run", side_effect=fake_run),
+            patch("winnow.legacy.guard.os.kill") as mock_kill,
         ):
             _cleanup_stale_watchers()
 
@@ -149,7 +149,7 @@ class TestG2_CleanupStaleWatchersRequiresArgvVerify(unittest.TestCase):
 
     def test_sigterms_real_watcher_match(self):
         """Positive case: pgrep returns a real bash watcher — SIGTERM is allowed."""
-        from cozempic.guard import _cleanup_stale_watchers
+        from winnow.legacy.guard import _cleanup_stale_watchers
 
         real_pid = "88888"
         # Matches the real watcher_script shape in _spawn_reload_watcher at ~933-937
@@ -170,8 +170,8 @@ class TestG2_CleanupStaleWatchersRequiresArgvVerify(unittest.TestCase):
             return mock
 
         with (
-            patch("cozempic.guard.subprocess.run", side_effect=fake_run),
-            patch("cozempic.guard.os.kill") as mock_kill,
+            patch("winnow.legacy.guard.subprocess.run", side_effect=fake_run),
+            patch("winnow.legacy.guard.os.kill") as mock_kill,
         ):
             _cleanup_stale_watchers()
 
@@ -202,20 +202,20 @@ class TestG3_IsGuardRunningForSessionVerifiesPidOwnership(unittest.TestCase):
     def setUp(self):
         self.session_id = "11111111-2222-3333-4444-000000000001"
         # Pre-seed the session pidfile with a recycled-looking PID.
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
         self.pid_path = _pid_file_for_session(self.session_id)
         self.pid_path.write_text("98765")
         self.addCleanup(self.pid_path.unlink, missing_ok=True)
 
     def test_returns_none_when_pid_is_not_cozempic_guard(self):
         """PID is alive (os.kill returns) but ps shows it's not our daemon."""
-        from cozempic.guard import _is_guard_running_for_session
+        from winnow.legacy.guard import _is_guard_running_for_session
 
         # os.kill(pid, 0) succeeds (liveness OK); but _is_cozempic_guard_process
         # must return False for this PID → the function MUST return None.
         with (
-            patch("cozempic.guard.os.kill") as mock_kill,
-            patch("cozempic.guard._is_cozempic_guard_process", return_value=False),
+            patch("winnow.legacy.guard.os.kill") as mock_kill,
+            patch("winnow.legacy.guard._is_cozempic_guard_process", return_value=False),
         ):
             result = _is_guard_running_for_session(self.session_id)
 
@@ -230,11 +230,11 @@ class TestG3_IsGuardRunningForSessionVerifiesPidOwnership(unittest.TestCase):
 
     def test_returns_pid_when_pid_is_cozempic_guard(self):
         """Positive case: PID is alive AND ps confirms it's a cozempic guard."""
-        from cozempic.guard import _is_guard_running_for_session
+        from winnow.legacy.guard import _is_guard_running_for_session
 
         with (
-            patch("cozempic.guard.os.kill"),
-            patch("cozempic.guard._is_cozempic_guard_process", return_value=True),
+            patch("winnow.legacy.guard.os.kill"),
+            patch("winnow.legacy.guard._is_cozempic_guard_process", return_value=True),
         ):
             result = _is_guard_running_for_session(self.session_id)
 
@@ -259,7 +259,7 @@ class TestG4_PidfileWriteIsAtomic(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
         self.session_id = "22222222-3333-4444-5555-000000000002"
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
         self.pid_path = _pid_file_for_session(self.session_id)
         # Ensure clean state
         self.pid_path.unlink(missing_ok=True)
@@ -273,7 +273,7 @@ class TestG4_PidfileWriteIsAtomic(unittest.TestCase):
         # "reload in flight" if a sentinel exists for this session). A sentinel
         # leaked by another test's /tmp pollution would make both concurrent
         # starts below report started=False. Isolate from sentinel state.
-        from cozempic.reload_lock import unlink_reload_sentinel
+        from winnow.legacy.reload_lock import unlink_reload_sentinel
 
         def _safe_unlink_sentinel():
             try:
@@ -293,7 +293,7 @@ class TestG4_PidfileWriteIsAtomic(unittest.TestCase):
         thread-safe across __enter__/__exit__) and race two start_guard_daemon
         invocations via the existing threads. Returns (results, on_disk_pid).
         """
-        from cozempic.guard import start_guard_daemon
+        from winnow.legacy.guard import start_guard_daemon
 
         start_gate = threading.Event()
         popen_counter = {"n": 0}
@@ -329,9 +329,9 @@ class TestG4_PidfileWriteIsAtomic(unittest.TestCase):
 
         # Patches applied on the main thread — safe.
         with (
-            patch("cozempic.guard._cleanup_legacy_pid"),
-            patch("cozempic.guard.find_claude_pid", return_value=7777),
-            patch("cozempic.guard.subprocess.Popen", side_effect=fake_popen),
+            patch("winnow.legacy.guard._cleanup_legacy_pid"),
+            patch("winnow.legacy.guard.find_claude_pid", return_value=7777),
+            patch("winnow.legacy.guard.subprocess.Popen", side_effect=fake_popen),
         ):
             t1 = threading.Thread(target=runner)
             t2 = threading.Thread(target=runner)
@@ -405,21 +405,21 @@ class TestG5_TerminateAndResumeReVerifiesClaudePid(unittest.TestCase):
 
     def test_does_not_sigterm_when_pid_not_claude(self):
         """Stale claude_pid now maps to a non-Claude process; no SIGTERM."""
-        from cozempic.guard import _terminate_and_resume
+        from winnow.legacy.guard import _terminate_and_resume
 
         # Simulate: plain terminal path, claude_pid recycled to something else.
         # The contract: before `os.kill(claude_pid, SIGTERM)` (lines 838, 862,
         # 880), an identity check must gate the signal.
         with (
-            patch("cozempic.guard._detect_terminal_env", return_value="plain"),
-            patch("cozempic.guard._detect_claude_flags", return_value=""),
-            patch("cozempic.guard.platform.system", return_value="Linux"),
+            patch("winnow.legacy.guard._detect_terminal_env", return_value="plain"),
+            patch("winnow.legacy.guard._detect_claude_flags", return_value=""),
+            patch("winnow.legacy.guard.platform.system", return_value="Linux"),
             # Simulate identity check: PID is NOT a claude/node process.
             # Fix must introduce a helper; we pretend it exists and returns False.
-            patch("cozempic.guard._is_claude_process", create=True, return_value=False),
-            patch("cozempic.guard.os.kill") as mock_kill,
-            patch("cozempic.guard._wait_for_exit", return_value=True),
-            patch("cozempic.guard._spawn_reload_watcher"),
+            patch("winnow.legacy.guard._is_claude_process", create=True, return_value=False),
+            patch("winnow.legacy.guard.os.kill") as mock_kill,
+            patch("winnow.legacy.guard._wait_for_exit", return_value=True),
+            patch("winnow.legacy.guard._spawn_reload_watcher"),
         ):
             _terminate_and_resume(31337, "/tmp/proj", session_id="sess-abc")
 
@@ -444,17 +444,17 @@ class TestG5_TerminateAndResumeReVerifiesClaudePid(unittest.TestCase):
 
     def test_tmux_path_does_not_sigterm_when_pid_not_claude(self):
         """tmux branch (line 838) also must gate SIGTERM on identity check."""
-        from cozempic.guard import _terminate_and_resume
+        from winnow.legacy.guard import _terminate_and_resume
 
         with (
-            patch("cozempic.guard._detect_terminal_env", return_value="tmux"),
-            patch("cozempic.guard._detect_claude_flags", return_value=""),
-            patch("cozempic.guard.platform.system", return_value="Linux"),
-            patch("cozempic.guard._is_claude_process", create=True, return_value=False),
-            patch("cozempic.guard.os.kill") as mock_kill,
-            patch("cozempic.guard._wait_for_exit", return_value=False),  # force escalation
-            patch("cozempic.guard.subprocess.run"),
-            patch("cozempic.guard.time.sleep"),
+            patch("winnow.legacy.guard._detect_terminal_env", return_value="tmux"),
+            patch("winnow.legacy.guard._detect_claude_flags", return_value=""),
+            patch("winnow.legacy.guard.platform.system", return_value="Linux"),
+            patch("winnow.legacy.guard._is_claude_process", create=True, return_value=False),
+            patch("winnow.legacy.guard.os.kill") as mock_kill,
+            patch("winnow.legacy.guard._wait_for_exit", return_value=False),  # force escalation
+            patch("winnow.legacy.guard.subprocess.run"),
+            patch("winnow.legacy.guard.time.sleep"),
         ):
             _terminate_and_resume(44444, "/tmp/proj", session_id="sess-xyz")
 
@@ -482,7 +482,7 @@ class TestG6_WindowsCmdQuotesArgs(unittest.TestCase):
     def test_windows_malicious_project_dir_does_not_appear_raw_in_shell_string(self):
         """A project_dir with `& calc &` must NOT be interpolated raw into
         the watcher_script passed to bash."""
-        from cozempic.guard import _spawn_reload_watcher
+        from winnow.legacy.guard import _spawn_reload_watcher
 
         malicious = r"C:\projects\evil & calc.exe &"
 
@@ -496,10 +496,10 @@ class TestG6_WindowsCmdQuotesArgs(unittest.TestCase):
             return proc
 
         with (
-            patch("cozempic.guard.platform.system", return_value="Windows"),
-            patch("cozempic.guard.is_ssh_session", return_value=False),
-            patch("cozempic.guard._detect_claude_flags", return_value=""),
-            patch("cozempic.guard.subprocess.Popen", side_effect=fake_popen),
+            patch("winnow.legacy.guard.platform.system", return_value="Windows"),
+            patch("winnow.legacy.guard.is_ssh_session", return_value=False),
+            patch("winnow.legacy.guard._detect_claude_flags", return_value=""),
+            patch("winnow.legacy.guard.subprocess.Popen", side_effect=fake_popen),
         ):
             _spawn_reload_watcher(5555, malicious, session_id="sess-w")
 
@@ -520,7 +520,7 @@ class TestG6_WindowsCmdQuotesArgs(unittest.TestCase):
     def test_windows_malicious_project_dir_metachars_escaped(self):
         """Stronger check: at least one of the cmd metacharacters (&, |) in
         project_dir must be quoted/escaped in the final script."""
-        from cozempic.guard import _spawn_reload_watcher
+        from winnow.legacy.guard import _spawn_reload_watcher
 
         malicious = r"C:\bad & pwn"
         captured = {"cmd": None}
@@ -532,10 +532,10 @@ class TestG6_WindowsCmdQuotesArgs(unittest.TestCase):
             return proc
 
         with (
-            patch("cozempic.guard.platform.system", return_value="Windows"),
-            patch("cozempic.guard.is_ssh_session", return_value=False),
-            patch("cozempic.guard._detect_claude_flags", return_value=""),
-            patch("cozempic.guard.subprocess.Popen", side_effect=fake_popen),
+            patch("winnow.legacy.guard.platform.system", return_value="Windows"),
+            patch("winnow.legacy.guard.is_ssh_session", return_value=False),
+            patch("winnow.legacy.guard._detect_claude_flags", return_value=""),
+            patch("winnow.legacy.guard.subprocess.Popen", side_effect=fake_popen),
         ):
             _spawn_reload_watcher(1234, malicious, session_id="sess-x")
 
@@ -558,7 +558,7 @@ class TestG7_DetectClaudeFlagsPreservesBoundaries(unittest.TestCase):
 
     def test_space_in_flag_value_preserved(self):
         """--add-dir '/Users/foo/My Project' must come back with the path intact."""
-        from cozempic.guard import _detect_claude_flags
+        from winnow.legacy.guard import _detect_claude_flags
 
         # On real POSIX, ps -o args= returns argv joined by spaces — quoting lost.
         # A correct implementation uses psutil or /proc/<pid>/cmdline to preserve
@@ -574,7 +574,7 @@ class TestG7_DetectClaudeFlagsPreservesBoundaries(unittest.TestCase):
                 m.stdout = ""
             return m
 
-        with patch("cozempic.guard.subprocess.run", side_effect=fake_run):
+        with patch("winnow.legacy.guard.subprocess.run", side_effect=fake_run):
             result = _detect_claude_flags(5000)
 
         # Contract: either a correctly parsed flag-list is returned, or the
@@ -594,7 +594,7 @@ class TestG7_DetectClaudeFlagsPreservesBoundaries(unittest.TestCase):
     def test_shell_metachar_in_flag_value_not_executable(self):
         """A flag value with `;` / `$(...)` / backtick must NOT be re-parseable
         as a shell command when the result flows through resume_cmd."""
-        from cozempic.guard import _detect_claude_flags
+        from winnow.legacy.guard import _detect_claude_flags
 
         # Simulate ps returning argv with injected shell metachars
         fake_ps = "claude --model sonnet --foo \"; touch /tmp/pwned_by_g7 #\""
@@ -608,7 +608,7 @@ class TestG7_DetectClaudeFlagsPreservesBoundaries(unittest.TestCase):
                 m.stdout = ""
             return m
 
-        with patch("cozempic.guard.subprocess.run", side_effect=fake_run):
+        with patch("winnow.legacy.guard.subprocess.run", side_effect=fake_run):
             result = _detect_claude_flags(5001)
 
         # Contract: result does not contain an un-quoted `;` or command
@@ -638,17 +638,17 @@ class TestG8_MainLoopWatchdogVerifiesClaudeIdentity(unittest.TestCase):
         This contract mirrors _is_cozempic_guard_process (line 1161) but for
         claude/node processes. Without it, the watchdog CAN'T verify identity.
         """
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
         self.assertTrue(
             hasattr(g, "_is_claude_process"),
-            "Expected cozempic.guard._is_claude_process helper (mirrors "
+            "Expected winnow.legacy.guard._is_claude_process helper (mirrors "
             "_is_cozempic_guard_process but for claude/node) — currently missing "
             "→ watchdog has no way to verify PID identity (BUG-G8).",
         )
 
     def test_is_claude_process_rejects_non_claude_pid(self):
         """The helper, when present, must return False for a non-claude argv."""
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
         if not hasattr(g, "_is_claude_process"):
             self.skipTest("helper missing — see test_is_claude_process_helper_exists")
 
@@ -659,7 +659,7 @@ class TestG8_MainLoopWatchdogVerifiesClaudeIdentity(unittest.TestCase):
             m.stdout = "nginx: master process /usr/sbin/nginx"
             return m
 
-        with patch("cozempic.guard.subprocess.run", side_effect=fake_run):
+        with patch("winnow.legacy.guard.subprocess.run", side_effect=fake_run):
             self.assertFalse(
                 g._is_claude_process(12345),
                 "_is_claude_process accepted a non-claude process",
@@ -667,7 +667,7 @@ class TestG8_MainLoopWatchdogVerifiesClaudeIdentity(unittest.TestCase):
 
     def test_is_claude_process_accepts_claude_pid(self):
         """The helper must return True for a typical Claude/node argv."""
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
         if not hasattr(g, "_is_claude_process"):
             self.skipTest("helper missing — see test_is_claude_process_helper_exists")
 
@@ -677,7 +677,7 @@ class TestG8_MainLoopWatchdogVerifiesClaudeIdentity(unittest.TestCase):
             m.stdout = "node /usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js"
             return m
 
-        with patch("cozempic.guard.subprocess.run", side_effect=fake_run):
+        with patch("winnow.legacy.guard.subprocess.run", side_effect=fake_run):
             self.assertTrue(
                 g._is_claude_process(54321),
                 "_is_claude_process rejected a legitimate claude node process",
@@ -729,10 +729,10 @@ class TestNF1_IsClaudeProcessRejectsNonClaudeNodes(unittest.TestCase):
     def test_rejects_common_non_claude_processes(self):
         """Each argv listed is a realistic non-Claude process found on a
         dev laptop. _is_claude_process MUST return False for all of them."""
-        from cozempic.guard import _is_claude_process
+        from winnow.legacy.guard import _is_claude_process
         false_positives = []
         for argv in self.NON_CLAUDE_ARGVS:
-            with patch("cozempic.guard.subprocess.run",
+            with patch("winnow.legacy.guard.subprocess.run",
                        side_effect=_patch_ps(argv)):
                 got = _is_claude_process(12345)
             if got is True:
@@ -748,12 +748,12 @@ class TestNF1_IsClaudeProcessRejectsNonClaudeNodes(unittest.TestCase):
     def test_accepts_real_anthropic_claude_code_cli(self):
         """Positive: the canonical `node /path/to/@anthropic-ai/claude-code/cli.js`
         invocation must still be recognized."""
-        from cozempic.guard import _is_claude_process
+        from winnow.legacy.guard import _is_claude_process
         real_claude = (
             "/usr/local/bin/node "
             "/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js"
         )
-        with patch("cozempic.guard.subprocess.run",
+        with patch("winnow.legacy.guard.subprocess.run",
                    side_effect=_patch_ps(real_claude)):
             self.assertTrue(
                 _is_claude_process(54321),
@@ -762,8 +762,8 @@ class TestNF1_IsClaudeProcessRejectsNonClaudeNodes(unittest.TestCase):
 
     def test_accepts_plain_claude_binary(self):
         """Positive: a native `claude` binary (no node wrapper) must pass."""
-        from cozempic.guard import _is_claude_process
-        with patch("cozempic.guard.subprocess.run",
+        from winnow.legacy.guard import _is_claude_process
+        with patch("winnow.legacy.guard.subprocess.run",
                    side_effect=_patch_ps("claude --resume abc-123")):
             self.assertTrue(
                 _is_claude_process(54322),
@@ -788,7 +788,7 @@ class TestNF2_MainWatchdogUsesIdentityCheck(unittest.TestCase):
         `_is_claude_process(claude_pid, ...)` — otherwise PID-reuse races
         through liveness-only `os.kill(pid, 0)`."""
         import inspect
-        from cozempic.guard import start_guard
+        from winnow.legacy.guard import start_guard
         src = inspect.getsource(start_guard)
         self.assertTrue(
             self._IDENTITY_CALL_RE.search(src),
@@ -803,7 +803,7 @@ class TestNF2_MainWatchdogUsesIdentityCheck(unittest.TestCase):
         `claude_alive = False` flip to drive it. Proxy: both tokens appear
         within a 400-char window of each other in the watchdog section."""
         import inspect
-        from cozempic.guard import start_guard
+        from winnow.legacy.guard import start_guard
         src = inspect.getsource(start_guard)
         m = self._IDENTITY_CALL_RE.search(src)
         if not m:
@@ -824,23 +824,23 @@ class TestNF2_MainWatchdogUsesIdentityCheck(unittest.TestCase):
 # NF-3 HIGH — _is_cozempic_guard_process substring match is too loose
 # ---------------------------------------------------------------------------
 class TestNF3_IsCozempicGuardProcessRejectsLooseSubstrings(unittest.TestCase):
-    """`"cozempic.cli" in args` AND `"cozempic" in tokens[0]` both false-positive
+    """`"winnow.legacy.cli" in args` AND `"cozempic" in tokens[0]` both false-positive
     on grep/less/vim sessions + any `*-cozempic-*` binary.
     """
 
     NON_GUARD_ARGVS = [
-        "grep -r cozempic.cli guard /home/user/projects",
-        "less /tmp/cozempic.cli-guard-output.log",
+        "grep -r winnow.legacy.cli guard /home/user/projects",
+        "less /tmp/winnow.legacy.cli-guard-output.log",
         "/usr/local/bin/run-cozempic guard",
         "/usr/local/bin/fake-cozempic guard --evil",
         "vim /home/user/projects/cozempic/cli.py",
     ]
 
     def test_rejects_loose_substring_matches(self):
-        from cozempic.guard import _is_cozempic_guard_process
+        from winnow.legacy.guard import _is_cozempic_guard_process
         false_positives = []
         for argv in self.NON_GUARD_ARGVS:
-            with patch("cozempic.guard.subprocess.run",
+            with patch("winnow.legacy.guard.subprocess.run",
                        side_effect=_patch_ps(argv)):
                 got = _is_cozempic_guard_process(12345)
             if got is True:
@@ -850,17 +850,17 @@ class TestNF3_IsCozempicGuardProcessRejectsLooseSubstrings(unittest.TestCase):
             f"_is_cozempic_guard_process false-positive on "
             f"{len(false_positives)} non-guard argv(s): {false_positives}. "
             f"Tighten token[0] to endswith python/cozempic AND require "
-            f"cozempic.cli + guard as discrete tokens.",
+            f"winnow.legacy.cli + guard as discrete tokens.",
         )
 
     def test_accepts_real_daemon_invocation(self):
-        """Positive: canonical python -m cozempic.cli guard invocation."""
-        from cozempic.guard import _is_cozempic_guard_process
+        """Positive: canonical python -m winnow.legacy.cli guard invocation."""
+        from winnow.legacy.guard import _is_cozempic_guard_process
         real = (
-            "/usr/local/bin/python3 -m cozempic.cli guard "
+            "/usr/local/bin/python3 -m winnow.legacy.cli guard "
             "--session abc-123 --threshold 50.0"
         )
-        with patch("cozempic.guard.subprocess.run",
+        with patch("winnow.legacy.guard.subprocess.run",
                    side_effect=_patch_ps(real)):
             self.assertTrue(
                 _is_cozempic_guard_process(55555),
@@ -880,7 +880,7 @@ class TestNF4_AtomicClaimHandlesNonExistsOsError(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
         self.session_id = "44444444-aaaa-bbbb-cccc-000000000044"
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
         self.pid_path = _pid_file_for_session(self.session_id)
         self.pid_path.unlink(missing_ok=True)
         self.addCleanup(self.pid_path.unlink, missing_ok=True)
@@ -907,7 +907,7 @@ class TestNF4_AtomicClaimHandlesNonExistsOsError(unittest.TestCase):
         uses os.open on the pid_path itself; only the post-Popen
         atomic-rename open should fail.
         """
-        from cozempic.guard import start_guard_daemon
+        from winnow.legacy.guard import start_guard_daemon
 
         tmp_pidfile_str = str(self.pid_path.with_suffix(".pid.tmp"))
         real_os_open = os.open
@@ -918,10 +918,10 @@ class TestNF4_AtomicClaimHandlesNonExistsOsError(unittest.TestCase):
             return real_os_open(path, flags, *args, **kwargs)
 
         with (
-            patch("cozempic.guard._cleanup_legacy_pid"),
-            patch("cozempic.guard.find_claude_pid", return_value=7777),
-            patch("cozempic.guard.subprocess.Popen") as mock_popen,
-            patch("cozempic.guard.os.open", side_effect=fake_os_open),
+            patch("winnow.legacy.guard._cleanup_legacy_pid"),
+            patch("winnow.legacy.guard.find_claude_pid", return_value=7777),
+            patch("winnow.legacy.guard.subprocess.Popen") as mock_popen,
+            patch("winnow.legacy.guard.os.open", side_effect=fake_os_open),
         ):
             mock_popen.return_value = MagicMock(pid=9999)
             try:
@@ -988,7 +988,7 @@ class TestNF5_WindowsTaskkillReVerifies(unittest.TestCase):
     def test_windows_taskkill_f_skipped_when_identity_fails_mid_race(self):
         """Outer check passes (Claude alive), wait_for_exit times out, THEN
         identity flips to False (PID recycled). taskkill /F MUST NOT run."""
-        from cozempic.guard import _terminate_and_resume
+        from winnow.legacy.guard import _terminate_and_resume
 
         # Call sequence: 1st True (outer verify), subsequent False (post-wait)
         call_sequence = [True, False, False, False, False]
@@ -1003,16 +1003,16 @@ class TestNF5_WindowsTaskkillReVerifies(unittest.TestCase):
             return 0
 
         with (
-            patch("cozempic.guard._detect_terminal_env", return_value="plain"),
-            patch("cozempic.guard._detect_claude_flags", return_value=""),
-            patch("cozempic.guard.platform.system", return_value="Windows"),
-            patch("cozempic.guard._is_claude_process",
+            patch("winnow.legacy.guard._detect_terminal_env", return_value="plain"),
+            patch("winnow.legacy.guard._detect_claude_flags", return_value=""),
+            patch("winnow.legacy.guard.platform.system", return_value="Windows"),
+            patch("winnow.legacy.guard._is_claude_process",
                   side_effect=fake_is_claude_process),
-            patch("cozempic.guard._wait_for_exit", return_value=False),
-            patch("cozempic.guard.subprocess.call",
+            patch("winnow.legacy.guard._wait_for_exit", return_value=False),
+            patch("winnow.legacy.guard.subprocess.call",
                   side_effect=fake_subprocess_call),
-            patch("cozempic.guard._spawn_reload_watcher"),
-            patch("cozempic.guard.os.kill"),
+            patch("winnow.legacy.guard._spawn_reload_watcher"),
+            patch("winnow.legacy.guard.os.kill"),
         ):
             _terminate_and_resume(31337, r"C:\proj", session_id="sess-w")
 
@@ -1031,17 +1031,17 @@ class TestNF5_WindowsTaskkillReVerifies(unittest.TestCase):
     def test_windows_taskkill_proceeds_when_identity_still_valid(self):
         """Positive: when _is_claude_process stays True, some taskkill MUST
         run — guards against a fix that over-protects and leaves Claude alive."""
-        from cozempic.guard import _terminate_and_resume
+        from winnow.legacy.guard import _terminate_and_resume
 
         with (
-            patch("cozempic.guard._detect_terminal_env", return_value="plain"),
-            patch("cozempic.guard._detect_claude_flags", return_value=""),
-            patch("cozempic.guard.platform.system", return_value="Windows"),
-            patch("cozempic.guard._is_claude_process", return_value=True),
-            patch("cozempic.guard._wait_for_exit", return_value=False),
-            patch("cozempic.guard.subprocess.call") as mock_call,
-            patch("cozempic.guard._spawn_reload_watcher"),
-            patch("cozempic.guard.os.kill"),
+            patch("winnow.legacy.guard._detect_terminal_env", return_value="plain"),
+            patch("winnow.legacy.guard._detect_claude_flags", return_value=""),
+            patch("winnow.legacy.guard.platform.system", return_value="Windows"),
+            patch("winnow.legacy.guard._is_claude_process", return_value=True),
+            patch("winnow.legacy.guard._wait_for_exit", return_value=False),
+            patch("winnow.legacy.guard.subprocess.call") as mock_call,
+            patch("winnow.legacy.guard._spawn_reload_watcher"),
+            patch("winnow.legacy.guard.os.kill"),
         ):
             _terminate_and_resume(44444, r"C:\proj", session_id="sess-w2")
 
@@ -1071,22 +1071,22 @@ class TestR2REG2_VersionedPythonAccepted(unittest.TestCase):
     """Lock in the regex accept/reject contract for python-like binaries.
 
     Argv pattern used in each case is the canonical daemon spawn:
-        <binary> -m cozempic.cli guard --session <id>
+        <binary> -m winnow.legacy.cli guard --session <id>
     so the only variable is tokens[0] (the interpreter path).
     """
 
     def _argv_for(self, binary: str) -> str:
         """Build a canonical daemon argv line with the given interpreter basename."""
-        return f"/usr/local/bin/{binary} -m cozempic.cli guard --session abc-123"
+        return f"/usr/local/bin/{binary} -m winnow.legacy.cli guard --session abc-123"
 
     def _entrypoint_argv(self) -> str:
         """Native cozempic entry-point (no python interpreter)."""
         return "/usr/local/bin/cozempic guard --session abc-123"
 
     def _check(self, binary_or_argv: str, *, argv: str | None = None) -> bool:
-        from cozempic.guard import _is_cozempic_guard_process
+        from winnow.legacy.guard import _is_cozempic_guard_process
         final_argv = argv if argv is not None else self._argv_for(binary_or_argv)
-        with patch("cozempic.guard.subprocess.run",
+        with patch("winnow.legacy.guard.subprocess.run",
                    side_effect=_patch_ps(final_argv)):
             return _is_cozempic_guard_process(12345)
 
@@ -1155,21 +1155,21 @@ class TestRegexEdgeCases_IsCozempicGuardProcess(unittest.TestCase):
 
     def test_empty_argv_fails_closed(self):
         """`ps -p <pid> -o args=` returns empty: must return False, no crash."""
-        from cozempic.guard import _is_cozempic_guard_process
-        with patch("cozempic.guard.subprocess.run",
+        from winnow.legacy.guard import _is_cozempic_guard_process
+        with patch("winnow.legacy.guard.subprocess.run",
                    side_effect=_patch_ps("")):
             self.assertFalse(_is_cozempic_guard_process(12345))
 
     def test_newline_injected_binary_rejected(self):
         """Binary with embedded `\\n`: split() produces multi-token output, but
         the first token must fail the binary check; no crash."""
-        from cozempic.guard import _is_cozempic_guard_process
+        from winnow.legacy.guard import _is_cozempic_guard_process
         # The argv injects a newline that splits the first "binary" into two
         # tokens; tokens[0] becomes "python" but tokens[1] becomes "evil-cmd".
         # Either way, the guard command must not be accepted from a line that
         # smuggled a newline; and the implementation must not raise.
-        argv = "python\nevil-cmd -m cozempic.cli guard --session abc"
-        with patch("cozempic.guard.subprocess.run",
+        argv = "python\nevil-cmd -m winnow.legacy.cli guard --session abc"
+        with patch("winnow.legacy.guard.subprocess.run",
                    side_effect=_patch_ps(argv)):
             # Contract: no exception. Return value can be True or False depending
             # on whether tokens[0] happens to be "python" (it does, because split()
@@ -1183,12 +1183,12 @@ class TestRegexEdgeCases_IsCozempicGuardProcess(unittest.TestCase):
 
     def test_very_long_binary_name_rejected_fast(self):
         """`python` + `a`*1000: regex must reject and complete quickly (<100ms)."""
-        from cozempic.guard import _is_cozempic_guard_process
+        from winnow.legacy.guard import _is_cozempic_guard_process
         huge = "python" + "a" * 1000
-        argv = f"{huge} -m cozempic.cli guard --session abc"
+        argv = f"{huge} -m winnow.legacy.cli guard --session abc"
         import time as _t
         t0 = _t.perf_counter()
-        with patch("cozempic.guard.subprocess.run",
+        with patch("winnow.legacy.guard.subprocess.run",
                    side_effect=_patch_ps(argv)):
             got = _is_cozempic_guard_process(12345)
         dt = _t.perf_counter() - t0
@@ -1201,9 +1201,9 @@ class TestRegexEdgeCases_IsCozempicGuardProcess(unittest.TestCase):
 
     def test_unicode_fullwidth_dot_rejected(self):
         """`python3．11` (fullwidth dot) must NOT match ASCII-dot regex."""
-        from cozempic.guard import _is_cozempic_guard_process
-        argv = "python3．11 -m cozempic.cli guard --session abc"
-        with patch("cozempic.guard.subprocess.run",
+        from winnow.legacy.guard import _is_cozempic_guard_process
+        argv = "python3．11 -m winnow.legacy.cli guard --session abc"
+        with patch("winnow.legacy.guard.subprocess.run",
                    side_effect=_patch_ps(argv)):
             self.assertFalse(
                 _is_cozempic_guard_process(12345),
@@ -1213,9 +1213,9 @@ class TestRegexEdgeCases_IsCozempicGuardProcess(unittest.TestCase):
     def test_trailing_whitespace_stripped(self):
         """Trailing whitespace on argv line must not affect acceptance —
         `args.strip()` handles it; tokens[0] remains clean."""
-        from cozempic.guard import _is_cozempic_guard_process
-        argv = "/usr/local/bin/python3.11 -m cozempic.cli guard --session abc   \n\t "
-        with patch("cozempic.guard.subprocess.run",
+        from winnow.legacy.guard import _is_cozempic_guard_process
+        argv = "/usr/local/bin/python3.11 -m winnow.legacy.cli guard --session abc   \n\t "
+        with patch("winnow.legacy.guard.subprocess.run",
                    side_effect=_patch_ps(argv)):
             # Trailing whitespace should NOT prevent acceptance of a legitimate
             # daemon (strip handles it); contract: still True.
@@ -1236,12 +1236,12 @@ class TestDiffCoverage_RoundTrip_NF1_NF2(unittest.TestCase):
     def test_real_anthropic_claude_code_cli_accepted(self):
         """Canonical install path: `node /usr/local/lib/node_modules/
         @anthropic-ai/claude-code/cli.js` must pass."""
-        from cozempic.guard import _is_claude_process
+        from winnow.legacy.guard import _is_claude_process
         argv = (
             "/usr/local/bin/node "
             "/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js"
         )
-        with patch("cozempic.guard.subprocess.run",
+        with patch("winnow.legacy.guard.subprocess.run",
                    side_effect=_patch_ps(argv)):
             self.assertTrue(
                 _is_claude_process(12345),
@@ -1251,9 +1251,9 @@ class TestDiffCoverage_RoundTrip_NF1_NF2(unittest.TestCase):
 
     def test_native_claude_binary_accepted(self):
         """Direct `claude` binary (no node wrapper)."""
-        from cozempic.guard import _is_claude_process
+        from winnow.legacy.guard import _is_claude_process
         argv = "/usr/local/bin/claude --resume abc-123"
-        with patch("cozempic.guard.subprocess.run",
+        with patch("winnow.legacy.guard.subprocess.run",
                    side_effect=_patch_ps(argv)):
             self.assertTrue(
                 _is_claude_process(12345),
@@ -1263,9 +1263,9 @@ class TestDiffCoverage_RoundTrip_NF1_NF2(unittest.TestCase):
     def test_recycled_pid_to_node_server_rejected(self):
         """Claude exited; PID now points at `node server.js` — must reject.
         This is the exact bug the identity helper defends against."""
-        from cozempic.guard import _is_claude_process
+        from winnow.legacy.guard import _is_claude_process
         argv = "/usr/local/bin/node /home/user/server.js"
-        with patch("cozempic.guard.subprocess.run",
+        with patch("winnow.legacy.guard.subprocess.run",
                    side_effect=_patch_ps(argv)):
             self.assertFalse(
                 _is_claude_process(12345),
@@ -1277,7 +1277,7 @@ class TestDiffCoverage_RoundTrip_NF1_NF2(unittest.TestCase):
         """Simulate watchdog's control flow around guard.py:415-428 — identity
         helper returning True first, then False mid-loop, must flip a
         local `claude_alive` flag to False on the False read."""
-        from cozempic.guard import _is_claude_process
+        from winnow.legacy.guard import _is_claude_process
 
         # Sequence mirrors the watchdog's polling: os.kill(pid, 0) succeeds
         # (liveness), then _is_claude_process is called. We assert the helper
@@ -1293,7 +1293,7 @@ class TestDiffCoverage_RoundTrip_NF1_NF2(unittest.TestCase):
             m.stdout = next(responses)
             return m
 
-        with patch("cozempic.guard.subprocess.run", side_effect=side_effect):
+        with patch("winnow.legacy.guard.subprocess.run", side_effect=side_effect):
             self.assertTrue(_is_claude_process(12345),
                             "First poll: legitimate Claude process")
             self.assertFalse(_is_claude_process(12345),
@@ -1311,7 +1311,7 @@ class TestDiffCoverage_AtomicPidfile_AllErrnos(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
         self.session_id = "55555555-dddd-eeee-ffff-000000000055"
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
         self.pid_path = _pid_file_for_session(self.session_id)
         self.pid_path.unlink(missing_ok=True)
         self.addCleanup(self.pid_path.unlink, missing_ok=True)
@@ -1338,7 +1338,7 @@ class TestDiffCoverage_AtomicPidfile_AllErrnos(unittest.TestCase):
         uses os.open on the pid_path itself; only the post-Popen
         atomic-rename open should fail.
         """
-        from cozempic.guard import start_guard_daemon
+        from winnow.legacy.guard import start_guard_daemon
 
         tmp_pidfile_str = str(self.pid_path.with_suffix(".pid.tmp"))
         real_os_open = os.open
@@ -1349,10 +1349,10 @@ class TestDiffCoverage_AtomicPidfile_AllErrnos(unittest.TestCase):
             return real_os_open(path, flags, *args, **kwargs)
 
         with (
-            patch("cozempic.guard._cleanup_legacy_pid"),
-            patch("cozempic.guard.find_claude_pid", return_value=7777),
-            patch("cozempic.guard.subprocess.Popen") as mock_popen,
-            patch("cozempic.guard.os.open", side_effect=fake_os_open),
+            patch("winnow.legacy.guard._cleanup_legacy_pid"),
+            patch("winnow.legacy.guard.find_claude_pid", return_value=7777),
+            patch("winnow.legacy.guard.subprocess.Popen") as mock_popen,
+            patch("winnow.legacy.guard.os.open", side_effect=fake_os_open),
         ):
             mock_popen.return_value = MagicMock(pid=9999)
             try:
@@ -1440,7 +1440,7 @@ class TestR3_1_PlaceholderPidZeroNeverSignaled(unittest.TestCase):
 
     def setUp(self):
         self.session_id = "33333333-aaaa-bbbb-cccc-000000000033"
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
         self.pid_path = _pid_file_for_session(self.session_id)
         self.pid_path.write_text("0")
         self.addCleanup(self.pid_path.unlink, missing_ok=True)
@@ -1448,7 +1448,7 @@ class TestR3_1_PlaceholderPidZeroNeverSignaled(unittest.TestCase):
     def test_os_kill_never_called_with_pid_zero(self):
         """`_is_guard_running_for_session` on a placeholder pidfile ("0") MUST NOT
         invoke `os.kill(0, ...)` — pid 0 targets the caller's process group."""
-        from cozempic.guard import _is_guard_running_for_session
+        from winnow.legacy.guard import _is_guard_running_for_session
 
         kill_calls = []
 
@@ -1456,7 +1456,7 @@ class TestR3_1_PlaceholderPidZeroNeverSignaled(unittest.TestCase):
             kill_calls.append((pid, sig))
             return None
 
-        with patch("cozempic.guard.os.kill", side_effect=fake_kill):
+        with patch("winnow.legacy.guard.os.kill", side_effect=fake_kill):
             _ = _is_guard_running_for_session(self.session_id)
 
         pid_zero_calls = [(p, s) for (p, s) in kill_calls if p == 0]
@@ -1471,7 +1471,7 @@ class TestR3_1_PlaceholderPidZeroNeverSignaled(unittest.TestCase):
     def test_returns_none_and_unlinks_on_placeholder(self):
         """Positive regression: even after the fix, a placeholder-valued pidfile
         must still resolve to `None` and be cleaned up."""
-        from cozempic.guard import _is_guard_running_for_session
+        from winnow.legacy.guard import _is_guard_running_for_session
 
         # No mocks — exercise the real path. Must return None AND clean up.
         result = _is_guard_running_for_session(self.session_id)
@@ -1513,7 +1513,7 @@ class TestR3_2_WindowsTaskkillRegressionOnPsMissing(unittest.TestCase):
         in its source.
         """
         import inspect
-        from cozempic.guard import _is_claude_process
+        from winnow.legacy.guard import _is_claude_process
         src = inspect.getsource(_is_claude_process)
 
         has_windows_probe = (
@@ -1538,7 +1538,7 @@ class TestR3_2_WindowsTaskkillRegressionOnPsMissing(unittest.TestCase):
         for a PID the caller believes is Claude. A valid fix either (a) falls
         back to a Windows-native probe, or (b) returns True on liveness and
         lets the caller proceed with taskkill (documented fallback)."""
-        from cozempic.guard import _is_claude_process
+        from winnow.legacy.guard import _is_claude_process
 
         def fake_run(cmd, *a, **kw):
             cmd_list = list(cmd) if isinstance(cmd, (list, tuple)) else [cmd]
@@ -1556,8 +1556,8 @@ class TestR3_2_WindowsTaskkillRegressionOnPsMissing(unittest.TestCase):
             return m
 
         with (
-            patch("cozempic.guard.subprocess.run", side_effect=fake_run),
-            patch("cozempic.guard.platform.system", return_value="Windows"),
+            patch("winnow.legacy.guard.subprocess.run", side_effect=fake_run),
+            patch("winnow.legacy.guard.platform.system", return_value="Windows"),
         ):
             got = _is_claude_process(12345)
 
@@ -1600,7 +1600,7 @@ class TestR3_3_BinaryRegexRejectsTrailingNewline(unittest.TestCase):
         so the binary-under-test becomes `"python3\\n"`.
         """
         import inspect
-        from cozempic.guard import _is_cozempic_guard_process
+        from winnow.legacy.guard import _is_cozempic_guard_process
         src = inspect.getsource(_is_cozempic_guard_process)
 
         # The function must use re.fullmatch (or explicit \n rejection on the
@@ -1670,7 +1670,7 @@ class TestR3_4_PosixPlainTerminalSigtermHasInnerReverify(unittest.TestCase):
     def test_sigterm_skipped_when_identity_fails_mid_race(self):
         """Outer check returns True (Claude alive), then identity flips to
         False before the plain-terminal SIGTERM. SIGTERM MUST NOT fire."""
-        from cozempic.guard import _terminate_and_resume
+        from winnow.legacy.guard import _terminate_and_resume
 
         # Sequence: outer check at line 914 → True.
         # Subsequent _is_claude_process calls → False (PID recycled).
@@ -1686,14 +1686,14 @@ class TestR3_4_PosixPlainTerminalSigtermHasInnerReverify(unittest.TestCase):
             return None
 
         with (
-            patch("cozempic.guard._detect_terminal_env", return_value="plain"),
-            patch("cozempic.guard._detect_claude_flags", return_value=""),
-            patch("cozempic.guard.platform.system", return_value="Linux"),
-            patch("cozempic.guard._is_claude_process",
+            patch("winnow.legacy.guard._detect_terminal_env", return_value="plain"),
+            patch("winnow.legacy.guard._detect_claude_flags", return_value=""),
+            patch("winnow.legacy.guard.platform.system", return_value="Linux"),
+            patch("winnow.legacy.guard._is_claude_process",
                   side_effect=fake_is_claude_process),
-            patch("cozempic.guard._wait_for_exit", return_value=True),
-            patch("cozempic.guard.os.kill", side_effect=fake_kill),
-            patch("cozempic.guard._spawn_reload_watcher"),
+            patch("winnow.legacy.guard._wait_for_exit", return_value=True),
+            patch("winnow.legacy.guard.os.kill", side_effect=fake_kill),
+            patch("winnow.legacy.guard._spawn_reload_watcher"),
         ):
             _terminate_and_resume(51337, "/tmp/proj", session_id="sess-r3-4")
 
@@ -1713,7 +1713,7 @@ class TestR3_4_PosixPlainTerminalSigtermHasInnerReverify(unittest.TestCase):
         """Positive: when identity stays True across the race window, SIGTERM
         MUST fire (guards against an over-protective fix that skips SIGTERM
         entirely)."""
-        from cozempic.guard import _terminate_and_resume
+        from winnow.legacy.guard import _terminate_and_resume
 
         kill_calls = []
 
@@ -1722,13 +1722,13 @@ class TestR3_4_PosixPlainTerminalSigtermHasInnerReverify(unittest.TestCase):
             return None
 
         with (
-            patch("cozempic.guard._detect_terminal_env", return_value="plain"),
-            patch("cozempic.guard._detect_claude_flags", return_value=""),
-            patch("cozempic.guard.platform.system", return_value="Linux"),
-            patch("cozempic.guard._is_claude_process", return_value=True),
-            patch("cozempic.guard._wait_for_exit", return_value=True),
-            patch("cozempic.guard.os.kill", side_effect=fake_kill),
-            patch("cozempic.guard._spawn_reload_watcher"),
+            patch("winnow.legacy.guard._detect_terminal_env", return_value="plain"),
+            patch("winnow.legacy.guard._detect_claude_flags", return_value=""),
+            patch("winnow.legacy.guard.platform.system", return_value="Linux"),
+            patch("winnow.legacy.guard._is_claude_process", return_value=True),
+            patch("winnow.legacy.guard._wait_for_exit", return_value=True),
+            patch("winnow.legacy.guard.os.kill", side_effect=fake_kill),
+            patch("winnow.legacy.guard._spawn_reload_watcher"),
         ):
             _terminate_and_resume(62424, "/tmp/proj", session_id="sess-r3-4b")
 
@@ -1764,7 +1764,7 @@ class TestPolishV2_BugG13PidFileUuidValidation(unittest.TestCase):
     def test_uuid_valid_returns_expected_path(self):
         """Regression: a well-formed UUID session_id still maps to the
         expected '/tmp/cozempic_guard_<first-12>.pid' path."""
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
         uuid = "e6c3a4b2-1234-5678-9abc-def012345678"
         p = _pid_file_for_session(uuid)
         self.assertEqual(
@@ -1776,7 +1776,7 @@ class TestPolishV2_BugG13PidFileUuidValidation(unittest.TestCase):
         """A session_id containing path-traversal sequences (../../etc/pa)
         MUST raise ValueError. Currently it silently composes a path that
         resolves outside /tmp/cozempic_guard_*.pid."""
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
         with self.assertRaises(
             ValueError,
             msg="path-traversal session_id was accepted — BUG-G13",
@@ -1793,7 +1793,7 @@ class TestPolishV2_BugG13PidFileUuidValidation(unittest.TestCase):
         the relaxed class (uppercase pre-lowercase, slash, dot, colon,
         ``$``, semicolon) is still rejected so path-traversal and shell-
         metachar inputs cannot construct a pidfile path."""
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
         # Each input contains at least one character not in [a-z0-9_-]
         # (after lowercasing). All are of valid length (≥12 chars).
         rejected_inputs = (
@@ -1812,7 +1812,7 @@ class TestPolishV2_BugG13PidFileUuidValidation(unittest.TestCase):
 
     def test_short_session_id_rejected(self):
         """Session IDs shorter than the validation minimum MUST raise."""
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
         with self.assertRaises(
             ValueError,
             msg="too-short session_id was accepted — BUG-G13",
@@ -1822,7 +1822,7 @@ class TestPolishV2_BugG13PidFileUuidValidation(unittest.TestCase):
     def test_jsonl_suffix_stripped_then_validated(self):
         """Regression: _normalize_session_id still runs first, so
         '/path/<uuid>.jsonl' -> extract UUID -> validation passes."""
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
         uuid = "e6c3a4b2-1234-5678-9abc-def012345678"
         # pass path with .jsonl suffix — normalization picks the stem
         p = _pid_file_for_session(f"/some/path/{uuid}.jsonl")
@@ -1843,7 +1843,7 @@ class TestPolishV2_BugG16DeadShimRemoved(unittest.TestCase):
     def test_is_guard_running_symbol_removed(self):
         """The broken legacy shim _is_guard_running must not exist anymore
         (zero callers in src/, tests/, or plugin/)."""
-        from cozempic import guard
+        from winnow.legacy import guard
         self.assertFalse(
             hasattr(guard, "_is_guard_running"),
             "_is_guard_running legacy shim still present — BUG-G16 not fixed",
@@ -1852,7 +1852,7 @@ class TestPolishV2_BugG16DeadShimRemoved(unittest.TestCase):
     def test_is_guard_running_for_session_still_exported(self):
         """Regression guard: the LIVE session-scoped helper remains
         exported — it's the real API."""
-        from cozempic import guard
+        from winnow.legacy import guard
         self.assertTrue(
             hasattr(guard, "_is_guard_running_for_session"),
             "_is_guard_running_for_session wrongly removed — regression",
@@ -1861,7 +1861,7 @@ class TestPolishV2_BugG16DeadShimRemoved(unittest.TestCase):
     def test_pid_file_alias_retained(self):
         """Regression: the OTHER legacy alias `_pid_file` (cwd→Path, used by
         test_guard_robustness) must NOT be deleted alongside the shim."""
-        from cozempic.guard import _pid_file
+        from winnow.legacy.guard import _pid_file
         p = _pid_file("/tmp/some/cwd")
         self.assertTrue(
             str(p).startswith("/tmp/cozempic_guard_"),
@@ -1895,21 +1895,21 @@ class TestPolishV2_IsGuardRunningSafeOnInvalidSession(unittest.TestCase):
 
     def test_is_guard_running_returns_none_on_invalid_session(self):
         """Non-UUID session_id must return None, not raise."""
-        from cozempic.guard import _is_guard_running_for_session
+        from winnow.legacy.guard import _is_guard_running_for_session
         # Must not raise — "no daemon" is the safe default.
         self.assertIsNone(_is_guard_running_for_session("my-project-session"))
 
     def test_is_guard_running_returns_none_on_empty_session(self):
-        from cozempic.guard import _is_guard_running_for_session
+        from winnow.legacy.guard import _is_guard_running_for_session
         self.assertIsNone(_is_guard_running_for_session(""))
 
     def test_is_guard_running_returns_none_on_short_session(self):
-        from cozempic.guard import _is_guard_running_for_session
+        from winnow.legacy.guard import _is_guard_running_for_session
         self.assertIsNone(_is_guard_running_for_session("abc"))
 
     def test_reload_self_daemon_returns_safe_dict_on_invalid_session(self):
         """Non-UUID session_id in reload_self_daemon → safe dict, not raise."""
-        from cozempic.guard import reload_self_daemon
+        from winnow.legacy.guard import reload_self_daemon
         result = reload_self_daemon(
             cwd="/tmp",
             session_id="my-project-session",
@@ -1922,7 +1922,7 @@ class TestPolishV2_IsGuardRunningSafeOnInvalidSession(unittest.TestCase):
     def test_pid_file_for_session_still_raises_on_invalid(self):
         """Regression: the underlying helper itself still raises —
         the security contract for filename composition is intact."""
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
         with self.assertRaises(ValueError):
             _pid_file_for_session("not-a-uuid")
 
@@ -1935,7 +1935,7 @@ class TestPolishV2_PidFileForSessionCaseNormalization(unittest.TestCase):
     """
 
     def test_uppercase_uuid_same_path_as_lowercase(self):
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
         lc = "abcdef12-3456-789a-bcde-f0123456789a"
         uc = lc.upper()
         self.assertEqual(
@@ -1945,7 +1945,7 @@ class TestPolishV2_PidFileForSessionCaseNormalization(unittest.TestCase):
         )
 
     def test_mixed_case_uuid_same_path_as_lowercase(self):
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
         lc = "abcdef12-3456-789a-bcde-f0123456789a"
         mc = "AbCdEf12-3456-789A-bCdE-F0123456789a"
         self.assertEqual(
@@ -1957,7 +1957,7 @@ class TestPolishV2_PidFileForSessionCaseNormalization(unittest.TestCase):
     def test_normalized_path_is_lowercase(self):
         """Post-fix contract: the stored filename uses the lowercased
         first 12 chars, matching the canonical UUID form."""
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
         p = _pid_file_for_session("ABCDEF12-3456-789a-bcde-f0123456789a")
         # First 12 chars of lowercased input
         self.assertIn("abcdef12-345", str(p))
@@ -1970,7 +1970,7 @@ class TestPolishV2_PidFileForSessionValueErrorSanitization(unittest.TestCase):
     """
 
     def test_value_error_message_does_not_echo_raw_session_id(self):
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
         # Use an input that fails the relaxed _SESSION_ID_RE
         # (^[a-z0-9][a-z0-9_-]{11,}$) — leading-dash + special chars
         # (slashes, dots) are all rejected. C2-Option-B relaxed the
@@ -1988,7 +1988,7 @@ class TestPolishV2_PidFileForSessionValueErrorSanitization(unittest.TestCase):
     def test_value_error_message_mentions_length(self):
         """Message should include length to aid debugging without
         echoing content."""
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
         with self.assertRaises(ValueError) as ctx:
             _pid_file_for_session("xx")  # length 2
         # 'length' keyword or the number 2 should appear
@@ -2028,14 +2028,14 @@ class TestPolishV2_SessionIdRegexRequiresHexFirstChar(unittest.TestCase):
 
     def test_pure_dashes_rejected(self):
         """12 dashes is not a valid session id; must reject."""
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
         with self.assertRaises(ValueError):
             _pid_file_for_session("-" * 12)
 
     def test_leading_dash_rejected(self):
         """Session id shape requires an alphanumeric (not dash) in
         position 0 — defeats dash-collision after [:12] truncation."""
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
         with self.assertRaises(ValueError):
             _pid_file_for_session("-abcdef123456789abcdef")
 
@@ -2043,7 +2043,7 @@ class TestPolishV2_SessionIdRegexRequiresHexFirstChar(unittest.TestCase):
         """Before fix: `-` * 12 and `-` * 18 accept AND collide after
         [:12] truncation. After fix (kept under C2 Option B's relaxed
         char class via the leading-alphanumeric anchor): both reject."""
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
         with self.assertRaises(ValueError):
             _pid_file_for_session("-" * 12)
         with self.assertRaises(ValueError):
@@ -2052,7 +2052,7 @@ class TestPolishV2_SessionIdRegexRequiresHexFirstChar(unittest.TestCase):
     def test_valid_hex_uuid_still_accepted(self):
         """Regression: real hex UUID still works under the relaxed regex
         (UUIDs are a strict subset of [a-z0-9][a-z0-9_-]{11,})."""
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
         uuid = "e6c3a4b2-1234-5678-9abc-def012345678"
         p = _pid_file_for_session(uuid)
         self.assertEqual(
@@ -2064,7 +2064,7 @@ class TestPolishV2_SessionIdRegexRequiresHexFirstChar(unittest.TestCase):
         underscores or non-hex letters like `t`, `g`, `z`) are now
         accepted, matching the bash sanitiser's char set. UUIDs were
         a strict subset before, so no existing input regresses."""
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
         for sid in (
             "test-session-id-long-enough",  # non-hex letters
             "abc_123_def_456789",           # underscore
@@ -2109,7 +2109,7 @@ class TestPolishV2_StartGuardDaemonValidatesSessionId(unittest.TestCase):
         that's STILL rejected (the ``/`` char is outside the relaxed
         char class AND is the actual security threat — preventing
         ``../etc/passwd``-style pidfile paths)."""
-        from cozempic.guard import start_guard_daemon
+        from winnow.legacy.guard import start_guard_daemon
         result = start_guard_daemon(
             cwd="/tmp",
             session_id="test/session/path-traversal-attempt",
@@ -2123,7 +2123,7 @@ class TestPolishV2_StartGuardDaemonValidatesSessionId(unittest.TestCase):
     def test_pure_dash_session_id_does_not_spawn(self):
         """F9/F10 cascade: a pure-dash session_id also rejects at
         start_guard_daemon entry."""
-        from cozempic.guard import start_guard_daemon
+        from winnow.legacy.guard import start_guard_daemon
         result = start_guard_daemon(
             cwd="/tmp",
             session_id="-" * 12,
@@ -2152,7 +2152,7 @@ class TestPolishV2_StartGuardDaemonValidatesSessionId(unittest.TestCase):
         and the explicit bash-slug computation."""
         import re
 
-        from cozempic.guard import start_guard_daemon
+        from winnow.legacy.guard import start_guard_daemon
 
         invalid_input = "test/path/traversal-attempt"
         # The bash hook's sanitiser would produce a substitution-derived
@@ -2272,18 +2272,18 @@ class TestDaemonStrictNoneIsBehaviorPreserving(unittest.TestCase):
             mock_proc.pid = 99999
 
             with (
-                patch("cozempic.guard.find_current_session", return_value=None),
-                patch("cozempic.guard.find_claude_pid", return_value=42),
-                patch("cozempic.guard._guard_tmp_root", return_value=tmp_path),
-                patch("cozempic.guard._cleanup_legacy_pid"),
-                patch("cozempic.guard._reload_sentinel_active", return_value=False),
+                patch("winnow.legacy.guard.find_current_session", return_value=None),
+                patch("winnow.legacy.guard.find_claude_pid", return_value=42),
+                patch("winnow.legacy.guard._guard_tmp_root", return_value=tmp_path),
+                patch("winnow.legacy.guard._cleanup_legacy_pid"),
+                patch("winnow.legacy.guard._reload_sentinel_active", return_value=False),
                 # DaemonSpawnClaim is imported inside the function body:
                 # `from .spawn_lock import DaemonAlreadyStarting, DaemonSpawnClaim`
                 # Patch it at the source module so the local import picks it up.
-                patch("cozempic.spawn_lock.DaemonSpawnClaim", MockClaimClass),
-                patch("cozempic.guard.subprocess.Popen", return_value=mock_proc),
+                patch("winnow.legacy.spawn_lock.DaemonSpawnClaim", MockClaimClass),
+                patch("winnow.legacy.guard.subprocess.Popen", return_value=mock_proc),
             ):
-                from cozempic.guard import start_guard_daemon
+                from winnow.legacy.guard import start_guard_daemon
                 result = start_guard_daemon(cwd=cwd)
 
             # 1. Not already_running — wrong-UUID dedup was not fired
@@ -2329,9 +2329,9 @@ class TestDaemonStrictNoneIsBehaviorPreserving(unittest.TestCase):
         which could return 'no daemon running for session' with a wrong UUID.
         The behavior-preserving claim: no reload attempt, no signal sent.
         """
-        from cozempic.guard import reload_self_daemon
+        from winnow.legacy.guard import reload_self_daemon
 
-        with patch("cozempic.guard.find_current_session", return_value=None):
+        with patch("winnow.legacy.guard.find_current_session", return_value=None):
             result = reload_self_daemon(
                 cwd="/Users/x/topstep_automation",
                 session_id="",   # no session_id provided
@@ -2388,8 +2388,8 @@ class TestCheckpointTeamWriteSideIsolation(unittest.TestCase):
         checkpoint must NOT be written and result must be None.
         """
         import time
-        from cozempic.guard import checkpoint_team
-        from cozempic.session import cwd_to_project_slug
+        from winnow.legacy.guard import checkpoint_team
+        from winnow.legacy.session import cwd_to_project_slug
 
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -2417,11 +2417,11 @@ class TestCheckpointTeamWriteSideIsolation(unittest.TestCase):
             b_cp_existed_before = b_cp.exists()
 
             with (
-                patch("cozempic.session.get_projects_dir", return_value=tmp_path),
-                patch("cozempic.session._session_id_from_process", return_value=None),
+                patch("winnow.legacy.session.get_projects_dir", return_value=tmp_path),
+                patch("winnow.legacy.session._session_id_from_process", return_value=None),
                 # Block Strategy 1 (active-transcript keyed by live Claude PID)
                 # so a real running session in the developer's home cannot bypass strict.
-                patch("cozempic.session.find_claude_pid", return_value=None),
+                patch("winnow.legacy.session.find_claude_pid", return_value=None),
             ):
                 result = checkpoint_team(cwd=cwd_a, quiet=True)
 
@@ -2457,8 +2457,8 @@ class TestCheckpointTeamWriteSideIsolation(unittest.TestCase):
         """
         import json
         import time
-        from cozempic.guard import checkpoint_team
-        from cozempic.session import cwd_to_project_slug
+        from winnow.legacy.guard import checkpoint_team
+        from winnow.legacy.session import cwd_to_project_slug
 
         # Minimal JSONL that produces a non-empty TeamState.
         # A 'Task' tool_use block in an assistant message → 1 subagent detected.
@@ -2505,11 +2505,11 @@ class TestCheckpointTeamWriteSideIsolation(unittest.TestCase):
             )
 
             with (
-                patch("cozempic.session.get_projects_dir", return_value=tmp_path),
-                patch("cozempic.session._session_id_from_process", return_value=None),
+                patch("winnow.legacy.session.get_projects_dir", return_value=tmp_path),
+                patch("winnow.legacy.session._session_id_from_process", return_value=None),
                 # Block Strategy 1 (active-transcript keyed by live Claude PID)
                 # so a real running session in the developer's home cannot bypass strict.
-                patch("cozempic.session.find_claude_pid", return_value=None),
+                patch("winnow.legacy.session.find_claude_pid", return_value=None),
             ):
                 result = checkpoint_team(cwd=cwd_a, quiet=True)
 

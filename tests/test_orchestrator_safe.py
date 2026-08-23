@@ -130,7 +130,7 @@ class TestSubcommandMirror(unittest.TestCase):
     def _parser_subcommands() -> set[str]:
         import argparse
 
-        from cozempic.cli import build_parser
+        from winnow.legacy.cli import build_parser
 
         for action in build_parser()._actions:
             if isinstance(action, argparse._SubParsersAction):
@@ -147,7 +147,7 @@ class TestSubcommandMirror(unittest.TestCase):
         # would let through the one command that writes into the bind mount.
         # Asserted rather than worked around, so the day upstream reconciles the
         # two this stops being a special case and says so.
-        from cozempic.cli import _SUBCOMMANDS
+        from winnow.legacy.cli import _SUBCOMMANDS
 
         self.assertEqual(self._parser_subcommands() - set(_SUBCOMMANDS), {"nudge"})
         self.assertIn("nudge", safe.COZEMPIC_SUBCOMMANDS)
@@ -256,13 +256,13 @@ class TestStrategyExclusion(unittest.TestCase):
     def test_the_vendored_registry_ships_it_in_every_prescription(self):
         # The premise of the exclusion. If this stops being true the exclusion
         # is dead code and should go.
-        from cozempic.registry import PRESCRIPTIONS
+        from winnow.legacy.registry import PRESCRIPTIONS
 
         for name, strategies in PRESCRIPTIONS.items():
             self.assertIn("metadata-strip", strategies, name)
 
     def test_applying_to_the_real_registry_clears_it_everywhere(self):
-        from cozempic import registry
+        from winnow.legacy import registry
 
         original = {name: list(v) for name, v in registry.PRESCRIPTIONS.items()}
         try:
@@ -310,12 +310,12 @@ class TestHomeStateRedirect(unittest.TestCase):
             )
 
     def test_no_redirected_constant_is_imported_by_value_elsewhere(self):
-        # Rebinding cozempic.digest.DIGEST_DIR only works because every read
+        # Rebinding winnow.legacy.digest.DIGEST_DIR only works because every read
         # goes through that module's global. A `from .digest import DIGEST_DIR`
         # in a second module would keep the old path, silently.
         import re
 
-        source_root = REPO_ROOT / "src" / "cozempic"
+        source_root = REPO_ROOT / "src" / "winnow" / "legacy"
         for module_name, attribute, _ in safe._HOME_WRITE_REDIRECTS:
             owner = module_name.split(".")[-1]
             pattern = re.compile(
@@ -332,7 +332,7 @@ class TestHomeStateRedirect(unittest.TestCase):
     def test_the_paths_are_resolved_under_the_target_directory(self):
         targets = safe.home_write_targets(Path("/data/winnow"))
         self.assertEqual(
-            targets[("cozempic.updater", "_INSTALL_SENTINEL")],
+            targets[("winnow.legacy.updater", "_INSTALL_SENTINEL")],
             Path("/data/winnow/cozempic-installed"),
         )
         for destination in targets.values():
@@ -342,29 +342,29 @@ class TestHomeStateRedirect(unittest.TestCase):
         # digest.py derives DIGEST_FILE from DIGEST_DIR at import time, so both
         # have to move or the pair disagrees.
         targets = safe.home_write_targets(Path("/data/winnow"))
-        digest_dir = targets[("cozempic.digest", "DIGEST_DIR")]
+        digest_dir = targets[("winnow.legacy.digest", "DIGEST_DIR")]
         for attribute in ("DIGEST_FILE", "DIGEST_MD_FILE"):
             self.assertEqual(
-                targets[("cozempic.digest", attribute)].parent, digest_dir
+                targets[("winnow.legacy.digest", attribute)].parent, digest_dir
             )
 
     def test_applying_it_moves_the_install_sentinel_off_home(self):
-        import cozempic.updater
+        import winnow.legacy.updater
 
         with _temp_dir() as tmp:
             applied = safe.redirect_home_writes(tmp)
             self.assertEqual(
-                cozempic.updater._INSTALL_SENTINEL, tmp / "cozempic-installed"
+                winnow.legacy.updater._INSTALL_SENTINEL, tmp / "cozempic-installed"
             )
             self.assertEqual(
-                applied["cozempic.updater._INSTALL_SENTINEL"],
+                applied["winnow.legacy.updater._INSTALL_SENTINEL"],
                 tmp / "cozempic-installed",
             )
             # ping_install_if_new writes the sentinel before it looks at
             # COZEMPIC_NO_TELEMETRY (updater.py:186), so the write is the thing
             # to relocate, not the network call one line after it.
             with mock.patch.dict(os.environ, {"COZEMPIC_NO_TELEMETRY": "1"}):
-                cozempic.updater.ping_install_if_new()
+                winnow.legacy.updater.ping_install_if_new()
             self.assertTrue((tmp / "cozempic-installed").is_file())
 
     def test_it_creates_the_parents_so_a_write_cannot_fall_back(self):
@@ -373,9 +373,9 @@ class TestHomeStateRedirect(unittest.TestCase):
                 self.assertTrue(destination.parent.is_dir(), destination)
 
     def test_a_vanished_constant_is_an_error_not_a_new_attribute(self):
-        import cozempic.helpers
+        import winnow.legacy.helpers
 
-        del cozempic.helpers._SAVINGS_FILE
+        del winnow.legacy.helpers._SAVINGS_FILE
         with _temp_dir() as tmp:
             with self.assertRaises(AttributeError):
                 safe.redirect_home_writes(tmp)
@@ -645,7 +645,7 @@ class TestHookPayload(unittest.TestCase):
         self.assertEqual(path, Path("/tmp/given.jsonl"))
 
     def test_an_empty_payload_falls_through_to_detection(self):
-        with mock.patch("cozempic.session.find_current_session", return_value=None):
+        with mock.patch("winnow.legacy.session.find_current_session", return_value=None):
             self.assertIsNone(safe.resolve_session_path({}, cwd="/tmp"))
 
 
@@ -803,7 +803,7 @@ class TestHookLines(unittest.TestCase):
 
     def test_no_session_to_checkpoint_at_all_still_says_one_line(self):
         with _temp_dir() as tmp:
-            with mock.patch("cozempic.session.find_current_session",
+            with mock.patch("winnow.legacy.session.find_current_session",
                             return_value=None):
                 code, _out, err = _run_cli(
                     ["safe", "checkpoint"],

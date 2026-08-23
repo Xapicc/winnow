@@ -8,8 +8,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from cozempic.helpers import msg_bytes
-from cozempic.tokens import (
+from winnow.legacy.helpers import msg_bytes
+from winnow.legacy.tokens import (
     CHARS_PER_TOKEN_DEFAULT,
     DEFAULT_CONTEXT_WINDOW,
     SYSTEM_OVERHEAD_TOKENS,
@@ -130,7 +130,7 @@ class TestUsageCoercion(unittest.TestCase):
     `None + 0` raised TypeError that escaped the guard daemon loop and killed it."""
 
     def test_as_int_coerces_junk_to_zero(self):
-        from cozempic.tokens import _as_int
+        from winnow.legacy.tokens import _as_int
         self.assertEqual(_as_int(500), 500)
         self.assertEqual(_as_int(3.9), 3)
         self.assertEqual(_as_int(None), 0)
@@ -142,7 +142,7 @@ class TestUsageCoercion(unittest.TestCase):
     def test_as_int_nonfinite_does_not_raise(self):
         # 1e999 -> inf, json accepts NaN/Infinity; int(inf) raises OverflowError /
         # int(nan) raises ValueError — those must be coerced to 0, not escape.
-        from cozempic.tokens import _as_int
+        from winnow.legacy.tokens import _as_int
         self.assertEqual(_as_int(float("inf")), 0)
         self.assertEqual(_as_int(float("-inf")), 0)
         self.assertEqual(_as_int(float("nan")), 0)
@@ -151,7 +151,7 @@ class TestUsageCoercion(unittest.TestCase):
     def test_inner_dict_non_dict_message_is_safe(self):
         # A present-but-non-dict "message" (a plain string) must not crash the
         # token sites (the bare .get('message',{}) default only covers a missing key).
-        from cozempic.tokens import _inner_dict, extract_usage_tokens, quick_token_estimate
+        from winnow.legacy.tokens import _inner_dict, extract_usage_tokens, quick_token_estimate
         self.assertEqual(_inner_dict({"message": "a string"}), {})
         self.assertEqual(_inner_dict({"message": None}), {})
         self.assertEqual(_inner_dict({"message": {"x": 1}}), {"x": 1})
@@ -540,11 +540,11 @@ class TestEnvVarOverrideValidation(unittest.TestCase):
     them into token-math divisions producing negative percentages."""
 
     def _get_window(self):
-        from cozempic.tokens import get_context_window_override
+        from winnow.legacy.tokens import get_context_window_override
         return get_context_window_override()
 
     def _get_overhead(self):
-        from cozempic.tokens import get_system_overhead_tokens
+        from winnow.legacy.tokens import get_system_overhead_tokens
         return get_system_overhead_tokens()
 
     def test_zero_context_window_was_falsy_trap_now_rejected(self):
@@ -596,22 +596,22 @@ class TestCharsPerTokenOverride(unittest.TestCase):
             os.environ["COZEMPIC_CHARS_PER_TOKEN"] = self._saved
 
     def test_default_when_unset(self):
-        from cozempic.tokens import get_chars_per_token
+        from winnow.legacy.tokens import get_chars_per_token
         self.assertEqual(get_chars_per_token(), CHARS_PER_TOKEN_DEFAULT)
 
     def test_valid_override_honored(self):
-        from cozempic.tokens import get_chars_per_token
+        from winnow.legacy.tokens import get_chars_per_token
         os.environ["COZEMPIC_CHARS_PER_TOKEN"] = "2.5"
         self.assertEqual(get_chars_per_token(), 2.5)
 
     def test_out_of_range_falls_back_to_default(self):
-        from cozempic.tokens import get_chars_per_token
+        from winnow.legacy.tokens import get_chars_per_token
         for bad in ("99", "0", "0.5", "-3"):
             os.environ["COZEMPIC_CHARS_PER_TOKEN"] = bad
             self.assertEqual(get_chars_per_token(), CHARS_PER_TOKEN_DEFAULT, bad)
 
     def test_garbage_falls_back_to_default(self):
-        from cozempic.tokens import get_chars_per_token
+        from winnow.legacy.tokens import get_chars_per_token
         os.environ["COZEMPIC_CHARS_PER_TOKEN"] = "abc"
         self.assertEqual(get_chars_per_token(), CHARS_PER_TOKEN_DEFAULT)
 

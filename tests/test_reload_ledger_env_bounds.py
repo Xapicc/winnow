@@ -43,7 +43,7 @@ class TestReloadLedgerWindowSEnvBounds(unittest.TestCase):
 
     def _call(self, env_val=None):
         # Import inside test to get the live (post-patch) definition.
-        from cozempic.guard import _reload_ledger_window_s
+        from winnow.legacy.guard import _reload_ledger_window_s
 
         env = {}
         if env_val is not None:
@@ -123,7 +123,7 @@ class TestReloadLedgerMaxEnvBounds(unittest.TestCase):
     """
 
     def _call(self, env_val=None):
-        from cozempic.guard import _reload_ledger_max
+        from winnow.legacy.guard import _reload_ledger_max
 
         env = {}
         if env_val is not None:
@@ -236,7 +236,7 @@ class TestReloadWarnGraceBounds(unittest.TestCase):
     """
 
     def _call(self, env_val=None):
-        from cozempic.guard import _reload_warn_grace
+        from winnow.legacy.guard import _reload_warn_grace
 
         env = {}
         if env_val is not None:
@@ -332,7 +332,7 @@ class TestReloadLedgerAtomicWrite(unittest.TestCase):
         """A simulated crash mid-rename must leave the pre-existing ledger intact.
 
         RED at base ae85bcc: the non-atomic `ledger_path.write_text(...)` never
-        calls `os.replace`, so `patch('cozempic.guard.os.replace', side_effect=OSError)`
+        calls `os.replace`, so `patch('winnow.legacy.guard.os.replace', side_effect=OSError)`
         is inert — the write succeeds, overwriting the old ledger.
         GREEN at HEAD: the atomic write calls `os.replace`; the patch raises OSError;
         the live file is untouched; the `finally` block unlinks the .tmp orphan.
@@ -347,9 +347,9 @@ class TestReloadLedgerAtomicWrite(unittest.TestCase):
             old_content = json.dumps([100.0, 200.0])
             ledger.write_text(old_content)
 
-            from cozempic.guard import _reload_rate_exceeded
+            from winnow.legacy.guard import _reload_rate_exceeded
 
-            with patch("cozempic.guard.os.replace", side_effect=OSError("simulated mid-rename crash")):
+            with patch("winnow.legacy.guard.os.replace", side_effect=OSError("simulated mid-rename crash")):
                 _reload_rate_exceeded(ledger, now=time.time())
 
             # (a) old ledger must survive byte-intact
@@ -373,7 +373,7 @@ class TestReloadLedgerAtomicWrite(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as d:
             ledger = pathlib.Path(d) / "test_ledger.history"
-            from cozempic.guard import _reload_rate_exceeded
+            from winnow.legacy.guard import _reload_rate_exceeded
 
             _reload_rate_exceeded(ledger)
             orphans = list(pathlib.Path(d).glob("*.tmp*"))
@@ -392,7 +392,7 @@ class TestReloadLedgerAtomicWrite(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as d:
             ledger = pathlib.Path(d) / "test_ledger.history"
-            from cozempic.guard import _reload_rate_exceeded
+            from winnow.legacy.guard import _reload_rate_exceeded
 
             _reload_rate_exceeded(ledger)
             _reload_rate_exceeded(ledger, now=time.time() + 1)

@@ -25,7 +25,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import mock
 
-from cozempic import session as S
+from winnow.legacy import session as S
 
 
 def _write_session(proj_dir: Path, sid: str, body: str = '{"type":"user"}\n') -> Path:

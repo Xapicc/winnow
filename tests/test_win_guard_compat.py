@@ -21,7 +21,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from cozempic import guard
+from winnow.legacy import guard
 
 
 class TestGuardTmpRoot(unittest.TestCase):

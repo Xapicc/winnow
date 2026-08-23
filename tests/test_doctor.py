@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from cozempic.doctor import (
+from winnow.legacy.doctor import (
     check_agent_model_mismatch,
     check_claude_json_corruption,
     check_corrupted_tool_use,
@@ -35,27 +35,27 @@ class TestClaudeJsonCorruption(unittest.TestCase):
 
     def test_valid_json_ok(self):
         self.claude_json.write_text(json.dumps({"numStartups": 50, "auth": "token123"}))
-        with patch("cozempic.doctor.get_claude_json_path", return_value=self.claude_json):
+        with patch("winnow.legacy.doctor.get_claude_json_path", return_value=self.claude_json):
             result = check_claude_json_corruption()
         self.assertEqual(result.status, "ok")
 
     def test_empty_file_is_issue(self):
         self.claude_json.write_text("")
-        with patch("cozempic.doctor.get_claude_json_path", return_value=self.claude_json):
+        with patch("winnow.legacy.doctor.get_claude_json_path", return_value=self.claude_json):
             result = check_claude_json_corruption()
         self.assertEqual(result.status, "issue")
         self.assertIn("empty", result.message)
 
     def test_truncated_json_is_issue(self):
         self.claude_json.write_text('{"numStartups": 50, "auth": "tok')
-        with patch("cozempic.doctor.get_claude_json_path", return_value=self.claude_json):
+        with patch("winnow.legacy.doctor.get_claude_json_path", return_value=self.claude_json):
             result = check_claude_json_corruption()
         self.assertEqual(result.status, "issue")
         self.assertIn("invalid JSON", result.message)
 
     def test_missing_file_is_ok(self):
         missing = Path(self.tmpdir) / "nonexistent.json"
-        with patch("cozempic.doctor.get_claude_json_path", return_value=missing):
+        with patch("winnow.legacy.doctor.get_claude_json_path", return_value=missing):
             result = check_claude_json_corruption()
         self.assertEqual(result.status, "ok")
 
@@ -66,7 +66,7 @@ class TestClaudeJsonCorruption(unittest.TestCase):
         backup = self.claude_json.parent / ".claude.json.bak"
         backup.write_text(json.dumps({"numStartups": 100, "auth": "valid"}))
 
-        with patch("cozempic.doctor.get_claude_json_path", return_value=self.claude_json):
+        with patch("winnow.legacy.doctor.get_claude_json_path", return_value=self.claude_json):
             msg = fix_claude_json_corruption()
 
         self.assertIn("Restored", msg)
@@ -103,7 +103,7 @@ class TestCorruptedToolUse(unittest.TestCase):
             }
         ])
         sessions = [{"path": self.session_path, "session_id": "test", "size": 1000}]
-        with patch("cozempic.doctor.find_sessions", return_value=sessions):
+        with patch("winnow.legacy.doctor.find_sessions", return_value=sessions):
             result = check_corrupted_tool_use()
         self.assertEqual(result.status, "issue")
 
@@ -120,7 +120,7 @@ class TestCorruptedToolUse(unittest.TestCase):
             }
         ])
         sessions = [{"path": self.session_path, "session_id": "test", "size": 1000}]
-        with patch("cozempic.doctor.find_sessions", return_value=sessions):
+        with patch("winnow.legacy.doctor.find_sessions", return_value=sessions):
             result = check_corrupted_tool_use()
         self.assertEqual(result.status, "ok")
 
@@ -154,7 +154,7 @@ class TestOrphanedToolResults(unittest.TestCase):
             }
         ])
         sessions = [{"path": self.session_path, "session_id": "test", "size": 1000}]
-        with patch("cozempic.doctor.find_sessions", return_value=sessions):
+        with patch("winnow.legacy.doctor.find_sessions", return_value=sessions):
             result = check_orphaned_tool_results()
         self.assertEqual(result.status, "issue")
 
@@ -180,7 +180,7 @@ class TestOrphanedToolResults(unittest.TestCase):
             }
         ])
         sessions = [{"path": self.session_path, "session_id": "test", "size": 1000}]
-        with patch("cozempic.doctor.find_sessions", return_value=sessions):
+        with patch("winnow.legacy.doctor.find_sessions", return_value=sessions):
             result = check_orphaned_tool_results()
         self.assertEqual(result.status, "ok")
 
@@ -197,7 +197,7 @@ class TestZombieTeams(unittest.TestCase):
     def test_no_teams_dir_ok(self):
         claude_dir = Path(self.tmpdir) / ".claude"
         claude_dir.mkdir(parents=True)
-        with patch("cozempic.doctor.get_claude_dir", return_value=claude_dir):
+        with patch("winnow.legacy.doctor.get_claude_dir", return_value=claude_dir):
             result = check_zombie_teams()
         self.assertEqual(result.status, "ok")
 
@@ -208,7 +208,7 @@ class TestZombieTeams(unittest.TestCase):
         # No config.json inside
 
         claude_dir = Path(self.tmpdir) / ".claude"
-        with patch("cozempic.doctor.get_claude_dir", return_value=claude_dir):
+        with patch("winnow.legacy.doctor.get_claude_dir", return_value=claude_dir):
             result = check_zombie_teams()
         self.assertIn(result.status, ("warning", "issue"))
         self.assertIn("stale", result.message)
@@ -221,7 +221,7 @@ class TestZombieTeams(unittest.TestCase):
         config.write_text(json.dumps({"name": "active", "members": []}))
 
         claude_dir = Path(self.tmpdir) / ".claude"
-        with patch("cozempic.doctor.get_claude_dir", return_value=claude_dir):
+        with patch("winnow.legacy.doctor.get_claude_dir", return_value=claude_dir):
             result = check_zombie_teams()
         self.assertEqual(result.status, "ok")
 
@@ -239,7 +239,7 @@ class TestHooksTrustFlag(unittest.TestCase):
         self.claude_json.write_text(json.dumps({
             "/path/to/project": {"hasTrustDialogAccepted": True},
         }))
-        with patch("cozempic.doctor.get_claude_json_path", return_value=self.claude_json):
+        with patch("winnow.legacy.doctor.get_claude_json_path", return_value=self.claude_json):
             result = check_hooks_trust_flag()
         self.assertEqual(result.status, "issue")
         self.assertIn("hasTrustDialogHooksAccepted", result.message)
@@ -251,7 +251,7 @@ class TestHooksTrustFlag(unittest.TestCase):
                 "hasTrustDialogHooksAccepted": True,
             },
         }))
-        with patch("cozempic.doctor.get_claude_json_path", return_value=self.claude_json):
+        with patch("winnow.legacy.doctor.get_claude_json_path", return_value=self.claude_json):
             result = check_hooks_trust_flag()
         self.assertEqual(result.status, "ok")
 
@@ -259,13 +259,13 @@ class TestHooksTrustFlag(unittest.TestCase):
         self.claude_json.write_text(json.dumps({
             "/path/to/project": {"hasTrustDialogAccepted": False},
         }))
-        with patch("cozempic.doctor.get_claude_json_path", return_value=self.claude_json):
+        with patch("winnow.legacy.doctor.get_claude_json_path", return_value=self.claude_json):
             result = check_hooks_trust_flag()
         self.assertEqual(result.status, "ok")
 
     def test_missing_file_is_ok(self):
         missing = Path(self.tmpdir) / "nonexistent.json"
-        with patch("cozempic.doctor.get_claude_json_path", return_value=missing):
+        with patch("winnow.legacy.doctor.get_claude_json_path", return_value=missing):
             result = check_hooks_trust_flag()
         self.assertEqual(result.status, "ok")
 
@@ -273,7 +273,7 @@ class TestHooksTrustFlag(unittest.TestCase):
         self.claude_json.write_text(json.dumps({
             "/path/to/project": {"hasTrustDialogAccepted": True},
         }))
-        with patch("cozempic.doctor.get_claude_json_path", return_value=self.claude_json):
+        with patch("winnow.legacy.doctor.get_claude_json_path", return_value=self.claude_json):
             msg = fix_hooks_trust_flag()
         self.assertIn("1", msg)
         data = json.loads(self.claude_json.read_text())
@@ -285,7 +285,7 @@ class TestHooksTrustFlag(unittest.TestCase):
             "/project/b": {"hasTrustDialogAccepted": True},
             "/project/c": {"hasTrustDialogAccepted": False},
         }))
-        with patch("cozempic.doctor.get_claude_json_path", return_value=self.claude_json):
+        with patch("winnow.legacy.doctor.get_claude_json_path", return_value=self.claude_json):
             msg = fix_hooks_trust_flag()
         self.assertIn("2", msg)
         data = json.loads(self.claude_json.read_text())
@@ -305,13 +305,13 @@ class TestAgentModelMismatch(unittest.TestCase):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def test_no_teams_dir_is_ok(self):
-        with patch("cozempic.doctor.get_claude_dir", return_value=self.claude_dir):
+        with patch("winnow.legacy.doctor.get_claude_dir", return_value=self.claude_dir):
             result = check_agent_model_mismatch()
         self.assertEqual(result.status, "ok")
 
     def test_empty_teams_dir_is_ok(self):
         (self.claude_dir / "teams").mkdir()
-        with patch("cozempic.doctor.get_claude_dir", return_value=self.claude_dir):
+        with patch("winnow.legacy.doctor.get_claude_dir", return_value=self.claude_dir):
             result = check_agent_model_mismatch()
         self.assertEqual(result.status, "ok")
 
@@ -320,7 +320,7 @@ class TestAgentModelMismatch(unittest.TestCase):
         (self.claude_dir / "settings.json").write_text(
             json.dumps({"model": "claude-opus-4-7"})
         )
-        with patch("cozempic.doctor.get_claude_dir", return_value=self.claude_dir):
+        with patch("winnow.legacy.doctor.get_claude_dir", return_value=self.claude_dir):
             result = check_agent_model_mismatch()
         self.assertEqual(result.status, "ok")
         self.assertIn("claude-opus-4-7", result.message)
@@ -328,13 +328,13 @@ class TestAgentModelMismatch(unittest.TestCase):
     def test_teams_without_model_in_settings_is_warning(self):
         (self.claude_dir / "teams" / "my-team").mkdir(parents=True)
         (self.claude_dir / "settings.json").write_text(json.dumps({"theme": "dark"}))
-        with patch("cozempic.doctor.get_claude_dir", return_value=self.claude_dir):
+        with patch("winnow.legacy.doctor.get_claude_dir", return_value=self.claude_dir):
             result = check_agent_model_mismatch()
         self.assertEqual(result.status, "warning")
 
     def test_teams_without_settings_file_is_warning(self):
         (self.claude_dir / "teams" / "my-team").mkdir(parents=True)
-        with patch("cozempic.doctor.get_claude_dir", return_value=self.claude_dir):
+        with patch("winnow.legacy.doctor.get_claude_dir", return_value=self.claude_dir):
             result = check_agent_model_mismatch()
         self.assertEqual(result.status, "warning")
 
@@ -347,7 +347,7 @@ class TestStaleTmpArtifacts(unittest.TestCase):
     def setUp(self):
         self.tmpdir = Path(tempfile.mkdtemp())
         # patch the /tmp directory used by the check so we stay isolated
-        self._patcher = patch("cozempic.doctor._TMP_DIR", self.tmpdir)
+        self._patcher = patch("winnow.legacy.doctor._TMP_DIR", self.tmpdir)
         self._patcher.start()
 
     def tearDown(self):
@@ -380,14 +380,14 @@ class TestStaleTmpArtifacts(unittest.TestCase):
         live_pid = 42
         self._make_pid_file("livesess-12", live_pid)
         self._make_log_file("livesess-12")
-        with patch("cozempic.doctor._is_live_guard_pid", return_value=True):
+        with patch("winnow.legacy.doctor._is_live_guard_pid", return_value=True):
             result = check_stale_tmp_artifacts()
         self.assertEqual(result.status, "ok")
 
     def test_dead_pid_file_is_stale(self):
         """A .pid file whose PID is no longer a running cozempic guard is stale."""
         self._make_pid_file("deadsess-01", 999999)
-        with patch("cozempic.doctor._is_live_guard_pid", return_value=False):
+        with patch("winnow.legacy.doctor._is_live_guard_pid", return_value=False):
             result = check_stale_tmp_artifacts()
         self.assertIn(result.status, ("warning", "issue"))
         self.assertIn("pid", result.message.lower())
@@ -402,7 +402,7 @@ class TestStaleTmpArtifacts(unittest.TestCase):
     def test_orphan_lock_is_stale_when_not_held(self):
         """A .lock file that can be acquired with LOCK_EX|LOCK_NB is orphaned."""
         self._make_lock_file("oldhook-05")
-        with patch("cozempic.doctor._is_lock_held", return_value=False):
+        with patch("winnow.legacy.doctor._is_lock_held", return_value=False):
             result = check_stale_tmp_artifacts()
         self.assertIn(result.status, ("warning", "issue"))
         self.assertIn("lock", result.message.lower())
@@ -410,7 +410,7 @@ class TestStaleTmpArtifacts(unittest.TestCase):
     def test_held_lock_is_not_stale(self):
         """A .lock file currently held by another process must be preserved."""
         self._make_lock_file("activehook-06")
-        with patch("cozempic.doctor._is_lock_held", return_value=True):
+        with patch("winnow.legacy.doctor._is_lock_held", return_value=True):
             result = check_stale_tmp_artifacts()
         self.assertEqual(result.status, "ok")
 
@@ -425,7 +425,7 @@ class TestStaleTmpArtifacts(unittest.TestCase):
         """Many stale artifacts escalate status from warning to issue."""
         for i in range(15):
             self._make_pid_file(f"stale{i:02d}-x", 999900 + i)
-        with patch("cozempic.doctor._is_live_guard_pid", return_value=False):
+        with patch("winnow.legacy.doctor._is_live_guard_pid", return_value=False):
             result = check_stale_tmp_artifacts()
         self.assertEqual(result.status, "issue")
 
@@ -442,7 +442,7 @@ class TestStaleTmpArtifacts(unittest.TestCase):
     def test_fix_deletes_stale_pid_and_paired_log(self):
         self._make_pid_file("deadsess-10", 999999)
         log_path = self._make_log_file("deadsess-10")
-        with patch("cozempic.doctor._is_live_guard_pid", return_value=False):
+        with patch("winnow.legacy.doctor._is_live_guard_pid", return_value=False):
             msg = fix_stale_tmp_artifacts()
         self.assertFalse((self.tmpdir / "cozempic_guard_deadsess-10.pid").exists())
         self.assertFalse(log_path.exists())
@@ -451,14 +451,14 @@ class TestStaleTmpArtifacts(unittest.TestCase):
     def test_fix_preserves_live_guard_files(self):
         pid_path = self._make_pid_file("livesess-20", 42)
         log_path = self._make_log_file("livesess-20")
-        with patch("cozempic.doctor._is_live_guard_pid", return_value=True):
+        with patch("winnow.legacy.doctor._is_live_guard_pid", return_value=True):
             fix_stale_tmp_artifacts()
         self.assertTrue(pid_path.exists())
         self.assertTrue(log_path.exists())
 
     def test_fix_preserves_held_locks(self):
         lock_path = self._make_lock_file("activehook-21")
-        with patch("cozempic.doctor._is_lock_held", return_value=True):
+        with patch("winnow.legacy.doctor._is_lock_held", return_value=True):
             fix_stale_tmp_artifacts()
         self.assertTrue(lock_path.exists())
 
@@ -486,7 +486,7 @@ class TestOversizedSessions(unittest.TestCase):
 
     def test_no_large_sessions_ok(self):
         sessions = [self._make_session("aabbccdd1122", 10)]
-        with patch("cozempic.doctor.find_sessions", return_value=sessions):
+        with patch("winnow.legacy.doctor.find_sessions", return_value=sessions):
             result = check_oversized_sessions()
         self.assertEqual(result.status, "ok")
         self.assertIsNone(result.fix_description)
@@ -496,7 +496,7 @@ class TestOversizedSessions(unittest.TestCase):
             self._make_session("aabbccdd1122eeff", 80),
             self._make_session("11223344aabbccdd", 60),
         ]
-        with patch("cozempic.doctor.find_sessions", return_value=sessions):
+        with patch("winnow.legacy.doctor.find_sessions", return_value=sessions):
             result = check_oversized_sessions()
         self.assertEqual(result.status, "issue")
         self.assertIn("cozempic treat aabbccdd", result.fix_description)
@@ -509,7 +509,7 @@ class TestOversizedSessions(unittest.TestCase):
             self._make_session("cccc3333dddd4444", 75),
             self._make_session("eeee5555ffff6666", 55),
         ]
-        with patch("cozempic.doctor.find_sessions", return_value=sessions):
+        with patch("winnow.legacy.doctor.find_sessions", return_value=sessions):
             result = check_oversized_sessions()
         lines = [l for l in result.fix_description.splitlines() if "cozempic treat" in l]
         self.assertEqual(len(lines), 3)
@@ -519,7 +519,7 @@ class TestOversizedSessions(unittest.TestCase):
             self._make_session("small11122233344", 55),
             self._make_session("large99988877766", 200),
         ]
-        with patch("cozempic.doctor.find_sessions", return_value=sessions):
+        with patch("winnow.legacy.doctor.find_sessions", return_value=sessions):
             result = check_oversized_sessions()
         idx_large = result.fix_description.index("large999")
         idx_small = result.fix_description.index("small111")

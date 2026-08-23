@@ -6,8 +6,8 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from cozempic.cli import _RX_LADDER, _fallback_order, run_prescription_with_fallback
-from cozempic.safety import PruneValidationError
+from winnow.legacy.cli import _RX_LADDER, _fallback_order, run_prescription_with_fallback
+from winnow.legacy.safety import PruneValidationError
 
 
 def _c3(rx):
@@ -34,7 +34,7 @@ class TestRunWithFallback(unittest.TestCase):
     def _runner(self, wipes):
         """Return a fake run_prescription that raises C3 for strategy-sets whose
         prescription is in `wipes`, else returns a sentinel result."""
-        from cozempic.registry import PRESCRIPTIONS
+        from winnow.legacy.registry import PRESCRIPTIONS
         names_to_rx = {tuple(v): k for k, v in PRESCRIPTIONS.items()}
 
         def fake(messages, strategy_names, config):
@@ -46,7 +46,7 @@ class TestRunWithFallback(unittest.TestCase):
 
     def test_falls_back_to_heaviest_safe(self):
         # aggressive + standard wipe, gentle survives -> apply gentle
-        with patch("cozempic.cli.run_prescription", side_effect=self._runner({"aggressive", "standard"})):
+        with patch("winnow.legacy.cli.run_prescription", side_effect=self._runner({"aggressive", "standard"})):
             fb = run_prescription_with_fallback([], "aggressive", {})
         self.assertEqual(fb["applied_rx"], "gentle")
         self.assertTrue(fb["fell_back"])
@@ -55,33 +55,33 @@ class TestRunWithFallback(unittest.TestCase):
         self.assertEqual(fb["results"], ["applied:gentle"])
 
     def test_uses_requested_when_it_passes(self):
-        with patch("cozempic.cli.run_prescription", side_effect=self._runner(set())):
+        with patch("winnow.legacy.cli.run_prescription", side_effect=self._runner(set())):
             fb = run_prescription_with_fallback([], "aggressive", {})
         self.assertEqual(fb["applied_rx"], "aggressive")
         self.assertFalse(fb["fell_back"])
 
     def test_falls_back_one_step(self):
         # only aggressive wipes -> standard applied
-        with patch("cozempic.cli.run_prescription", side_effect=self._runner({"aggressive"})):
+        with patch("winnow.legacy.cli.run_prescription", side_effect=self._runner({"aggressive"})):
             fb = run_prescription_with_fallback([], "aggressive", {})
         self.assertEqual(fb["applied_rx"], "standard")
         self.assertTrue(fb["fell_back"])
 
     def test_total_failure_when_even_gentle_wipes(self):
-        with patch("cozempic.cli.run_prescription", side_effect=self._runner({"aggressive", "standard", "gentle"})):
+        with patch("winnow.legacy.cli.run_prescription", side_effect=self._runner({"aggressive", "standard", "gentle"})):
             fb = run_prescription_with_fallback([], "aggressive", {})
         self.assertIsNone(fb["messages"])
         self.assertIsInstance(fb["error"], PruneValidationError)
         self.assertEqual(fb["error"].evidence["failed_check"], "C3")
 
     def test_strict_disables_fallback(self):
-        with patch("cozempic.cli.run_prescription", side_effect=self._runner({"aggressive"})):
+        with patch("winnow.legacy.cli.run_prescription", side_effect=self._runner({"aggressive"})):
             fb = run_prescription_with_fallback([], "aggressive", {}, strict=True)
         self.assertIsNone(fb["messages"])      # no fallback attempted
         self.assertIsInstance(fb["error"], PruneValidationError)
 
     def test_gentle_request_no_fallback_available(self):
-        with patch("cozempic.cli.run_prescription", side_effect=self._runner({"gentle"})):
+        with patch("winnow.legacy.cli.run_prescription", side_effect=self._runner({"gentle"})):
             fb = run_prescription_with_fallback([], "gentle", {})
         self.assertIsNone(fb["messages"])  # nothing lighter than gentle
         self.assertIsInstance(fb["error"], PruneValidationError)
@@ -91,7 +91,7 @@ class TestCmdTreatIntegration(unittest.TestCase):
     """Drive cmd_treat's fallback path (dry-run) and assert the user-facing notice."""
 
     def _runner_aggressive_wipes(self):
-        from cozempic.registry import PRESCRIPTIONS
+        from winnow.legacy.registry import PRESCRIPTIONS
         names_to_rx = {tuple(v): k for k, v in PRESCRIPTIONS.items()}
 
         def fake(messages, strategy_names, config):
@@ -105,7 +105,7 @@ class TestCmdTreatIntegration(unittest.TestCase):
         import argparse
         import contextlib
         import io
-        from cozempic import cli
+        from winnow.legacy import cli
 
         # messages with a couple of real entries so downstream byte/token calc is fine
         msgs = [(0, {"type": "user", "message": {"role": "user", "content": "hi"}}, 30),
@@ -116,11 +116,11 @@ class TestCmdTreatIntegration(unittest.TestCase):
         from pathlib import Path
         est = type("E", (), {"total": 100, "method": "exact", "model": "m",
                              "context_window": 200000, "confidence": "high"})()
-        with patch("cozempic.cli.resolve_session", return_value=Path("/x/s.jsonl")), \
-                patch("cozempic.cli.load_messages_and_snapshot", return_value=(msgs, object())), \
-                patch("cozempic.cli.calibrate_ratio", return_value=0.5), \
-                patch("cozempic.cli.run_prescription", side_effect=self._runner_aggressive_wipes()), \
-                patch("cozempic.cli.estimate_session_tokens", return_value=est):
+        with patch("winnow.legacy.cli.resolve_session", return_value=Path("/x/s.jsonl")), \
+                patch("winnow.legacy.cli.load_messages_and_snapshot", return_value=(msgs, object())), \
+                patch("winnow.legacy.cli.calibrate_ratio", return_value=0.5), \
+                patch("winnow.legacy.cli.run_prescription", side_effect=self._runner_aggressive_wipes()), \
+                patch("winnow.legacy.cli.estimate_session_tokens", return_value=est):
             with contextlib.redirect_stdout(buf):
                 try:
                     cli.cmd_treat(args)

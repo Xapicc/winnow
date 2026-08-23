@@ -65,10 +65,10 @@ class TestMarginalPruneSkipsReload(unittest.TestCase):
     def test_marginal_prune_skips_reload(self):
         """5% savings → futile_reload_skipped=True, _terminate_and_resume not called."""
         try:
-            from cozempic.guard import _MIN_PRUNE_RATIO
+            from winnow.legacy.guard import _MIN_PRUNE_RATIO
         except ImportError:
             self.fail(
-                "_MIN_PRUNE_RATIO missing from cozempic.guard — "
+                "_MIN_PRUNE_RATIO missing from winnow.legacy.guard — "
                 "Phase B not yet applied. Expected RED."
             )
 
@@ -76,7 +76,7 @@ class TestMarginalPruneSkipsReload(unittest.TestCase):
         saved_bytes = int(original_bytes * 0.05)  # 5% — below threshold
 
         # Stub prune_with_team_protect to return a result simulating 5% savings
-        from cozempic.team import TeamState
+        from winnow.legacy.team import TeamState
         fake_team_state = MagicMock(spec=TeamState)
         fake_team_state.is_empty.return_value = True
         fake_team_state.team_name = None
@@ -89,19 +89,19 @@ class TestMarginalPruneSkipsReload(unittest.TestCase):
 
         terminate_called = []
 
-        from cozempic.guard import guard_prune_cycle
+        from winnow.legacy.guard import guard_prune_cycle
 
-        with patch("cozempic.guard._guard_tmp_root", return_value=self.tmpdir), \
-             patch("cozempic.guard.load_messages", return_value=fake_messages_orig), \
-             patch("cozempic.guard.prune_with_team_protect",
+        with patch("winnow.legacy.guard._guard_tmp_root", return_value=self.tmpdir), \
+             patch("winnow.legacy.guard.load_messages", return_value=fake_messages_orig), \
+             patch("winnow.legacy.guard.prune_with_team_protect",
                    return_value=(fake_messages_pruned, {}, fake_team_state)), \
-             patch("cozempic.guard.save_messages", return_value=None), \
-             patch("cozempic.guard.snapshot_session", return_value=MagicMock()), \
-             patch("cozempic.guard._terminate_and_resume",
+             patch("winnow.legacy.guard.save_messages", return_value=None), \
+             patch("winnow.legacy.guard.snapshot_session", return_value=MagicMock()), \
+             patch("winnow.legacy.guard._terminate_and_resume",
                    side_effect=lambda *a, **kw: terminate_called.append(True)), \
-             patch("cozempic.tokens.estimate_session_tokens",
+             patch("winnow.legacy.tokens.estimate_session_tokens",
                    return_value=MagicMock(total=50000)), \
-             patch("cozempic.tokens.calibrate_ratio", return_value=0.5):
+             patch("winnow.legacy.tokens.calibrate_ratio", return_value=0.5):
 
             result = guard_prune_cycle(
                 session_path=self.session_path,
@@ -152,7 +152,7 @@ class TestSubstantialPruneProceedsWithReload(unittest.TestCase):
         saved_bytes = int(original_bytes * 0.15)  # 15% — above threshold
         final_bytes = original_bytes - saved_bytes
 
-        from cozempic.team import TeamState
+        from winnow.legacy.team import TeamState
         fake_team_state = MagicMock(spec=TeamState)
         fake_team_state.is_empty.return_value = True
         fake_team_state.team_name = None
@@ -163,19 +163,19 @@ class TestSubstantialPruneProceedsWithReload(unittest.TestCase):
 
         terminate_called = []
 
-        from cozempic.guard import guard_prune_cycle
+        from winnow.legacy.guard import guard_prune_cycle
 
-        with patch("cozempic.guard._guard_tmp_root", return_value=self.tmpdir), \
-             patch("cozempic.guard.load_messages", return_value=fake_messages_orig), \
-             patch("cozempic.guard.prune_with_team_protect",
+        with patch("winnow.legacy.guard._guard_tmp_root", return_value=self.tmpdir), \
+             patch("winnow.legacy.guard.load_messages", return_value=fake_messages_orig), \
+             patch("winnow.legacy.guard.prune_with_team_protect",
                    return_value=(fake_messages_pruned, {}, fake_team_state)), \
-             patch("cozempic.guard.save_messages", return_value=None), \
-             patch("cozempic.guard.snapshot_session", return_value=MagicMock()), \
-             patch("cozempic.guard._terminate_and_resume",
+             patch("winnow.legacy.guard.save_messages", return_value=None), \
+             patch("winnow.legacy.guard.snapshot_session", return_value=MagicMock()), \
+             patch("winnow.legacy.guard._terminate_and_resume",
                    side_effect=lambda *a, **kw: terminate_called.append(True)), \
-             patch("cozempic.tokens.estimate_session_tokens",
+             patch("winnow.legacy.tokens.estimate_session_tokens",
                    side_effect=lambda msgs, *a, **k: MagicMock(total=sum(b for _, _, b in msgs) // 2)), \
-             patch("cozempic.tokens.calibrate_ratio", return_value=0.5):
+             patch("winnow.legacy.tokens.calibrate_ratio", return_value=0.5):
 
             result = guard_prune_cycle(
                 session_path=self.session_path,
@@ -221,20 +221,20 @@ class TestMinPruneRatioEnvVarOverride(unittest.TestCase):
     def test_min_prune_ratio_env_var_override(self):
         """COZEMPIC_MIN_PRUNE_RATIO=0.05: 7% savings → should proceed (not futile)."""
         import importlib
-        import cozempic.guard as guard_mod
+        import winnow.legacy.guard as guard_mod
 
         try:
             _ = guard_mod._MIN_PRUNE_RATIO
         except AttributeError:
             self.fail(
-                "_MIN_PRUNE_RATIO not in cozempic.guard — Phase B not yet applied. Expected RED."
+                "_MIN_PRUNE_RATIO not in winnow.legacy.guard — Phase B not yet applied. Expected RED."
             )
 
         original_bytes = 100_000
         saved_bytes = int(original_bytes * 0.07)  # 7%
         final_bytes = original_bytes - saved_bytes
 
-        from cozempic.team import TeamState
+        from winnow.legacy.team import TeamState
         fake_team_state = MagicMock(spec=TeamState)
         fake_team_state.is_empty.return_value = True
         fake_team_state.team_name = None
@@ -245,21 +245,21 @@ class TestMinPruneRatioEnvVarOverride(unittest.TestCase):
 
         terminate_called = []
 
-        from cozempic.guard import guard_prune_cycle
+        from winnow.legacy.guard import guard_prune_cycle
 
         with patch.dict(os.environ, {"COZEMPIC_MIN_PRUNE_RATIO": "0.05"}), \
              patch.object(guard_mod, "_MIN_PRUNE_RATIO", 0.05), \
-             patch("cozempic.guard._guard_tmp_root", return_value=self.tmpdir), \
-             patch("cozempic.guard.load_messages", return_value=fake_messages_orig), \
-             patch("cozempic.guard.prune_with_team_protect",
+             patch("winnow.legacy.guard._guard_tmp_root", return_value=self.tmpdir), \
+             patch("winnow.legacy.guard.load_messages", return_value=fake_messages_orig), \
+             patch("winnow.legacy.guard.prune_with_team_protect",
                    return_value=(fake_messages_pruned, {}, fake_team_state)), \
-             patch("cozempic.guard.save_messages", return_value=None), \
-             patch("cozempic.guard.snapshot_session", return_value=MagicMock()), \
-             patch("cozempic.guard._terminate_and_resume",
+             patch("winnow.legacy.guard.save_messages", return_value=None), \
+             patch("winnow.legacy.guard.snapshot_session", return_value=MagicMock()), \
+             patch("winnow.legacy.guard._terminate_and_resume",
                    side_effect=lambda *a, **kw: terminate_called.append(True)), \
-             patch("cozempic.tokens.estimate_session_tokens",
+             patch("winnow.legacy.tokens.estimate_session_tokens",
                    side_effect=lambda msgs, *a, **k: MagicMock(total=sum(b for _, _, b in msgs) // 2)), \
-             patch("cozempic.tokens.calibrate_ratio", return_value=0.5):
+             patch("winnow.legacy.tokens.calibrate_ratio", return_value=0.5):
 
             result = guard_prune_cycle(
                 session_path=self.session_path,
@@ -291,16 +291,16 @@ class TestMinPruneRatioInvalidFallsBack(unittest.TestCase):
         """Invalid env var → _MIN_PRUNE_RATIO == 0.10 (default)."""
         try:
             import importlib
-            import cozempic.guard as guard_mod
+            import winnow.legacy.guard as guard_mod
             # Check the reader function exists
             if not hasattr(guard_mod, "_read_min_prune_ratio"):
                 self.fail(
-                    "_read_min_prune_ratio missing from cozempic.guard — Phase B not applied."
+                    "_read_min_prune_ratio missing from winnow.legacy.guard — Phase B not applied."
                 )
         except ImportError:
-            self.fail("Cannot import cozempic.guard")
+            self.fail("Cannot import winnow.legacy.guard")
 
-        from cozempic.guard import _read_min_prune_ratio
+        from winnow.legacy.guard import _read_min_prune_ratio
 
         with patch.dict(os.environ, {"COZEMPIC_MIN_PRUNE_RATIO": "not_a_number"}):
             val = _read_min_prune_ratio()
@@ -348,7 +348,7 @@ class TestFutileReloadIncrementsKCounter(unittest.TestCase):
     def test_futile_reload_increments_k_counter(self):
         """Three consecutive futile-skip cycles → K=3; K=10 exit triggers at K=10."""
         try:
-            from cozempic.guard import _MIN_PRUNE_RATIO, HARD_LOOP_EXIT_THRESHOLD
+            from winnow.legacy.guard import _MIN_PRUNE_RATIO, HARD_LOOP_EXIT_THRESHOLD
         except ImportError:
             self.fail("_MIN_PRUNE_RATIO missing — Phase B not applied. Expected RED.")
 
@@ -382,7 +382,7 @@ class TestFutileReloadIncrementsKCounter(unittest.TestCase):
             if call_counts["prune"] >= 3:
                 raise _StopAt3()
 
-        from cozempic.guard import start_guard
+        from winnow.legacy.guard import start_guard
         import inspect
 
         # Verify start_guard source increments K on futile_reload_skipped
@@ -422,12 +422,12 @@ class TestFutileReloadLogMessageEmitsOnce(unittest.TestCase):
     def test_futile_reload_log_message_emits_once(self):
         """Futile-skip log line appears exactly once in start_guard source code."""
         try:
-            from cozempic.guard import _MIN_PRUNE_RATIO
+            from winnow.legacy.guard import _MIN_PRUNE_RATIO
         except ImportError:
             self.fail("_MIN_PRUNE_RATIO missing — Phase B not applied. Expected RED.")
 
         import inspect
-        from cozempic.guard import start_guard
+        from winnow.legacy.guard import start_guard
 
         source = inspect.getsource(start_guard)
 
@@ -477,7 +477,7 @@ class TestFutileReloadWritesTeamCheckpoint(unittest.TestCase):
     def test_futile_reload_writes_team_checkpoint(self):
         """Futile skip: checkpoint_path is written and returned in result."""
         try:
-            from cozempic.guard import _MIN_PRUNE_RATIO
+            from winnow.legacy.guard import _MIN_PRUNE_RATIO
         except ImportError:
             self.fail("_MIN_PRUNE_RATIO missing — Phase B not applied. Expected RED.")
 
@@ -486,7 +486,7 @@ class TestFutileReloadWritesTeamCheckpoint(unittest.TestCase):
         final_bytes = original_bytes - saved_bytes
 
         # Team has active subagents → team state not empty
-        from cozempic.team import TeamState
+        from winnow.legacy.team import TeamState
         fake_team_state = MagicMock(spec=TeamState)
         fake_team_state.is_empty.return_value = False  # active team!
         fake_team_state.team_name = "silc-data"
@@ -498,19 +498,19 @@ class TestFutileReloadWritesTeamCheckpoint(unittest.TestCase):
         fake_checkpoint = self.tmpdir / "team_checkpoint.json"
         fake_checkpoint.write_text("{}")
 
-        from cozempic.guard import guard_prune_cycle
+        from winnow.legacy.guard import guard_prune_cycle
 
-        with patch("cozempic.guard._guard_tmp_root", return_value=self.tmpdir), \
-             patch("cozempic.guard.load_messages", return_value=fake_messages_orig), \
-             patch("cozempic.guard.prune_with_team_protect",
+        with patch("winnow.legacy.guard._guard_tmp_root", return_value=self.tmpdir), \
+             patch("winnow.legacy.guard.load_messages", return_value=fake_messages_orig), \
+             patch("winnow.legacy.guard.prune_with_team_protect",
                    return_value=(fake_messages_pruned, {}, fake_team_state)), \
-             patch("cozempic.guard.save_messages", return_value=None), \
-             patch("cozempic.guard.snapshot_session", return_value=MagicMock()), \
-             patch("cozempic.guard.write_team_checkpoint", return_value=fake_checkpoint), \
-             patch("cozempic.guard._terminate_and_resume"), \
-             patch("cozempic.tokens.estimate_session_tokens",
+             patch("winnow.legacy.guard.save_messages", return_value=None), \
+             patch("winnow.legacy.guard.snapshot_session", return_value=MagicMock()), \
+             patch("winnow.legacy.guard.write_team_checkpoint", return_value=fake_checkpoint), \
+             patch("winnow.legacy.guard._terminate_and_resume"), \
+             patch("winnow.legacy.tokens.estimate_session_tokens",
                    return_value=MagicMock(total=50000)), \
-             patch("cozempic.tokens.calibrate_ratio", return_value=0.5):
+             patch("winnow.legacy.tokens.calibrate_ratio", return_value=0.5):
 
             result = guard_prune_cycle(
                 session_path=self.session_path,

@@ -51,7 +51,7 @@ _DEBUG = parse_env_bool("COZEMPIC_DEBUG", default=False)
 
 def _debug(msg: str) -> None:
     if _DEBUG or parse_env_bool("COZEMPIC_DEBUG", default=False, warn=False):
-        print(f"[cozempic.digest] {msg}", file=sys.stderr)
+        print(f"[winnow.legacy.digest] {msg}", file=sys.stderr)
 
 # ---------------------------------------------------------------------------
 # Data structures

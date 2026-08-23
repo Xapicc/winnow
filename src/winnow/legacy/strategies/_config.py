@@ -1,6 +1,6 @@
 """Strategy-specific config validation.
 
-Thin module that re-exports the generic helpers from `cozempic._validation`
+Thin module that re-exports the generic helpers from `winnow.legacy._validation`
 and adds `coerce_ordered_pair`, which is specific to strategy config dicts
 holding related age thresholds (e.g. `tool_result_mid_age` and
 `tool_result_old_age`).

@@ -114,8 +114,8 @@ class TestTransientDaemonReproducer(unittest.TestCase):
         # Simulate the old daemon's finally-block unlink.
         # PR #93 adds _safe_unlink_session_pidfile; base v1.8.14 uses direct unlink.
         try:
-            from cozempic.guard import _safe_unlink_session_pidfile
-            with patch("cozempic.guard._pid_file_points_to", return_value=True):
+            from winnow.legacy.guard import _safe_unlink_session_pidfile
+            with patch("winnow.legacy.guard._pid_file_points_to", return_value=True):
                 _safe_unlink_session_pidfile(REPRO_SESSION_ID)
         except ImportError:
             # Pre-PR-#93 code: just unlink directly (same effect)
@@ -135,11 +135,11 @@ class TestTransientDaemonReproducer(unittest.TestCase):
 
         Returns the transient daemon's mock PID.
         """
-        from cozempic.spawn_lock import DaemonSpawnClaim
+        from winnow.legacy.spawn_lock import DaemonSpawnClaim
 
         # INIT_SPAWN_DAEMON is a PR #93 symbol — tolerate pre-PR-#93 base
         try:
-            from cozempic.spawn_lock import INIT_SPAWN_DAEMON
+            from winnow.legacy.spawn_lock import INIT_SPAWN_DAEMON
         except ImportError:
             INIT_SPAWN_DAEMON = "spawn-claim-daemon"  # value from PR #93 spec
 
@@ -167,7 +167,7 @@ class TestTransientDaemonReproducer(unittest.TestCase):
 
         Returns the result dict from start_guard_daemon.
         """
-        from cozempic.guard import start_guard_daemon
+        from winnow.legacy.guard import start_guard_daemon
 
         spawn_calls = []
 
@@ -175,15 +175,15 @@ class TestTransientDaemonReproducer(unittest.TestCase):
             spawn_calls.append(cmd_parts)
             return MagicMock(pid=NEW_CLAUDE_PID + 1000)  # new guard daemon PID
 
-        with patch("cozempic.guard.subprocess.Popen", side_effect=_fake_popen), \
-             patch("cozempic.guard.find_claude_pid", return_value=NEW_CLAUDE_PID), \
-             patch("cozempic.guard.find_current_session", return_value={
+        with patch("winnow.legacy.guard.subprocess.Popen", side_effect=_fake_popen), \
+             patch("winnow.legacy.guard.find_claude_pid", return_value=NEW_CLAUDE_PID), \
+             patch("winnow.legacy.guard.find_current_session", return_value={
                  "session_id": REPRO_SESSION_ID,
                  "path": Path("/tmp/fake_86cb258b.jsonl"),
              }), \
-             patch("cozempic.guard._cleanup_legacy_pid"), \
-             patch("cozempic.guard.maybe_auto_update", return_value=False), \
-             patch("cozempic.spawn_lock._is_process_alive", return_value=True):
+             patch("winnow.legacy.guard._cleanup_legacy_pid"), \
+             patch("winnow.legacy.guard.maybe_auto_update", return_value=False), \
+             patch("winnow.legacy.spawn_lock._is_process_alive", return_value=True):
             # _is_process_alive=True simulates the transient daemon still running
             # (it's watching OLD_CLAUDE_PID which hasn't fully exited yet)
             result = start_guard_daemon(
@@ -208,7 +208,7 @@ class TestTransientDaemonReproducer(unittest.TestCase):
         GREEN = Phase B fix verified.
         """
         try:
-            from cozempic.reload_lock import write_reload_sentinel
+            from winnow.legacy.reload_lock import write_reload_sentinel
         except ImportError:
             self.fail(
                 "write_reload_sentinel missing from reload_lock — Phase B not applied. "
@@ -281,7 +281,7 @@ class TestTransientDaemonReproducer(unittest.TestCase):
         This test REDs until Phase B adds sentinel check to start_guard_daemon.
         """
         try:
-            from cozempic.reload_lock import write_reload_sentinel
+            from winnow.legacy.reload_lock import write_reload_sentinel
         except ImportError:
             self.fail(
                 "write_reload_sentinel missing from reload_lock — Phase B not applied. "

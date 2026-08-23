@@ -2,7 +2,7 @@
 P0-D (metadata singleton tag), and the R-2 floor-tag-strip invariant.
 
 All tests in this file MUST fail at base commit 1b8b863 because
-cozempic.safety and cozempic.config do not exist in v1.8.18.
+winnow.legacy.safety and winnow.legacy.config do not exist in v1.8.18.
 """
 
 from __future__ import annotations
@@ -62,7 +62,7 @@ def _ai(idx: int, uuid: str, parent: str | None = "UNSET"):
 class TestValidatePostPruneC1Baseline:
     def test_c1_cross_session_parent_not_flagged(self):
         """Cross-session parentUuid (absent from both before AND after) must NOT raise."""
-        from cozempic.safety import validate_post_prune
+        from winnow.legacy.safety import validate_post_prune
 
         # Simulates a resumed session: root message references a uuid from
         # the PARENT session file (not in this file at all).
@@ -77,7 +77,7 @@ class TestValidatePostPruneC1Baseline:
 
     def test_c1_prune_induced_break_raises(self):
         """Parent uuid that existed pre-prune but was removed must raise C1."""
-        from cozempic.safety import validate_post_prune, PruneValidationError
+        from winnow.legacy.safety import validate_post_prune, PruneValidationError
 
         before = [
             _user(0, "root-A", None),
@@ -94,7 +94,7 @@ class TestValidatePostPruneC1Baseline:
 
     def test_c1_zero_removal_prune_passes(self):
         """Identity prune (before == after) must pass all checks."""
-        from cozempic.safety import validate_post_prune
+        from winnow.legacy.safety import validate_post_prune
 
         msgs = [
             _user(0, "root-B", None),
@@ -109,7 +109,7 @@ class TestValidatePostPruneC1Baseline:
 class TestValidatePostPruneC2:
     def test_c2_root_dropped_raises(self):
         """Dropping the only original root uuid raises C2."""
-        from cozempic.safety import validate_post_prune, PruneValidationError
+        from winnow.legacy.safety import validate_post_prune, PruneValidationError
 
         before = [
             _user(0, "root-001", None),       # the original root
@@ -125,7 +125,7 @@ class TestValidatePostPruneC2:
 
     def test_c2_one_root_of_two_survives_passes(self):
         """Multi-root session: one root dropped, one remains → passes C2."""
-        from cozempic.safety import validate_post_prune
+        from winnow.legacy.safety import validate_post_prune
 
         # Two root messages (parentUuid=None), one removed after prune
         before = [
@@ -144,7 +144,7 @@ class TestValidatePostPruneC2:
 class TestValidatePostPruneC3:
     def test_c3_all_users_dropped_raises(self):
         """Dropping all user messages raises C3."""
-        from cozempic.safety import validate_post_prune, PruneValidationError
+        from winnow.legacy.safety import validate_post_prune, PruneValidationError
 
         before = [
             _user(0, "u-001", None),
@@ -158,7 +158,7 @@ class TestValidatePostPruneC3:
 
     def test_c3_all_assistants_dropped_raises(self):
         """Dropping all assistant messages raises C3."""
-        from cozempic.safety import validate_post_prune, PruneValidationError
+        from winnow.legacy.safety import validate_post_prune, PruneValidationError
 
         before = [
             _user(0, "u-001", None),
@@ -187,7 +187,7 @@ class TestValidatePostPruneC4C5C6C7:
 
     def test_c4_last_compact_boundary_dropped_raises(self):
         """Dropping last compact_boundary raises C4."""
-        from cozempic.safety import validate_post_prune, PruneValidationError
+        from winnow.legacy.safety import validate_post_prune, PruneValidationError
 
         before = self._base()
         after = [m for m in before if not (m[1].get("subtype") == "compact_boundary")]
@@ -198,7 +198,7 @@ class TestValidatePostPruneC4C5C6C7:
 
     def test_c5_last_permission_mode_dropped_raises(self):
         """Dropping last permission-mode raises C5."""
-        from cozempic.safety import validate_post_prune, PruneValidationError
+        from winnow.legacy.safety import validate_post_prune, PruneValidationError
 
         before = self._base()
         after = [m for m in before if m[1].get("type") != "permission-mode"]
@@ -209,7 +209,7 @@ class TestValidatePostPruneC4C5C6C7:
 
     def test_c6_last_prompt_dropped_raises(self):
         """Dropping last last-prompt raises C6."""
-        from cozempic.safety import validate_post_prune, PruneValidationError
+        from winnow.legacy.safety import validate_post_prune, PruneValidationError
 
         before = self._base()
         after = [m for m in before if m[1].get("type") != "last-prompt"]
@@ -220,7 +220,7 @@ class TestValidatePostPruneC4C5C6C7:
 
     def test_c7_last_ai_title_dropped_raises(self):
         """Dropping last ai-title raises C7."""
-        from cozempic.safety import validate_post_prune, PruneValidationError
+        from winnow.legacy.safety import validate_post_prune, PruneValidationError
 
         before = self._base()
         after = [m for m in before if m[1].get("type") != "ai-title"]
@@ -246,7 +246,7 @@ class TestValidatePostPruneC8ToolPairing:
 
     def test_c8_dangling_tool_use_raises(self):
         """Dropping the tool_result message but keeping the tool_use raises C8."""
-        from cozempic.safety import validate_post_prune, PruneValidationError
+        from winnow.legacy.safety import validate_post_prune, PruneValidationError
 
         before = self._before()
         # drop u1 (the tool_result carrier); relink a2 -> a1 so the DAG still resolves
@@ -260,7 +260,7 @@ class TestValidatePostPruneC8ToolPairing:
 
     def test_c8_intact_pair_passes(self):
         """Keeping the full tool_use/tool_result pair passes."""
-        from cozempic.safety import validate_post_prune
+        from winnow.legacy.safety import validate_post_prune
 
         before = self._before()
         validate_post_prune(before, before)  # no raise
@@ -268,7 +268,7 @@ class TestValidatePostPruneC8ToolPairing:
     def test_c8_inflight_tool_use_without_prior_result_passes(self):
         """A tool_use that never had a tool_result before the prune (an in-flight
         final turn) is NOT a prune-induced break — must pass (baseline-relative)."""
-        from cozempic.safety import validate_post_prune
+        from winnow.legacy.safety import validate_post_prune
 
         before = [
             _user(0, "u0", parent=None),
@@ -279,7 +279,7 @@ class TestValidatePostPruneC8ToolPairing:
 
     def test_c8_both_halves_dropped_passes(self):
         """Dropping BOTH the tool_use and its tool_result leaves nothing dangling."""
-        from cozempic.safety import validate_post_prune
+        from winnow.legacy.safety import validate_post_prune
 
         before = self._before()
         # drop a1 (tool_use) AND u1 (tool_result); relink a2 -> u0
@@ -314,8 +314,8 @@ class TestEnforceFloor:
 
     def test_floor_readds_dropped_last_k_user(self):
         """20 user+asst pairs; prune drops last 10 users; floor re-adds them."""
-        from cozempic.safety import enforce_floor
-        from cozempic.config import FloorConfig
+        from winnow.legacy.safety import enforce_floor
+        from winnow.legacy.config import FloorConfig
 
         before = self._users(20)
         # Simulate: keep only first 10 users and their assistants (drop last 10 users)
@@ -334,8 +334,8 @@ class TestEnforceFloor:
 
     def test_floor_readds_first_message(self):
         """Prune drops the root (parentUuid=None); floor re-adds it."""
-        from cozempic.safety import enforce_floor
-        from cozempic.config import FloorConfig
+        from winnow.legacy.safety import enforce_floor
+        from winnow.legacy.config import FloorConfig
 
         before = self._users(5)  # u-000 is the root (parentUuid=None)
         after = [m for m in before if m[1].get("uuid") != "u-000"]  # drop root
@@ -349,8 +349,8 @@ class TestEnforceFloor:
 
     def test_floor_cap_50pct(self):
         """10 user+asst pairs; prune drops all 10 users; floor preserves at least 5."""
-        from cozempic.safety import enforce_floor
-        from cozempic.config import FloorConfig
+        from winnow.legacy.safety import enforce_floor
+        from winnow.legacy.config import FloorConfig
 
         before = self._users(10)
         # Drop all users
@@ -367,8 +367,8 @@ class TestEnforceFloor:
 
     def test_floor_no_revert_of_replacements(self):
         """A replaced message (same uuid, modified payload) must keep the replacement."""
-        from cozempic.safety import enforce_floor
-        from cozempic.config import FloorConfig
+        from winnow.legacy.safety import enforce_floor
+        from winnow.legacy.config import FloorConfig
 
         # Build before with a user message carrying specific content
         before = [
@@ -393,8 +393,8 @@ class TestEnforceFloor:
 
     def test_floor_pair_counterpart_closure(self):
         """Re-adding a user msg with tool_use also re-adds the tool_result carrier."""
-        from cozempic.safety import enforce_floor
-        from cozempic.config import FloorConfig
+        from winnow.legacy.safety import enforce_floor
+        from winnow.legacy.config import FloorConfig
 
         # Session: root user (tool_use) → asst (tool_result)
         # Prune dropped both. Floor must re-add both due to pair-closure.
@@ -449,7 +449,7 @@ class TestFloorConfig:
         typical sessions. Operators needing the stricter floor use
         COZEMPIC_FLOOR_PRESERVE_LAST_K=50.
         """
-        from cozempic.config import FloorConfig
+        from winnow.legacy.config import FloorConfig
 
         cfg = FloorConfig()
         assert cfg.max_user_assistant_drop_pct == 0.50
@@ -458,7 +458,7 @@ class TestFloorConfig:
 
     def test_env_var_max_drop_pct(self, monkeypatch):
         """COZEMPIC_FLOOR_MAX_DROP_PCT=0.3 → FloorConfig.max_user_assistant_drop_pct == 0.3."""
-        from cozempic import config as cfg_mod
+        from winnow.legacy import config as cfg_mod
 
         monkeypatch.setenv("COZEMPIC_FLOOR_MAX_DROP_PCT", "0.3")
         resolved = cfg_mod._resolve_floor_with({})
@@ -466,7 +466,7 @@ class TestFloorConfig:
 
     def test_env_var_nan_falls_to_default(self, monkeypatch):
         """COZEMPIC_FLOOR_MAX_DROP_PCT=nan → falls back to default 0.50."""
-        from cozempic import config as cfg_mod
+        from winnow.legacy import config as cfg_mod
 
         monkeypatch.setenv("COZEMPIC_FLOOR_MAX_DROP_PCT", "nan")
         resolved = cfg_mod._resolve_floor_with({})
@@ -474,7 +474,7 @@ class TestFloorConfig:
 
     def test_env_var_inf_falls_to_default(self, monkeypatch):
         """COZEMPIC_FLOOR_MAX_DROP_PCT=inf → falls back to default 0.50."""
-        from cozempic import config as cfg_mod
+        from winnow.legacy import config as cfg_mod
 
         monkeypatch.setenv("COZEMPIC_FLOOR_MAX_DROP_PCT", "inf")
         resolved = cfg_mod._resolve_floor_with({})
@@ -482,7 +482,7 @@ class TestFloorConfig:
 
     def test_floor_config_disabled_classmethod(self):
         """FloorConfig.disabled() returns no-op config (all constraints off)."""
-        from cozempic.config import FloorConfig
+        from winnow.legacy.config import FloorConfig
 
         disabled = FloorConfig.disabled()
         assert disabled.max_user_assistant_drop_pct == 1.0
@@ -491,14 +491,14 @@ class TestFloorConfig:
 
     def test_clamp_int_inf_falls_to_default(self):
         """_clamp_int('inf', ...) falls back to default without OverflowError."""
-        from cozempic.config import _clamp_int
+        from winnow.legacy.config import _clamp_int
 
         result = _clamp_int("inf", 1, 1000, 50)
         assert result == 50
 
     def test_clamp_float_nan_falls_to_default(self):
         """_clamp_float('nan', ...) falls back to default."""
-        from cozempic.config import _clamp_float
+        from winnow.legacy.config import _clamp_float
 
         result = _clamp_float("nan", 0.0, 1.0, 0.50)
         assert result == pytest.approx(0.50)
@@ -516,7 +516,7 @@ class TestFloorConfig:
         This test FAILS pre-fix (asserts False, gets True) and PASSES post-fix.
         Env var cleared so the file path is exercised.
         """
-        from cozempic import config as cfg_mod
+        from winnow.legacy import config as cfg_mod
 
         monkeypatch.delenv("COZEMPIC_FLOOR_PRESERVE_FIRST", raising=False)
         result = cfg_mod._resolve_floor_with({"floor": {"preserve_first_message": "false"}})
@@ -527,7 +527,7 @@ class TestFloorConfig:
 
     def test_file_config_string_zero_is_false(self, monkeypatch):
         """File config preserve_first_message='0' → False (same bug, different token)."""
-        from cozempic import config as cfg_mod
+        from winnow.legacy import config as cfg_mod
 
         monkeypatch.delenv("COZEMPIC_FLOOR_PRESERVE_FIRST", raising=False)
         result = cfg_mod._resolve_floor_with({"floor": {"preserve_first_message": "0"}})
@@ -535,7 +535,7 @@ class TestFloorConfig:
 
     def test_file_config_string_no_is_false(self, monkeypatch):
         """File config preserve_first_message='no' → False."""
-        from cozempic import config as cfg_mod
+        from winnow.legacy import config as cfg_mod
 
         monkeypatch.delenv("COZEMPIC_FLOOR_PRESERVE_FIRST", raising=False)
         result = cfg_mod._resolve_floor_with({"floor": {"preserve_first_message": "no"}})
@@ -547,7 +547,7 @@ class TestFloorConfig:
         This already worked pre-fix (bool(False) → False), but must keep working
         post-fix as a regression guard.
         """
-        from cozempic import config as cfg_mod
+        from winnow.legacy import config as cfg_mod
 
         monkeypatch.delenv("COZEMPIC_FLOOR_PRESERVE_FIRST", raising=False)
         result = cfg_mod._resolve_floor_with({"floor": {"preserve_first_message": False}})
@@ -555,7 +555,7 @@ class TestFloorConfig:
 
     def test_file_config_string_true_is_true(self, monkeypatch):
         """File config preserve_first_message='true' → True."""
-        from cozempic import config as cfg_mod
+        from winnow.legacy import config as cfg_mod
 
         monkeypatch.delenv("COZEMPIC_FLOOR_PRESERVE_FIRST", raising=False)
         result = cfg_mod._resolve_floor_with({"floor": {"preserve_first_message": "true"}})
@@ -563,7 +563,7 @@ class TestFloorConfig:
 
     def test_file_config_string_one_is_true(self, monkeypatch):
         """File config preserve_first_message='1' → True."""
-        from cozempic import config as cfg_mod
+        from winnow.legacy import config as cfg_mod
 
         monkeypatch.delenv("COZEMPIC_FLOOR_PRESERVE_FIRST", raising=False)
         result = cfg_mod._resolve_floor_with({"floor": {"preserve_first_message": "1"}})
@@ -571,7 +571,7 @@ class TestFloorConfig:
 
     def test_file_config_native_bool_true_is_true(self, monkeypatch):
         """Native JSON bool true → True (regression guard)."""
-        from cozempic import config as cfg_mod
+        from winnow.legacy import config as cfg_mod
 
         monkeypatch.delenv("COZEMPIC_FLOOR_PRESERVE_FIRST", raising=False)
         result = cfg_mod._resolve_floor_with({"floor": {"preserve_first_message": True}})
@@ -594,9 +594,9 @@ class TestTagLeakInvariant:
         is done in guard.py, not inside enforce_floor itself — enforce_floor
         intentionally passes the original dicts through to minimize copies.
         """
-        import cozempic.strategies  # noqa: F401
-        from cozempic.executor import run_prescription
-        from cozempic.config import FloorConfig
+        import winnow.legacy.strategies  # noqa: F401
+        from winnow.legacy.executor import run_prescription
+        from winnow.legacy.config import FloorConfig
 
         # Simulate what prune_with_team_protect does: tag messages with team-protected
         before = [
@@ -630,9 +630,9 @@ class TestTagLeakInvariant:
 
     def test_no_singleton_tag_in_run_prescription_output(self):
         """__cozempic_metadata_singleton__ must never appear in run_prescription output."""
-        import cozempic.strategies  # noqa: F401
-        from cozempic.executor import run_prescription
-        from cozempic.config import FloorConfig
+        import winnow.legacy.strategies  # noqa: F401
+        from winnow.legacy.executor import run_prescription
+        from winnow.legacy.config import FloorConfig
 
         msgs = [
             _pm(0, "pm-001", None),
@@ -710,11 +710,11 @@ class TestFloorCompactedSession:
 
         After fix (P0-A): only 1 root in result (cb-1); root-0 NOT re-added.
         """
-        import cozempic.strategies  # noqa: F401 — registers strategy names
-        from cozempic.executor import execute_actions
-        from cozempic.strategies.gentle import strategy_compact_summary_collapse
-        from cozempic.safety import enforce_floor
-        from cozempic.config import FloorConfig
+        import winnow.legacy.strategies  # noqa: F401 — registers strategy names
+        from winnow.legacy.executor import execute_actions
+        from winnow.legacy.strategies.gentle import strategy_compact_summary_collapse
+        from winnow.legacy.safety import enforce_floor
+        from winnow.legacy.config import FloorConfig
 
         msgs_before = _compacted_msgs()
 
@@ -742,7 +742,7 @@ class TestFloorCompactedSession:
         Before P0-B, validate_post_prune does not detect the extra root.
         After P0-B: raises PruneValidationError with failed_check='C9'.
         """
-        from cozempic.safety import validate_post_prune, PruneValidationError
+        from winnow.legacy.safety import validate_post_prune, PruneValidationError
 
         # Single-root before
         msgs_before = [
@@ -766,7 +766,7 @@ class TestFloorCompactedSession:
 
     def test_c9_single_root_passes(self):
         """Regression guard (GREEN at base and after fix): single-root session does not raise."""
-        from cozempic.safety import validate_post_prune
+        from winnow.legacy.safety import validate_post_prune
 
         msgs = [
             _user(0, "root-a", parent=None),
@@ -782,7 +782,7 @@ class TestFloorCompactedSession:
         C9 is BASELINE-RELATIVE: if root count after == root count before, no raise.
         Only raises if the prune INCREASED the root count.
         """
-        from cozempic.safety import validate_post_prune
+        from winnow.legacy.safety import validate_post_prune
 
         # Two-root session (team fork — both chains present in the same file)
         msgs_before = [
@@ -808,8 +808,8 @@ class TestFloorCompactedSession:
         pre-boundary turns. The floor must still re-add them if needed (the P0-A skip
         only fires when the boundary is ACTIVE — i.e., hasPreservedSegment=False/absent).
         """
-        from cozempic.safety import enforce_floor
-        from cozempic.config import FloorConfig
+        from winnow.legacy.safety import enforce_floor
+        from winnow.legacy.config import FloorConfig
 
         msgs_before = [
             _user(0, "root-0", parent=None),
@@ -847,9 +847,9 @@ class TestFloorCompactedSession:
         Before fix: result has 2 roots (root-0 and cb-1 both have parentUuid=None).
         After fix: result has exactly 1 root (cb-1).
         """
-        import cozempic.strategies  # noqa: F401
-        from cozempic.executor import run_prescription
-        from cozempic.config import FloorConfig
+        import winnow.legacy.strategies  # noqa: F401
+        from winnow.legacy.executor import run_prescription
+        from winnow.legacy.config import FloorConfig
 
         msgs_before = _compacted_msgs()
         cfg = FloorConfig(preserve_first_message=True, preserve_last_k_turns=0,
@@ -890,11 +890,11 @@ class TestFloorCompactedSession:
           - exactly 1 root in enforce_floor result (cb-1)
           - pre-result uuid is NOT in the result
         """
-        import cozempic.strategies  # noqa: F401 — registers strategy names
-        from cozempic.executor import execute_actions
-        from cozempic.strategies.gentle import strategy_compact_summary_collapse
-        from cozempic.safety import enforce_floor
-        from cozempic.config import FloorConfig
+        import winnow.legacy.strategies  # noqa: F401 — registers strategy names
+        from winnow.legacy.executor import execute_actions
+        from winnow.legacy.strategies.gentle import strategy_compact_summary_collapse
+        from winnow.legacy.safety import enforce_floor
+        from winnow.legacy.config import FloorConfig
 
         # pre-result: parentUuid=None → it IS the pre-boundary root
         pre_result_msg = (0, {
@@ -948,13 +948,13 @@ class TestFloorCompactedSession:
 
 # ── Class 9: PruneValidationError in guard_prune_cycle abort path ─────────────
 # Rewritten (H-1): see test_prune_safety_r2.py::TestGuardAbortContractRewritten
-# for the correct abort-contract tests that patch cozempic.guard.prune_with_team_protect
+# for the correct abort-contract tests that patch winnow.legacy.guard.prune_with_team_protect
 # (the symbol guard.py actually calls) and assert all 3 invariants:
 #   (a) result has validation_error + evidence keys
 #   (b) file is byte-identical before and after
 #   (c) _terminate_and_resume was NOT called
 #
-# The old test here patched cozempic.executor.run_prescription, which guard.py
+# The old test here patched winnow.legacy.executor.run_prescription, which guard.py
 # had already imported via `from .executor import run_prescription` (line 138).
 # The patch never fired; the test was GREEN via the saved_bytes<=0 early-return
 # path, NOT the abort branch — it proved nothing about the abort contract.

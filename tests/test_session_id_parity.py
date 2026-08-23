@@ -75,7 +75,7 @@ class TestSessionIdSlugParity(unittest.TestCase):
     ]
 
     def test_bash_python_slug_parity(self):
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
 
         failures = []
         for sid in self.PARITY_INPUTS:
@@ -110,7 +110,7 @@ class TestSessionIdSlugParity(unittest.TestCase):
         """Canonical UUID inputs (the production case) must produce a slug
         that's just the first 12 chars of the lowercased UUID — no
         substitution should fire for any character."""
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
 
         for sid in (
             "5d53e013-32d9-4e72-9a3a-deadbeefcafe",

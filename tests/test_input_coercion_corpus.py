@@ -28,11 +28,11 @@ import unittest
 from contextlib import contextmanager
 from unittest import mock
 
-import cozempic.cli as cli
-import cozempic.config as config
-import cozempic.guard as g
-import cozempic.tokens as t
-from cozempic._validation import (
+import winnow.legacy.cli as cli
+import winnow.legacy.config as config
+import winnow.legacy.guard as g
+import winnow.legacy.tokens as t
+from winnow.legacy._validation import (
     ConfigError,
     coerce_positive_float,
     coerce_positive_int,

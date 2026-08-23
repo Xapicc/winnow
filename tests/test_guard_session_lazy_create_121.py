@@ -18,7 +18,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import cozempic.guard as guard
+import winnow.legacy.guard as guard
 
 
 class TestGuardSessionLazyCreate121(unittest.TestCase):

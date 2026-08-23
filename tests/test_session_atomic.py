@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from cozempic.session import (
+from winnow.legacy.session import (
     PruneConflictError,
     PruneLockError,
     _PruneLock,
@@ -144,7 +144,7 @@ class TestSnapshotAndAppend:
         would tear it into invalid fragments and corrupt it on save — the loaders
         must match text-mode open() (split on \\n/\\r only). Parity across all three
         readers + a save round-trip that preserves the line."""
-        from cozempic.session import load_messages_and_snapshot, load_messages_incremental
+        from winnow.legacy.session import load_messages_and_snapshot, load_messages_incremental
         jsonl = tmp_path / "u.jsonl"
         for sep in (" ", " ", ""):
             msg = {"type": "assistant", "message": {"role": "assistant", "content": f"a{sep}b"}}
@@ -243,7 +243,7 @@ class TestSnapshotAndAppend:
         recovered exactly ONCE on save (not duplicated). Regression for the TOCTOU
         where the old snapshot-then-load pattern counted a window-append in both
         the loaded messages and the delta."""
-        from cozempic.session import load_messages_and_snapshot
+        from winnow.legacy.session import load_messages_and_snapshot
         jsonl = tmp_path / "sess.jsonl"
         _make_messages(jsonl, n=5)
         messages, snap = load_messages_and_snapshot(jsonl)
@@ -264,7 +264,7 @@ class TestSnapshotAndAppend:
         """Same-SIZE different-CONTENT rewrite must classify as conflict, not
         'unchanged' — otherwise save_messages silently os.replace()s over Claude's
         live equal-length rewrite (data loss). Regression for the audit P1."""
-        from cozempic.session import snapshot_session
+        from winnow.legacy.session import snapshot_session
         jsonl = tmp_path / "sess.jsonl"
         messages = _make_messages(jsonl, n=5)
         snap = snapshot_session(jsonl)

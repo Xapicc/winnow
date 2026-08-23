@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from cozempic.doctor import (
+from winnow.legacy.doctor import (
     check_stale_backups,
     fix_stale_backups,
     run_doctor,
@@ -28,7 +28,7 @@ class TestStaleBackupsScope(unittest.TestCase):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def _patch_claude_dir(self):
-        return patch("cozempic.doctor.get_claude_dir", return_value=Path(self.tmpdir))
+        return patch("winnow.legacy.doctor.get_claude_dir", return_value=Path(self.tmpdir))
 
     def test_fix_only_deletes_jsonl_bak(self):
         """Only *.jsonl.bak files are deleted; other .bak files survive."""
@@ -79,7 +79,7 @@ class TestRunDoctorFixFalse(unittest.TestCase):
         called = []
 
         def fake_check():
-            from cozempic.doctor import CheckResult
+            from winnow.legacy.doctor import CheckResult
             return CheckResult(
                 name="fake",
                 status="issue",
@@ -91,7 +91,7 @@ class TestRunDoctorFixFalse(unittest.TestCase):
             called.append(True)
             return "fixed!"
 
-        from cozempic.doctor import ALL_CHECKS
+        from winnow.legacy.doctor import ALL_CHECKS
         original = list(ALL_CHECKS)
         ALL_CHECKS.clear()
         ALL_CHECKS.append(("fake", fake_check, fake_fix))
@@ -110,7 +110,7 @@ class TestRunDoctorFixFalse(unittest.TestCase):
         called = []
 
         def fake_check():
-            from cozempic.doctor import CheckResult
+            from winnow.legacy.doctor import CheckResult
             return CheckResult(
                 name="fake",
                 status="issue",
@@ -122,7 +122,7 @@ class TestRunDoctorFixFalse(unittest.TestCase):
             called.append(True)
             return "done"
 
-        from cozempic.doctor import ALL_CHECKS
+        from winnow.legacy.doctor import ALL_CHECKS
         original = list(ALL_CHECKS)
         ALL_CHECKS.clear()
         ALL_CHECKS.append(("fake", fake_check, fake_fix))
@@ -141,7 +141,7 @@ class TestRunDoctorHonestFixedStatus(unittest.TestCase):
     (re-run the check), not unconditionally after calling fix_fn (audit P1)."""
 
     def _run_with(self, check_fn, fix_fn):
-        from cozempic.doctor import ALL_CHECKS
+        from winnow.legacy.doctor import ALL_CHECKS
         original = list(ALL_CHECKS)
         ALL_CHECKS.clear()
         ALL_CHECKS.append(("fake", check_fn, fix_fn))
@@ -152,7 +152,7 @@ class TestRunDoctorHonestFixedStatus(unittest.TestCase):
             ALL_CHECKS.extend(original)
 
     def test_noop_fix_does_not_report_fixed(self):
-        from cozempic.doctor import CheckResult
+        from winnow.legacy.doctor import CheckResult
         # Check ALWAYS returns "issue" (the fix was a no-op / couldn't resolve it).
         def check():
             return CheckResult(name="fake", status="issue", message="still broken",
@@ -165,7 +165,7 @@ class TestRunDoctorHonestFixedStatus(unittest.TestCase):
         self.assertIn("not fully resolved", results[0].message)
 
     def test_real_fix_reports_fixed(self):
-        from cozempic.doctor import CheckResult
+        from winnow.legacy.doctor import CheckResult
         state = {"broken": True}
         def check():
             return CheckResult(name="fake",

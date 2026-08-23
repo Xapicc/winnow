@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import unittest
 
-from cozempic.config import FloorConfig
-from cozempic.helpers import msg_bytes
-from cozempic.registry import STRATEGIES, PRESCRIPTIONS
-from cozempic.executor import run_prescription
+from winnow.legacy.config import FloorConfig
+from winnow.legacy.helpers import msg_bytes
+from winnow.legacy.registry import STRATEGIES, PRESCRIPTIONS
+from winnow.legacy.executor import run_prescription
 
-import cozempic.strategies  # noqa: F401
+import winnow.legacy.strategies  # noqa: F401
 
 
 def make_message(line_idx: int, msg: dict) -> tuple[int, dict, int]:

@@ -25,14 +25,14 @@ from unittest.mock import patch
 
 class TestAtomicWriteText(unittest.TestCase):
     def test_basic_write(self):
-        from cozempic.helpers import atomic_write_text
+        from winnow.legacy.helpers import atomic_write_text
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "out.json"
             atomic_write_text(target, '{"key": "value"}')
             self.assertEqual(target.read_text(), '{"key": "value"}')
 
     def test_overwrite_existing(self):
-        from cozempic.helpers import atomic_write_text
+        from winnow.legacy.helpers import atomic_write_text
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "out.json"
             target.write_text("old")
@@ -40,7 +40,7 @@ class TestAtomicWriteText(unittest.TestCase):
             self.assertEqual(target.read_text(), "new")
 
     def test_no_tmp_file_left_on_success(self):
-        from cozempic.helpers import atomic_write_text
+        from winnow.legacy.helpers import atomic_write_text
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "out.json"
             atomic_write_text(target, "data")
@@ -51,7 +51,7 @@ class TestAtomicWriteText(unittest.TestCase):
     def test_concurrent_writes_no_collision(self):
         """20 parallel writes to the SAME target succeed without
         FileNotFoundError (the production bug). Last writer wins; no crashes."""
-        from cozempic.helpers import atomic_write_text
+        from winnow.legacy.helpers import atomic_write_text
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "out.json"
             errors = []
@@ -73,11 +73,11 @@ class TestAtomicWriteText(unittest.TestCase):
 
     def test_failure_cleans_up_tmp(self):
         """If write fails (e.g. disk full), tmp file is unlinked."""
-        from cozempic.helpers import atomic_write_text
+        from winnow.legacy.helpers import atomic_write_text
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "out.json"
             # Simulate fdopen failure
-            with patch("cozempic.helpers.os.fdopen", side_effect=OSError("simulated")):
+            with patch("winnow.legacy.helpers.os.fdopen", side_effect=OSError("simulated")):
                 with self.assertRaises(OSError):
                     atomic_write_text(target, "data")
             self.assertEqual(list(Path(tmp).glob(".tmp.*")), [])
@@ -89,10 +89,10 @@ class TestSaveSidecarConcurrent(unittest.TestCase):
     def test_concurrent_record_session_no_filenotfound(self):
         """The exact production race: 10 threads calling record_session
         simultaneously. Pre-fix produced FileNotFoundError on N-1 of them."""
-        from cozempic.session import record_session
+        from winnow.legacy.session import record_session
         with tempfile.TemporaryDirectory() as tmp:
             # Redirect sidecar to tmp
-            with patch("cozempic.session.get_sidecar_path",
+            with patch("winnow.legacy.session.get_sidecar_path",
                        return_value=Path(tmp) / "cozempic-sessions.json"):
                 errors = []
 
@@ -119,10 +119,10 @@ class TestRecordSavingsAtomic(unittest.TestCase):
     def test_concurrent_increments_no_lost_updates(self):
         """50 concurrent record_savings(1000) calls — final total must be 50000.
         Pre-fix used direct write_text with no lock → races lost updates."""
-        from cozempic.helpers import record_savings
+        from winnow.legacy.helpers import record_savings
         with tempfile.TemporaryDirectory() as tmp:
             savings_file = Path(tmp) / ".cozempic_savings.json"
-            with patch("cozempic.helpers._SAVINGS_FILE", savings_file):
+            with patch("winnow.legacy.helpers._SAVINGS_FILE", savings_file):
                 # Disable telemetry pings
                 with patch.dict(os.environ, {"COZEMPIC_NO_TELEMETRY": "1"}):
                     def writer(_i):
@@ -142,7 +142,7 @@ class TestRecordSavingsAtomic(unittest.TestCase):
 class TestSaveMessagesMkstemp(unittest.TestCase):
     def test_save_uses_unique_tmp_filename(self):
         """tmp file is NOT path.with_suffix('.tmp') anymore — uses mkstemp."""
-        from cozempic.session import save_messages
+        from winnow.legacy.session import save_messages
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "session.jsonl"
             path.write_text('{"a": 1}\n')
@@ -179,7 +179,7 @@ class TestCmdReloadAcquiresPruneLock(unittest.TestCase):
     def test_imports_have_prunelock_and_snapshot(self):
         """Smoke test — cli.py imports _PruneLock, PruneConflictError,
         PruneLockError, snapshot_session from session."""
-        from cozempic.cli import _PruneLock, PruneLockError, PruneConflictError, snapshot_session
+        from winnow.legacy.cli import _PruneLock, PruneLockError, PruneConflictError, snapshot_session
         self.assertTrue(callable(_PruneLock))
         self.assertTrue(callable(snapshot_session))
 
@@ -189,8 +189,8 @@ class TestCmdReloadAcquiresPruneLock(unittest.TestCase):
         code 2 and a clear error message — NOT silently overwrite the
         guard's pruned output."""
         import argparse
-        from cozempic.cli import cmd_treat, _PruneLock
-        from cozempic.session import save_messages as _real_save_messages
+        from winnow.legacy.cli import cmd_treat, _PruneLock
+        from winnow.legacy.session import save_messages as _real_save_messages
 
         with tempfile.TemporaryDirectory() as tmp:
             session_path = Path(tmp) / "session.jsonl"
@@ -225,7 +225,7 @@ class TestCmdReloadAcquiresPruneLock(unittest.TestCase):
                 )
 
                 # Patch resolve_session to return our test path directly
-                with patch("cozempic.cli.resolve_session", return_value=session_path):
+                with patch("winnow.legacy.cli.resolve_session", return_value=session_path):
                     # cmd_treat must exit(2) when the lock is held
                     with self.assertRaises(SystemExit) as cm:
                         cmd_treat(args)
@@ -241,7 +241,7 @@ class TestHostFileLockWindows(unittest.TestCase):
     by monkey-patching os.name and injecting a fake msvcrt module."""
 
     def test_windows_branch_uses_msvcrt_locking(self):
-        from cozempic.helpers import _HostFileLock
+        from winnow.legacy.helpers import _HostFileLock
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "out.json"
 
@@ -274,7 +274,7 @@ class TestHostFileLockWindows(unittest.TestCase):
     def test_windows_branch_no_msvcrt_degrades_gracefully(self):
         """If msvcrt import fails on Windows (shouldn't happen, but be safe),
         the lock degrades to no-op rather than crashing."""
-        from cozempic.helpers import _HostFileLock
+        from winnow.legacy.helpers import _HostFileLock
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "out.json"
 
@@ -309,7 +309,7 @@ class TestHookSchemaV9(unittest.TestCase):
     codebase convention); v9 only changes the PID-reading mechanism."""
 
     def test_schema_marker_bumped(self):
-        from cozempic.init import HOOK_SCHEMA_VERSION
+        from winnow.legacy.init import HOOK_SCHEMA_VERSION
         # Durable floor (was pinned to an exact version → broke on every bump).
         self.assertGreaterEqual(int(HOOK_SCHEMA_VERSION.lstrip("v")), 12)
 
@@ -322,7 +322,7 @@ class TestHookSchemaV9(unittest.TestCase):
         --daemon` pair, so the total occurrence count is 4 (2 branches × 2
         fallback variants). Anything else means an unguarded branch or a
         missing fallback."""
-        hooks_path = Path(__file__).parent.parent / "src" / "cozempic" / "data" / "hooks.json"
+        hooks_path = Path(__file__).parent.parent / "src" / "winnow" / "legacy" / "data" / "hooks.json"
         hooks = json.loads(hooks_path.read_text())
         ss_cmd = hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"]
         count = ss_cmd.count("cozempic guard --daemon")
@@ -339,7 +339,7 @@ class TestHookSchemaV9(unittest.TestCase):
         ``printf '%.12s' "$SESSION_ID"`` — #168) — the bash side uses the
         permissive ``re.sub`` sanitiser, the same 12-char prefix Python now
         produces via the relaxed regex."""
-        hooks_path = Path(__file__).parent.parent / "src" / "cozempic" / "data" / "hooks.json"
+        hooks_path = Path(__file__).parent.parent / "src" / "winnow" / "legacy" / "data" / "hooks.json"
         hooks = json.loads(hooks_path.read_text())
         ss_cmd = hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"]
         self.assertIn("GUARD_STARTUP_LOCK=", ss_cmd,
@@ -364,7 +364,7 @@ class TestHookSchemaV9(unittest.TestCase):
         GUARD_PID_FILE path uses ``${SLUG}`` (POSIX ``printf '%.12s'`` of the
         bash-sanitised lowercased session_id, first 12 chars — #168) — Python's
         relaxed regex produces the same slug for the same input."""
-        hooks_path = Path(__file__).parent.parent / "src" / "cozempic" / "data" / "hooks.json"
+        hooks_path = Path(__file__).parent.parent / "src" / "winnow" / "legacy" / "data" / "hooks.json"
         hooks = json.loads(hooks_path.read_text())
         ss_cmd = hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"]
         self.assertIn("GUARD_PID_FILE=", ss_cmd,
@@ -386,7 +386,7 @@ class TestHookSchemaV9(unittest.TestCase):
         Python if bash didn't also lowercase. (Pre-C2 finding was about
         character-set divergence; this pins the case-handling parity that
         prevents a second, narrower divergence.)"""
-        hooks_path = Path(__file__).parent.parent / "src" / "cozempic" / "data" / "hooks.json"
+        hooks_path = Path(__file__).parent.parent / "src" / "winnow" / "legacy" / "data" / "hooks.json"
         hooks = json.loads(hooks_path.read_text())
         ss_cmd = hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"]
         self.assertIn(".lower()", ss_cmd,
@@ -403,7 +403,7 @@ class TestHookSchemaV9(unittest.TestCase):
 
     def test_plugin_and_data_hooks_synced(self):
         plugin_path = Path(__file__).parent.parent / "plugin" / "hooks" / "hooks.json"
-        data_path = Path(__file__).parent.parent / "src" / "cozempic" / "data" / "hooks.json"
+        data_path = Path(__file__).parent.parent / "src" / "winnow" / "legacy" / "data" / "hooks.json"
         self.assertEqual(plugin_path.read_text(), data_path.read_text())
 
 
@@ -414,7 +414,7 @@ class TestDoctorRespectsPruneLock(unittest.TestCase):
         """fix_corrupted_tool_use must acquire _PruneLock and surface skipped
         sessions to the user. Source-inspection smoke test — behavioral test
         would require a corrupted session fixture which is expensive."""
-        from cozempic.doctor import fix_corrupted_tool_use
+        from winnow.legacy.doctor import fix_corrupted_tool_use
         import inspect
         src = inspect.getsource(fix_corrupted_tool_use)
         self.assertIn("_PruneLock", src,
@@ -427,8 +427,8 @@ class TestDoctorRespectsPruneLock(unittest.TestCase):
         repaired — str.splitlines() would tear it into unparseable fragments and
         silently skip the repair (4th sibling of the splitlines class)."""
         import json
-        from cozempic import session as S
-        from cozempic import doctor as D
+        from winnow.legacy import session as S
+        from winnow.legacy import doctor as D
         proj = S.get_projects_dir() / "-unic"
         proj.mkdir(parents=True, exist_ok=True)
         sess = proj / "unicrep1.jsonl"
@@ -454,8 +454,8 @@ class TestDoctorRespectsPruneLock(unittest.TestCase):
         import json
         from pathlib import Path
         from unittest import mock
-        from cozempic import session as S
-        from cozempic import doctor as D
+        from winnow.legacy import session as S
+        from winnow.legacy import doctor as D
 
         proj = S.get_projects_dir() / "-proj"
         proj.mkdir(parents=True, exist_ok=True)
@@ -514,7 +514,7 @@ class TestDoctorRespectsPruneLock(unittest.TestCase):
         """fix_orphaned_tool_results was the second unprotected save_messages
         site flagged by the architecture review. Must mirror fix_corrupted's
         protection: _PruneLock + snapshot + skip-on-conflict."""
-        from cozempic.doctor import fix_orphaned_tool_results
+        from winnow.legacy.doctor import fix_orphaned_tool_results
         import inspect
         src = inspect.getsource(fix_orphaned_tool_results)
         self.assertIn("_PruneLock", src,
@@ -540,7 +540,7 @@ class TestMcpTreatSessionPruneLock(unittest.TestCase):
         import types
         from pathlib import Path
         from unittest import mock
-        from cozempic import session as S
+        from winnow.legacy import session as S
 
         # Stub fastmcp so @mcp.tool() returns the function unchanged + import is cheap.
         fake = types.ModuleType("fastmcp")
@@ -624,7 +624,7 @@ class TestOverflowWatcherCleanup(unittest.TestCase):
         """The watcher.stop() must be in a finally so it fires on ALL exit
         paths (KeyboardInterrupt + 4 break paths)."""
         import inspect
-        from cozempic.guard import start_guard
+        from winnow.legacy.guard import start_guard
         src = inspect.getsource(start_guard)
         # Find the finally block near end
         self.assertIn("finally:", src)

@@ -32,14 +32,14 @@ def _m(d):
 
 class TestDetectInFlight(unittest.TestCase):
     def test_workflow_launched_no_completion(self):
-        from cozempic.guard import detect_in_flight
+        from winnow.legacy.guard import detect_in_flight
         msgs = [_m({"message": {"role": "user", "content": [
             {"type": "tool_result", "tool_use_id": "t1",
              "content": "Workflow launched in background. Task ID: wul02ab83\nRun ID: wf_x"}]}})]
         self.assertTrue(detect_in_flight(msgs)["workflow"])
 
     def test_workflow_completed(self):
-        from cozempic.guard import detect_in_flight
+        from winnow.legacy.guard import detect_in_flight
         msgs = [
             _m({"message": {"role": "user", "content": [
                 {"type": "tool_result", "tool_use_id": "t1",
@@ -51,7 +51,7 @@ class TestDetectInFlight(unittest.TestCase):
         self.assertFalse(detect_in_flight(msgs)["workflow"])
 
     def test_background_command_in_flight(self):
-        from cozempic.guard import detect_in_flight
+        from winnow.legacy.guard import detect_in_flight
         msgs = [_m({"message": {"role": "user", "content": [
             {"type": "tool_result", "tool_use_id": "t2",
              "content": "Command running in background with ID: bx1t5ptm2"}]}})]
@@ -60,7 +60,7 @@ class TestDetectInFlight(unittest.TestCase):
     def test_agent_launched_no_completion(self):
         # The REAL dominant background-subagent path (Agent tool). VERIFIED marker
         # from production transcripts; the old detector was blind to this → P0.
-        from cozempic.guard import detect_in_flight
+        from winnow.legacy.guard import detect_in_flight
         msgs = [_m({"message": {"role": "user", "content": [
             {"type": "tool_result", "tool_use_id": "t3",
              "content": "Async agent launched successfully.\nagentId: aa3bddd46882df8ea "
@@ -73,7 +73,7 @@ class TestDetectInFlight(unittest.TestCase):
 
     def test_agent_completed_via_task_notification(self):
         # Same-namespace completion (verified real): agentId == <task-id>.
-        from cozempic.guard import detect_in_flight
+        from winnow.legacy.guard import detect_in_flight
         msgs = [
             _m({"message": {"role": "user", "content": [
                 {"type": "tool_result", "tool_use_id": "t3",
@@ -86,7 +86,7 @@ class TestDetectInFlight(unittest.TestCase):
 
     def test_completion_vocab_success_clears(self):
         # A "success"/"done" status (not literally "completed") must still clear.
-        from cozempic.guard import detect_in_flight
+        from winnow.legacy.guard import detect_in_flight
         msgs = [
             _m({"message": {"role": "user", "content": [
                 {"type": "tool_result", "content": "Async agent launched successfully. agentId: zz9"}]}}),
@@ -95,7 +95,7 @@ class TestDetectInFlight(unittest.TestCase):
         self.assertFalse(detect_in_flight(msgs)["agent"])
 
     def test_unkeyed_tool_use_is_open(self):
-        from cozempic.guard import detect_in_flight
+        from winnow.legacy.guard import detect_in_flight
         msgs = [_m({"message": {"role": "assistant", "content": [
             {"type": "tool_use", "name": "Bash", "input": {}}]}})]  # no id
         self.assertTrue(detect_in_flight(msgs)["open_call"])
@@ -105,7 +105,7 @@ class TestDetectInFlight(unittest.TestCase):
         # launch-marker STRING echoed/grepped inside a Bash tool_result is NOT a
         # real launch — its paired tool_use is Bash, not Workflow — so it must not
         # fabricate a phantom in-flight workflow that wedges the gate.
-        from cozempic.guard import detect_in_flight
+        from winnow.legacy.guard import detect_in_flight
         msgs = [
             _m({"message": {"role": "assistant", "content": [
                 {"type": "tool_use", "id": "b1", "name": "Bash", "input": {}}]}}),
@@ -117,7 +117,7 @@ class TestDetectInFlight(unittest.TestCase):
 
     def test_real_workflow_result_is_inflight(self):
         # The paired tool_use IS a Workflow → the marker is a real launch.
-        from cozempic.guard import detect_in_flight
+        from winnow.legacy.guard import detect_in_flight
         msgs = [
             _m({"message": {"role": "assistant", "content": [
                 {"type": "tool_use", "id": "w1", "name": "Workflow", "input": {}}]}}),
@@ -132,7 +132,7 @@ class TestDetectInFlight(unittest.TestCase):
     def test_pruned_tooluse_launch_credited_conservatively(self):
         # If the launch's tool_use was pruned away (only the result remains), credit
         # it — never MISS a real launch (the catastrophic direction).
-        from cozempic.guard import detect_in_flight
+        from winnow.legacy.guard import detect_in_flight
         msgs = [_m({"message": {"role": "user", "content": [
             {"type": "tool_result", "tool_use_id": "gone",
              "content": "Workflow launched in background. Task ID: orphan1"}]}})]
@@ -142,7 +142,7 @@ class TestDetectInFlight(unittest.TestCase):
         # P2 (QA): a <task-notification>…completed QUOTED inside a Bash result must
         # NOT clear a genuinely in-flight Agent of the same id (false-negative →
         # SIGKILL). Real completions arrive as top-level queue-operation content.
-        from cozempic.guard import detect_in_flight
+        from winnow.legacy.guard import detect_in_flight
         msgs = [
             _m({"message": {"role": "user", "content": [
                 {"type": "tool_result",
@@ -158,7 +158,7 @@ class TestDetectInFlight(unittest.TestCase):
                         "a quoted completion must NOT clear a real in-flight launch")
 
     def test_real_queue_completion_clears(self):
-        from cozempic.guard import detect_in_flight
+        from winnow.legacy.guard import detect_in_flight
         msgs = [
             _m({"message": {"role": "user", "content": [
                 {"type": "tool_result",
@@ -172,7 +172,7 @@ class TestDetectInFlight(unittest.TestCase):
     def test_lowercase_tool_name_still_credited(self):
         # P2 (QA): case-insensitive tool-name correlation — a casing drift
         # ("workflow" vs "Workflow") must NOT strand a real launch into a SIGKILL.
-        from cozempic.guard import detect_in_flight
+        from winnow.legacy.guard import detect_in_flight
         msgs = [
             _m({"message": {"role": "assistant", "content": [
                 {"type": "tool_use", "id": "w1", "name": "workflow", "input": {}}]}}),
@@ -183,13 +183,13 @@ class TestDetectInFlight(unittest.TestCase):
         self.assertTrue(detect_in_flight(msgs)["workflow"])
 
     def test_open_tool_call(self):
-        from cozempic.guard import detect_in_flight
+        from winnow.legacy.guard import detect_in_flight
         msgs = [_m({"message": {"role": "assistant", "content": [
             {"type": "tool_use", "id": "u1", "name": "Bash", "input": {}}]}})]
         self.assertTrue(detect_in_flight(msgs)["open_call"])
 
     def test_matched_tool_call_not_open(self):
-        from cozempic.guard import detect_in_flight
+        from winnow.legacy.guard import detect_in_flight
         msgs = [
             _m({"message": {"role": "assistant", "content": [{"type": "tool_use", "id": "u1", "name": "Bash", "input": {}}]}}),
             _m({"message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "u1", "content": "done"}]}}),
@@ -199,14 +199,14 @@ class TestDetectInFlight(unittest.TestCase):
 
 class TestSafeToReload(unittest.TestCase):
     def test_empty_quiescent_is_safe(self):
-        from cozempic.guard import safe_to_reload
-        from cozempic.team import TeamState
+        from winnow.legacy.guard import safe_to_reload
+        from winnow.legacy.team import TeamState
         safe, _ = safe_to_reload(TeamState(), [], None)
         self.assertTrue(safe)
 
     def test_running_workflow_unsafe(self):
-        from cozempic.guard import safe_to_reload
-        from cozempic.team import TeamState
+        from winnow.legacy.guard import safe_to_reload
+        from winnow.legacy.team import TeamState
         msgs = [_m({"message": {"role": "user", "content": [
             {"type": "tool_result", "tool_use_id": "t1",
              "content": "Workflow launched in background. Task ID: wf123"}]}})]
@@ -215,22 +215,22 @@ class TestSafeToReload(unittest.TestCase):
         self.assertIn("Workflow", reason)
 
     def test_running_subagent_unsafe(self):
-        from cozempic.guard import safe_to_reload
-        from cozempic.team import TeamState, SubagentInfo
+        from winnow.legacy.guard import safe_to_reload
+        from winnow.legacy.team import TeamState, SubagentInfo
         st = TeamState(team_name="t", subagents=[SubagentInfo("a1", "d", status="running")])
         safe, _ = safe_to_reload(st, [], None)
         self.assertFalse(safe)
 
     def test_active_task_unsafe(self):
-        from cozempic.guard import safe_to_reload
-        from cozempic.team import TeamState, TaskInfo
+        from winnow.legacy.guard import safe_to_reload
+        from winnow.legacy.team import TeamState, TaskInfo
         st = TeamState(team_name="t", tasks=[TaskInfo("t1", "subj", "in_progress")])
         safe, _ = safe_to_reload(st, [], None)
         self.assertFalse(safe)
 
     def test_quiesced_team_safe(self):
-        from cozempic.guard import safe_to_reload
-        from cozempic.team import TeamState, SubagentInfo, TeammateInfo
+        from winnow.legacy.guard import safe_to_reload
+        from winnow.legacy.team import TeamState, SubagentInfo, TeammateInfo
         st = TeamState(team_name="t",
                        subagents=[SubagentInfo("a1", "d", status="completed")],
                        teammates=[TeammateInfo("a2", "n", status="done")])
@@ -238,8 +238,8 @@ class TestSafeToReload(unittest.TestCase):
         self.assertTrue(safe)
 
     def test_running_agent_unsafe(self):
-        from cozempic.guard import safe_to_reload
-        from cozempic.team import TeamState
+        from winnow.legacy.guard import safe_to_reload
+        from winnow.legacy.team import TeamState
         msgs = [_m({"message": {"role": "user", "content": [
             {"type": "tool_result",
              "content": "Async agent launched successfully. agentId: bg777 (internal ID)"}]}})]
@@ -251,8 +251,8 @@ class TestSafeToReload(unittest.TestCase):
         # P0-2 regression: a FINISHED team must be allowed to reload (the guard's
         # whole purpose for teams). After extract_team_state propagates completions,
         # teammates read terminal — so the gate is SAFE.
-        from cozempic.guard import safe_to_reload
-        from cozempic.team import TeamState, SubagentInfo, TeammateInfo
+        from winnow.legacy.guard import safe_to_reload
+        from winnow.legacy.team import TeamState, SubagentInfo, TeammateInfo
         st = TeamState(team_name="t",
                        subagents=[SubagentInfo("a1", "d", status="completed"),
                                   SubagentInfo("a2", "d", status="completed")],
@@ -265,8 +265,8 @@ class TestSafeToReload(unittest.TestCase):
         # The destroy-active-teammate window: a teammate working in the
         # SendMessage→completion gap has no subagent entry yet, only a 'running'
         # teammate entry. The gate must block on it (don't SIGKILL active work).
-        from cozempic.guard import safe_to_reload
-        from cozempic.team import TeamState, TeammateInfo
+        from winnow.legacy.guard import safe_to_reload
+        from winnow.legacy.team import TeamState, TeammateInfo
         st = TeamState(team_name="t", teammates=[TeammateInfo("a1", "alice", status="running")])
         safe, reason = safe_to_reload(st, [], None)
         self.assertFalse(safe)
@@ -275,8 +275,8 @@ class TestSafeToReload(unittest.TestCase):
     def test_offvocab_subagent_status_blocks(self):
         # DENYLIST: an unrecognized non-terminal status (hyphen variant, "busy",
         # "executing"...) must fail SAFE (block), not fail-open and destroy work.
-        from cozempic.guard import safe_to_reload
-        from cozempic.team import TeamState, SubagentInfo
+        from winnow.legacy.guard import safe_to_reload
+        from winnow.legacy.team import TeamState, SubagentInfo
         for st_val in ("in-progress", "busy", "executing", "processing", "waiting", "weird"):
             ts = TeamState(team_name="t", subagents=[SubagentInfo("a1", "d", status=st_val)])
             safe, _ = safe_to_reload(ts, [], None)
@@ -286,8 +286,8 @@ class TestSafeToReload(unittest.TestCase):
         # P0 ordering: a completion followed by a NEW SendMessage (re-activation)
         # must leave the teammate active, not "completed" — else a working teammate
         # is destroyed. Drives extract_team_state end-to-end (two-pass).
-        from cozempic.team import extract_team_state
-        from cozempic.guard import safe_to_reload
+        from winnow.legacy.team import extract_team_state
+        from winnow.legacy.guard import safe_to_reload
         msgs = [
             (0, {"message": {"role": "assistant", "content": [
                 {"type": "tool_use", "id": "u1", "name": "TeamCreate",
@@ -309,7 +309,7 @@ class TestSafeToReload(unittest.TestCase):
     def test_extract_propagates_completion_to_teammate(self):
         # The root-cause fix: a task-notification completion must transition the
         # matching TEAMMATE (not just the subagent) to terminal.
-        from cozempic.team import extract_team_state
+        from winnow.legacy.team import extract_team_state
         msgs = [
             (0, {"message": {"role": "assistant", "content": [
                 {"type": "tool_use", "id": "u1", "name": "TeamCreate",
@@ -337,7 +337,7 @@ class TestGuardCycleGate(unittest.TestCase):
         shutil.rmtree(self.scratch, ignore_errors=True)
 
     def _run(self, team_state, load_msgs):
-        from cozempic.guard import guard_prune_cycle
+        from winnow.legacy.guard import guard_prune_cycle
         pruned = [(0, {"type": "user"}, 40_000)]
         terminate_called = []
         _totals = iter([100_000, 40_000])  # real token progress → reaches reload block
@@ -348,16 +348,16 @@ class TestGuardCycleGate(unittest.TestCase):
             except StopIteration:
                 return MagicMock(total=40_000)
 
-        with patch("cozempic.guard._guard_tmp_root", return_value=self.scratch), \
-             patch("cozempic.guard.load_messages_and_snapshot", return_value=(load_msgs, MagicMock())), \
-             patch("cozempic.guard.load_messages", return_value=load_msgs), \
-             patch("cozempic.guard.prune_with_team_protect", return_value=(pruned, {}, team_state)), \
-             patch("cozempic.guard.save_messages", side_effect=lambda *a, **k: None), \
-             patch("cozempic.guard.snapshot_session", return_value=MagicMock()), \
-             patch("cozempic.guard._terminate_and_resume",
+        with patch("winnow.legacy.guard._guard_tmp_root", return_value=self.scratch), \
+             patch("winnow.legacy.guard.load_messages_and_snapshot", return_value=(load_msgs, MagicMock())), \
+             patch("winnow.legacy.guard.load_messages", return_value=load_msgs), \
+             patch("winnow.legacy.guard.prune_with_team_protect", return_value=(pruned, {}, team_state)), \
+             patch("winnow.legacy.guard.save_messages", side_effect=lambda *a, **k: None), \
+             patch("winnow.legacy.guard.snapshot_session", return_value=MagicMock()), \
+             patch("winnow.legacy.guard._terminate_and_resume",
                    side_effect=lambda *a, **k: terminate_called.append(True)), \
-             patch("cozempic.tokens.estimate_session_tokens", side_effect=_est), \
-             patch("cozempic.tokens.calibrate_ratio", return_value=0.5):
+             patch("winnow.legacy.tokens.estimate_session_tokens", side_effect=_est), \
+             patch("winnow.legacy.tokens.calibrate_ratio", return_value=0.5):
             result = guard_prune_cycle(
                 session_path=self.session_path, rx_name="aggressive", config=None,
                 auto_reload=True, claude_pid=999999, session_id="abcdef012345",
@@ -365,14 +365,14 @@ class TestGuardCycleGate(unittest.TestCase):
         return result, terminate_called
 
     def test_T1_quiescent_team_reloads(self):
-        from cozempic.team import TeamState, SubagentInfo
+        from winnow.legacy.team import TeamState, SubagentInfo
         st = TeamState(team_name="t", subagents=[SubagentInfo("a1", "d", status="completed")])
         result, terminate_called = self._run(st, load_msgs=[(0, {"type": "user"}, 100_000)])
         self.assertFalse(result.get("reload_unsafe"))
         self.assertTrue(terminate_called, "quiescent team must reload (terminate called)")
 
     def test_T2_mid_subagent_defers_not_kills(self):
-        from cozempic.team import TeamState, SubagentInfo
+        from winnow.legacy.team import TeamState, SubagentInfo
         st = TeamState(team_name="t", subagents=[SubagentInfo("a1", "d", status="running")])
         result, terminate_called = self._run(st, load_msgs=[(0, {"type": "user"}, 100_000)])
         self.assertTrue(result.get("reload_unsafe"))
@@ -382,7 +382,7 @@ class TestGuardCycleGate(unittest.TestCase):
     def test_T3_mid_workflow_defers_not_kills(self):
         # The catastrophic baseline: empty team (agents_active False) BUT a workflow
         # is running. Old code HARD2 would SIGKILL it; 1.8.22 must defer.
-        from cozempic.team import TeamState
+        from winnow.legacy.team import TeamState
         wf_msgs = [(0, {"message": {"role": "user", "content": [
             {"type": "tool_result", "tool_use_id": "t1",
              "content": "Workflow launched in background. Task ID: wf999"}]}}, 100_000)]
@@ -392,7 +392,7 @@ class TestGuardCycleGate(unittest.TestCase):
         self.assertEqual(terminate_called, [], "mid-Workflow: must NOT terminate (T3 blocker)")
 
     def test_T7_open_call_defers(self):
-        from cozempic.team import TeamState
+        from winnow.legacy.team import TeamState
         oc = [(0, {"message": {"role": "assistant", "content": [
             {"type": "tool_use", "id": "u1", "name": "Bash", "input": {}}]}}, 100_000)]
         result, terminate_called = self._run(TeamState(), load_msgs=oc)
@@ -400,7 +400,7 @@ class TestGuardCycleGate(unittest.TestCase):
         self.assertEqual(terminate_called, [], "open tool call: must NOT terminate")
 
     def test_quiescent_empty_reloads(self):
-        from cozempic.team import TeamState
+        from winnow.legacy.team import TeamState
         result, terminate_called = self._run(TeamState(), load_msgs=[(0, {"type": "user"}, 100_000)])
         self.assertFalse(result.get("reload_unsafe"))
         self.assertTrue(terminate_called)

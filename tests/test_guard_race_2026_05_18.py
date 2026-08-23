@@ -74,7 +74,7 @@ def _race_worker(
 
     from unittest.mock import patch as _patch
 
-    from cozempic.guard import start_guard_daemon
+    from winnow.legacy.guard import start_guard_daemon
 
     class _DummyProc:
         # PID range avoids collision with the host process's real PIDs.
@@ -91,9 +91,9 @@ def _race_worker(
     # Mock subprocess.Popen so no real daemon is spawned, and mock
     # find_claude_pid so we don't fail when no Claude is running.
     with (
-        _patch("cozempic.guard.subprocess.Popen", side_effect=_fake_popen),
-        _patch("cozempic.guard.find_claude_pid", return_value=12345),
-        _patch("cozempic.guard._cleanup_legacy_pid"),
+        _patch("winnow.legacy.guard.subprocess.Popen", side_effect=_fake_popen),
+        _patch("winnow.legacy.guard.find_claude_pid", return_value=12345),
+        _patch("winnow.legacy.guard._cleanup_legacy_pid"),
     ):
         # Barrier sync: both children pile up here and release at the same instant
         try:
@@ -131,7 +131,7 @@ class TestR1_DaemonProcessRace(unittest.TestCase):
 
     def setUp(self):
         # Compute and pre-clean the pidfile + log file for our session.
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
 
         self.pid_path = _pid_file_for_session(self.SESSION_ID)
         self.pid_path.unlink(missing_ok=True)
@@ -244,7 +244,7 @@ class TestR2_HardThresholdZeroByteLoop(unittest.TestCase):
     """
 
     def test_loop_does_not_back_off_under_sustained_zero_byte_hards(self):
-        from cozempic import guard as guard_mod
+        from winnow.legacy import guard as guard_mod
 
         # ---- Per-cycle bookkeeping ----------------------------------------
         sleep_calls: list[float] = []
@@ -325,12 +325,12 @@ class TestR2_HardThresholdZeroByteLoop(unittest.TestCase):
                 guard_mod, "quick_token_estimate", side_effect=fake_quick_token_estimate
             ),
             patch.object(guard_mod, "load_messages", return_value=[]),
-            patch("cozempic.session.record_session"),
+            patch("winnow.legacy.session.record_session"),
             patch.object(guard_mod, "_cleanup_stale_watchers"),
             patch.object(guard_mod, "ping_install_if_new"),
             patch.object(guard_mod, "maybe_auto_update"),
             patch.object(guard_mod, "cleanup_old_backups"),
-            patch("cozempic.tokens.detect_context_window", return_value=1_000_000),
+            patch("winnow.legacy.tokens.detect_context_window", return_value=1_000_000),
         ):
 
             # Run the loop. Expect either:

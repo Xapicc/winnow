@@ -13,14 +13,14 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from cozempic.session import cwd_to_project_slug, get_claude_dir
-from cozempic.team import read_team_checkpoint
-from cozempic.init import COZEMPIC_HOOKS
+from winnow.legacy.session import cwd_to_project_slug, get_claude_dir
+from winnow.legacy.team import read_team_checkpoint
+from winnow.legacy.init import COZEMPIC_HOOKS
 
 
 def _run_post_compact(cwd: str) -> str:
     """Capture cmd_post_compact stdout for the given cwd."""
-    from cozempic.cli import cmd_post_compact
+    from winnow.legacy.cli import cmd_post_compact
     args = argparse.Namespace(cwd=cwd)
     captured = io.StringIO()
     old_stdout = sys.stdout
@@ -79,11 +79,11 @@ class TestCmdPostCompactCrossProjectIsolation(unittest.TestCase):
         (proj_b / "team-checkpoint.md").write_text("FANNU", encoding="utf-8")
 
         with (
-            patch("cozempic.session.get_projects_dir", return_value=tmp_path / "projects"),
-            patch("cozempic.session._session_id_from_process", return_value=None),
+            patch("winnow.legacy.session.get_projects_dir", return_value=tmp_path / "projects"),
+            patch("winnow.legacy.session._session_id_from_process", return_value=None),
             # Block Strategy 1 (active-transcript keyed by live Claude PID)
             # so a real running session in the developer's home cannot bypass strict.
-            patch("cozempic.session.find_claude_pid", return_value=None),
+            patch("winnow.legacy.session.find_claude_pid", return_value=None),
         ):
             output = _run_post_compact(cwd=cwd_a)
 
@@ -111,11 +111,11 @@ class TestCmdPostCompactCrossProjectIsolation(unittest.TestCase):
         # No team-checkpoint.md in cwd
 
         with (
-            patch("cozempic.session.get_projects_dir", return_value=tmp_path / "projects"),
-            patch("cozempic.session._session_id_from_process", return_value=None),
+            patch("winnow.legacy.session.get_projects_dir", return_value=tmp_path / "projects"),
+            patch("winnow.legacy.session._session_id_from_process", return_value=None),
             # Explicit isolation: block Strategy 1 so a real live Claude session
             # on the host cannot inject an active-transcript record.
-            patch("cozempic.session.find_claude_pid", return_value=None),
+            patch("winnow.legacy.session.find_claude_pid", return_value=None),
         ):
             output = _run_post_compact(cwd=cwd)
 
@@ -144,14 +144,14 @@ class TestCmdPostCompactCrossProjectIsolation(unittest.TestCase):
         global_cp.write_text("GLOBAL_CHECKPOINT", encoding="utf-8")
 
         with (
-            patch("cozempic.session.get_projects_dir", return_value=tmp_path / "projects"),
-            patch("cozempic.session._session_id_from_process", return_value=None),
+            patch("winnow.legacy.session.get_projects_dir", return_value=tmp_path / "projects"),
+            patch("winnow.legacy.session._session_id_from_process", return_value=None),
             # Explicit isolation: block Strategy 1 so a real live Claude session
             # on the host cannot inject an active-transcript record.
-            patch("cozempic.session.find_claude_pid", return_value=None),
+            patch("winnow.legacy.session.find_claude_pid", return_value=None),
             # get_claude_dir is imported inside read_team_checkpoint via `from .session import`
             # so we patch it at the source module level.
-            patch("cozempic.session.get_claude_dir", return_value=tmp_path / "claude_dir"),
+            patch("winnow.legacy.session.get_claude_dir", return_value=tmp_path / "claude_dir"),
         ):
             output = _run_post_compact(cwd=cwd)
 
@@ -209,11 +209,11 @@ class TestPostCompactStrategy1Isolation(unittest.TestCase):
         cwd_a = str(cwd_a_path)
 
         with (
-            patch("cozempic.session.get_projects_dir", return_value=tmp_path / "projects"),
-            patch("cozempic.session._session_id_from_process", return_value=None),
+            patch("winnow.legacy.session.get_projects_dir", return_value=tmp_path / "projects"),
+            patch("winnow.legacy.session._session_id_from_process", return_value=None),
             # Explicit isolation: find_claude_pid → None blocks Strategy 1
             # so lookup_active_transcript returns None → no cross-project leak.
-            patch("cozempic.session.find_claude_pid", return_value=None),
+            patch("winnow.legacy.session.find_claude_pid", return_value=None),
         ):
             output = _run_post_compact(cwd=cwd_a)
 
@@ -316,10 +316,10 @@ class TestReadTeamCheckpoint(unittest.TestCase):
 
 class TestCmdPostCompact(unittest.TestCase):
 
-    @patch("cozempic.team.read_team_checkpoint")
-    @patch("cozempic.session.find_current_session")
+    @patch("winnow.legacy.team.read_team_checkpoint")
+    @patch("winnow.legacy.session.find_current_session")
     def test_outputs_recovery_when_checkpoint_exists(self, mock_session, mock_read):
-        from cozempic.cli import cmd_post_compact
+        from winnow.legacy.cli import cmd_post_compact
         import argparse
 
         mock_session.return_value = {
@@ -338,10 +338,10 @@ class TestCmdPostCompact(unittest.TestCase):
 
         self.assertIn("Team: recovery-test", captured.getvalue())
 
-    @patch("cozempic.team.read_team_checkpoint")
-    @patch("cozempic.session.find_current_session")
+    @patch("winnow.legacy.team.read_team_checkpoint")
+    @patch("winnow.legacy.session.find_current_session")
     def test_silent_when_no_checkpoint(self, mock_session, mock_read):
-        from cozempic.cli import cmd_post_compact
+        from winnow.legacy.cli import cmd_post_compact
         import argparse
 
         mock_session.return_value = {

@@ -11,8 +11,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from cozempic.overflow import CircuitBreaker, OverflowRecovery, OVERFLOW_PATTERN
-from cozempic.watcher import JsonlWatcher
+from winnow.legacy.overflow import CircuitBreaker, OverflowRecovery, OVERFLOW_PATTERN
+from winnow.legacy.watcher import JsonlWatcher
 
 
 class TestCircuitBreaker(unittest.TestCase):
@@ -156,7 +156,7 @@ class TestOverflowDetection(unittest.TestCase):
         """Beyond 'Conversation too long', the widened marker set must catch the
         API-style prompt-too-long forms (the single hardcoded string may be
         TUI-only and never persisted — Batch-3 widen)."""
-        from cozempic.overflow import OVERFLOW_MARKERS
+        from winnow.legacy.overflow import OVERFLOW_MARKERS
         for marker in ("Prompt is too long", "context_length_exceeded", "maximum context length"):
             self.assertIn(marker, OVERFLOW_MARKERS)
             lines = [json.dumps({"type": "user", "message": "x"})] * 5
@@ -248,7 +248,7 @@ class TestOverflowDetection(unittest.TestCase):
             self._write_lines([json.dumps({"type": "user", "message": "x" * 1000})])
 
             # Mock guard_prune_cycle to not actually prune
-            with patch("cozempic.overflow.OverflowRecovery._do_recover") as mock_recover:
+            with patch("winnow.legacy.overflow.OverflowRecovery._do_recover") as mock_recover:
                 # Just verify the method exists and is callable
                 recovery.recover()
                 mock_recover.assert_called_once()
@@ -271,13 +271,13 @@ class TestOverflowDetection(unittest.TestCase):
 
             with (
                 patch.object(recovery, "detect_overflow", return_value=True),
-                patch("cozempic.guard.guard_prune_cycle", return_value={
+                patch("winnow.legacy.guard.guard_prune_cycle", return_value={
                     "saved_mb": 1.0,
                     "original_tokens": 1000,
                     "final_tokens": 500,
                 }),
-                patch("cozempic.guard._terminate_and_resume") as mock_reload,
-                patch("cozempic.session.find_claude_pid", return_value=None),
+                patch("winnow.legacy.guard._terminate_and_resume") as mock_reload,
+                patch("winnow.legacy.session.find_claude_pid", return_value=None),
             ):
                 recovery.recover()
 
@@ -310,13 +310,13 @@ class TestOverflowDetection(unittest.TestCase):
             buf = io.StringIO()
             with (
                 patch.object(recovery, "detect_overflow", return_value=True),
-                patch("cozempic.guard.guard_prune_cycle", return_value={
+                patch("winnow.legacy.guard.guard_prune_cycle", return_value={
                     "saved_mb": 5.95,
                     "original_tokens": 161500,
                     "final_tokens": 810200,   # re-anchored: final > original (#105)
                 }),
-                patch("cozempic.guard._terminate_and_resume"),
-                patch("cozempic.session.find_claude_pid", return_value=None),
+                patch("winnow.legacy.guard._terminate_and_resume"),
+                patch("winnow.legacy.session.find_claude_pid", return_value=None),
                 redirect_stderr(buf),
             ):
                 recovery.recover()

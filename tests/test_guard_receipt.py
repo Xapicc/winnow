@@ -11,10 +11,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from cozempic import guard
-from cozempic.metrics import validate_receipt
-from cozempic.tokens import TokenEstimate
-from cozempic.types import StrategyResult
+from winnow.legacy import guard
+from winnow.legacy.metrics import validate_receipt
+from winnow.legacy.tokens import TokenEstimate
+from winnow.legacy.types import StrategyResult
 
 
 def _args(**over):
@@ -98,8 +98,8 @@ class TestGuardReceiptIntegration(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def _drive(self, *, home, read_only_live, invoke_writer, trigger_source="guard"):
-        from cozempic.guard import guard_prune_cycle
-        from cozempic.team import TeamState
+        from winnow.legacy.guard import guard_prune_cycle
+        from winnow.legacy.team import TeamState
 
         team = MagicMock(spec=TeamState)
         team.is_empty.return_value = True
@@ -123,12 +123,12 @@ class TestGuardReceiptIntegration(unittest.TestCase):
         scratch.mkdir(exist_ok=True)
         # Build the cycle (returns the deferred writer). Mirrors the guard's current
         # mock surface: load_messages_and_snapshot + _guard_tmp_root (post-#138).
-        with patch("cozempic.guard._guard_tmp_root", return_value=scratch), \
-                patch("cozempic.guard.load_messages_and_snapshot", return_value=(orig, MagicMock())), \
-                patch("cozempic.guard.load_messages", return_value=orig), \
-                patch("cozempic.guard.prune_with_team_protect", return_value=(pruned, results, team)), \
-                patch("cozempic.tokens.estimate_session_tokens", side_effect=est), \
-                patch("cozempic.tokens.calibrate_ratio", return_value=0.5):
+        with patch("winnow.legacy.guard._guard_tmp_root", return_value=scratch), \
+                patch("winnow.legacy.guard.load_messages_and_snapshot", return_value=(orig, MagicMock())), \
+                patch("winnow.legacy.guard.load_messages", return_value=orig), \
+                patch("winnow.legacy.guard.prune_with_team_protect", return_value=(pruned, results, team)), \
+                patch("winnow.legacy.tokens.estimate_session_tokens", side_effect=est), \
+                patch("winnow.legacy.tokens.calibrate_ratio", return_value=0.5):
             result = guard_prune_cycle(
                 session_path=self.session, rx_name="gentle", config=None,
                 auto_reload=False, read_only_live=read_only_live, trigger_source=trigger_source,
@@ -140,10 +140,10 @@ class TestGuardReceiptIntegration(unittest.TestCase):
         writer = result.get("_deferred_writer")
         if invoke_writer and writer is not None:
             with patch.dict(os.environ, {"HOME": home}), \
-                    patch("cozempic.guard._PruneLock"), \
-                    patch("cozempic.guard.save_messages", return_value=None), \
-                    patch("cozempic.guard.cleanup_old_backups"), \
-                    patch("cozempic.helpers.record_savings"):
+                    patch("winnow.legacy.guard._PruneLock"), \
+                    patch("winnow.legacy.guard.save_messages", return_value=None), \
+                    patch("winnow.legacy.guard.cleanup_old_backups"), \
+                    patch("winnow.legacy.helpers.record_savings"):
                 os.environ.pop("COZEMPIC_NO_RECEIPTS", None)
                 writer()
         recdir = Path(home) / ".cozempic" / "receipts"

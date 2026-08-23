@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import unittest
 
-from cozempic.helpers import is_protected, msg_bytes
-from cozempic.executor import execute_actions, _relink_parent_chain
-from cozempic.tokens import extract_usage_tokens
-from cozempic.registry import STRATEGIES
-from cozempic.types import PruneAction
+from winnow.legacy.helpers import is_protected, msg_bytes
+from winnow.legacy.executor import execute_actions, _relink_parent_chain
+from winnow.legacy.tokens import extract_usage_tokens
+from winnow.legacy.registry import STRATEGIES
+from winnow.legacy.types import PruneAction
 
-import cozempic.strategies  # noqa: F401
+import winnow.legacy.strategies  # noqa: F401
 
 
 def make_message(line_idx: int, msg: dict) -> tuple[int, dict, int]:

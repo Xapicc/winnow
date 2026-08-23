@@ -1,6 +1,6 @@
 """Tests for shell completion generation."""
 import unittest
-from cozempic.completion import bash_completion, zsh_completion
+from winnow.legacy.completion import bash_completion, zsh_completion
 
 
 class TestBashCompletion(unittest.TestCase):

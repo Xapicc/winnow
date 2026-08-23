@@ -12,12 +12,12 @@ from unittest.mock import MagicMock, patch
 
 class TestVersionTuple(unittest.TestCase):
     def test_parses_version(self):
-        from cozempic.updater import _version_tuple
+        from winnow.legacy.updater import _version_tuple
         self.assertEqual(_version_tuple("1.2.0"), (1, 2, 0))
         self.assertEqual(_version_tuple("2.0.0"), (2, 0, 0))
 
     def test_bad_version_returns_zeros(self):
-        from cozempic.updater import _version_tuple
+        from winnow.legacy.updater import _version_tuple
         self.assertEqual(_version_tuple("bad"), (0,))
 
 
@@ -26,8 +26,8 @@ class TestShouldCheck(unittest.TestCase):
         import tempfile
         with tempfile.TemporaryDirectory() as d:
             cache = Path(d) / ".cozempic_update_check"
-            with patch("cozempic.updater._CACHE_FILE", cache):
-                from cozempic.updater import _should_check
+            with patch("winnow.legacy.updater._CACHE_FILE", cache):
+                from winnow.legacy.updater import _should_check
                 self.assertTrue(_should_check())
 
     def test_recent_check_means_skip(self):
@@ -35,8 +35,8 @@ class TestShouldCheck(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             cache = Path(d) / ".cozempic_update_check"
             cache.write_text(str(time.time()))
-            with patch("cozempic.updater._CACHE_FILE", cache):
-                from cozempic.updater import _should_check
+            with patch("winnow.legacy.updater._CACHE_FILE", cache):
+                from winnow.legacy.updater import _should_check
                 self.assertFalse(_should_check())
 
     def test_old_check_means_should_check(self):
@@ -44,8 +44,8 @@ class TestShouldCheck(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             cache = Path(d) / ".cozempic_update_check"
             cache.write_text(str(time.time() - 90000))  # 25 hours ago
-            with patch("cozempic.updater._CACHE_FILE", cache):
-                from cozempic.updater import _should_check
+            with patch("winnow.legacy.updater._CACHE_FILE", cache):
+                from winnow.legacy.updater import _should_check
                 self.assertTrue(_should_check())
 
 
@@ -73,8 +73,8 @@ class TestMaybeAutoUpdate(_EnvIsolated):
     def test_skips_when_env_var_set(self):
         """COZEMPIC_NO_AUTO_UPDATE=1 disables all update activity."""
         with patch.dict(os.environ, {"COZEMPIC_NO_AUTO_UPDATE": "1"}):
-            with patch("cozempic.updater._should_check") as mock_check:
-                from cozempic.updater import maybe_auto_update
+            with patch("winnow.legacy.updater._should_check") as mock_check:
+                from winnow.legacy.updater import maybe_auto_update
                 maybe_auto_update()
                 mock_check.assert_not_called()
 
@@ -82,39 +82,39 @@ class TestMaybeAutoUpdate(_EnvIsolated):
         """Auto-update should work even without TTY (hooks, daemons)."""
         with patch("sys.stdout") as mock_stdout:
             mock_stdout.isatty.return_value = False
-            with patch("cozempic.updater._should_check", return_value=False) as mock_check:
-                from cozempic.updater import maybe_auto_update
+            with patch("winnow.legacy.updater._should_check", return_value=False) as mock_check:
+                from winnow.legacy.updater import maybe_auto_update
                 maybe_auto_update()
                 mock_check.assert_called()  # Should still check (TTY no longer blocks)
 
     def test_skips_when_already_checked(self):
         with patch("sys.stdout") as mock_stdout:
             mock_stdout.isatty.return_value = True
-            with patch("cozempic.updater._should_check", return_value=False):
-                with patch("cozempic.updater._get_latest_version") as mock_get:
-                    from cozempic.updater import maybe_auto_update
+            with patch("winnow.legacy.updater._should_check", return_value=False):
+                with patch("winnow.legacy.updater._get_latest_version") as mock_get:
+                    from winnow.legacy.updater import maybe_auto_update
                     maybe_auto_update()
                     mock_get.assert_not_called()
 
     def test_skips_when_already_up_to_date(self):
         with patch("sys.stdout") as mock_stdout:
             mock_stdout.isatty.return_value = True
-            with patch("cozempic.updater._should_check", return_value=True), \
-                 patch("cozempic.updater._mark_checked"), \
-                 patch("cozempic.updater._get_latest_version", return_value="0.0.1"), \
-                 patch("cozempic.updater._do_upgrade") as mock_upgrade:
-                from cozempic.updater import maybe_auto_update
+            with patch("winnow.legacy.updater._should_check", return_value=True), \
+                 patch("winnow.legacy.updater._mark_checked"), \
+                 patch("winnow.legacy.updater._get_latest_version", return_value="0.0.1"), \
+                 patch("winnow.legacy.updater._do_upgrade") as mock_upgrade:
+                from winnow.legacy.updater import maybe_auto_update
                 maybe_auto_update()
                 mock_upgrade.assert_not_called()
 
     def test_upgrades_when_newer_version_available(self, capsys=None):
         with patch("sys.stdout") as mock_stdout:
             mock_stdout.isatty.return_value = True
-            with patch("cozempic.updater._should_check", return_value=True), \
-                 patch("cozempic.updater._mark_checked"), \
-                 patch("cozempic.updater._get_latest_version", return_value="99.99.99"), \
-                 patch("cozempic.updater._do_upgrade", return_value=True) as mock_upgrade:
-                from cozempic.updater import maybe_auto_update
+            with patch("winnow.legacy.updater._should_check", return_value=True), \
+                 patch("winnow.legacy.updater._mark_checked"), \
+                 patch("winnow.legacy.updater._get_latest_version", return_value="99.99.99"), \
+                 patch("winnow.legacy.updater._do_upgrade", return_value=True) as mock_upgrade:
+                from winnow.legacy.updater import maybe_auto_update
                 maybe_auto_update()
                 mock_upgrade.assert_called_once_with("99.99.99")
 
@@ -123,12 +123,12 @@ class TestMaybeAutoUpdate(_EnvIsolated):
             mock_stdout.isatty.return_value = True
             calls = []
             mock_stdout.write = lambda s: calls.append(s)
-            with patch("cozempic.updater._should_check", return_value=True), \
-                 patch("cozempic.updater._mark_checked"), \
-                 patch("cozempic.updater._get_latest_version", return_value="99.99.99"), \
-                 patch("cozempic.updater._do_upgrade", return_value=False), \
+            with patch("winnow.legacy.updater._should_check", return_value=True), \
+                 patch("winnow.legacy.updater._mark_checked"), \
+                 patch("winnow.legacy.updater._get_latest_version", return_value="99.99.99"), \
+                 patch("winnow.legacy.updater._do_upgrade", return_value=False), \
                  patch("builtins.print") as mock_print:
-                from cozempic.updater import maybe_auto_update
+                from winnow.legacy.updater import maybe_auto_update
                 maybe_auto_update()
                 printed = " ".join(str(a) for call in mock_print.call_args_list for a in call[0])
                 self.assertIn("auto-update failed", printed)
@@ -136,11 +136,11 @@ class TestMaybeAutoUpdate(_EnvIsolated):
     def test_no_op_when_pypi_unreachable(self):
         with patch("sys.stdout") as mock_stdout:
             mock_stdout.isatty.return_value = True
-            with patch("cozempic.updater._should_check", return_value=True), \
-                 patch("cozempic.updater._mark_checked"), \
-                 patch("cozempic.updater._get_latest_version", return_value=None), \
-                 patch("cozempic.updater._do_upgrade") as mock_upgrade:
-                from cozempic.updater import maybe_auto_update
+            with patch("winnow.legacy.updater._should_check", return_value=True), \
+                 patch("winnow.legacy.updater._mark_checked"), \
+                 patch("winnow.legacy.updater._get_latest_version", return_value=None), \
+                 patch("winnow.legacy.updater._do_upgrade") as mock_upgrade:
+                from winnow.legacy.updater import maybe_auto_update
                 maybe_auto_update()
                 mock_upgrade.assert_not_called()
 
@@ -151,7 +151,7 @@ class TestInstallMethodDetection(unittest.TestCase):
     never moves), which is why brew/uvx users silently stayed behind."""
 
     def _method_for(self, path):
-        from cozempic import updater
+        from winnow.legacy import updater
         with patch.object(updater, "__file__", path):
             return updater._install_method()
 
@@ -178,26 +178,26 @@ class TestInstallMethodDetection(unittest.TestCase):
 
 class TestDoUpgradeDispatch(unittest.TestCase):
     def test_brew_never_autoruns(self):
-        from cozempic import updater
+        from winnow.legacy import updater
         with patch.object(updater, "_install_method", return_value="brew"), \
-             patch("cozempic.updater.subprocess.run") as run:
+             patch("winnow.legacy.updater.subprocess.run") as run:
             self.assertFalse(updater._do_upgrade("9.9.9"))
             run.assert_not_called()
 
     def test_uv_tool_runs_uv_tool_upgrade(self):
-        from cozempic import updater
+        from winnow.legacy import updater
         with patch.object(updater, "_install_method", return_value="uv-tool"), \
-             patch("cozempic.updater.shutil.which", return_value="/usr/bin/uv"), \
-             patch("cozempic.updater.subprocess.run",
+             patch("winnow.legacy.updater.shutil.which", return_value="/usr/bin/uv"), \
+             patch("winnow.legacy.updater.subprocess.run",
                    return_value=MagicMock(returncode=0)) as run:
             self.assertTrue(updater._do_upgrade("9.9.9"))
             self.assertEqual(run.call_args[0][0], ["uv", "tool", "upgrade", "cozempic"])
 
     def test_pip_uses_install_chain(self):
-        from cozempic import updater
+        from winnow.legacy import updater
         with patch.object(updater, "_install_method", return_value="pip"), \
-             patch("cozempic.updater.shutil.which", return_value=None), \
-             patch("cozempic.updater.subprocess.run",
+             patch("winnow.legacy.updater.shutil.which", return_value=None), \
+             patch("winnow.legacy.updater.subprocess.run",
                    return_value=MagicMock(returncode=0)) as run:
             self.assertTrue(updater._do_upgrade("9.9.9"))
             # first attempt is `pip install cozempic==…` via sys.executable
@@ -209,32 +209,32 @@ class TestAutoUpdateOptOuts(_EnvIsolated):
     and COZEMPIC_PIN holds a reviewed version without auto-installing it."""
 
     def test_no_auto_update_skips_everything(self):
-        from cozempic import updater
+        from winnow.legacy import updater
         os.environ["COZEMPIC_NO_AUTO_UPDATE"] = "1"
-        with patch("cozempic.updater._should_check") as sc, \
-             patch("cozempic.updater._do_upgrade") as up:
+        with patch("winnow.legacy.updater._should_check") as sc, \
+             patch("winnow.legacy.updater._do_upgrade") as up:
             updater.maybe_auto_update(force=True)
             sc.assert_not_called()   # returns before even checking
             up.assert_not_called()
 
     def test_pin_disables_autoupdate(self):
-        from cozempic import updater
+        from winnow.legacy import updater
         os.environ["COZEMPIC_PIN"] = updater.__version__  # pinned to current
-        with patch("cozempic.updater._get_latest_version", return_value="99.0.0"), \
-             patch("cozempic.updater._do_upgrade") as up, \
-             patch("cozempic.updater._should_check", return_value=True):
+        with patch("winnow.legacy.updater._get_latest_version", return_value="99.0.0"), \
+             patch("winnow.legacy.updater._do_upgrade") as up, \
+             patch("winnow.legacy.updater._should_check", return_value=True):
             updater.maybe_auto_update(force=True)
             up.assert_not_called()   # never upgrades while pinned
 
     def test_pin_warns_on_drift(self):
         import io
-        from cozempic import updater
+        from winnow.legacy import updater
         os.environ["COZEMPIC_PIN"] = "1.0.0"  # != current installed version
         buf = io.StringIO()
         with patch("sys.stdout", buf), \
-             patch("cozempic.updater._should_check", return_value=True), \
-             patch("cozempic.updater._mark_checked"), \
-             patch("cozempic.updater._do_upgrade") as up:
+             patch("winnow.legacy.updater._should_check", return_value=True), \
+             patch("winnow.legacy.updater._mark_checked"), \
+             patch("winnow.legacy.updater._do_upgrade") as up:
             updater.maybe_auto_update(force=True)
             up.assert_not_called()
         out = buf.getvalue()
@@ -243,17 +243,17 @@ class TestAutoUpdateOptOuts(_EnvIsolated):
 
     def test_pin_matching_current_is_silent(self):
         import io
-        from cozempic import updater
+        from winnow.legacy import updater
         os.environ["COZEMPIC_PIN"] = updater.__version__
         buf = io.StringIO()
         with patch("sys.stdout", buf), \
-             patch("cozempic.updater._should_check", return_value=True), \
-             patch("cozempic.updater._do_upgrade"):
+             patch("winnow.legacy.updater._should_check", return_value=True), \
+             patch("winnow.legacy.updater._do_upgrade"):
             updater.maybe_auto_update(force=True)
         self.assertEqual(buf.getvalue(), "", "no drift warning when pin == current")
 
     def test_pinned_version_helper(self):
-        from cozempic import updater
+        from winnow.legacy import updater
         self.assertIsNone(updater._pinned_version())
         os.environ["COZEMPIC_PIN"] = " 1.8.30 "
         self.assertEqual(updater._pinned_version(), "1.8.30")  # trimmed
@@ -262,23 +262,23 @@ class TestAutoUpdateOptOuts(_EnvIsolated):
         # #123 QA P3: a whitespace-only pin must be PINNED (auto-update OFF), the
         # same as the hook's `[ -z "$COZEMPIC_PIN" ]` (non-empty → skip upgrade),
         # not fall through to auto-update as the old .strip()->None did.
-        from cozempic import updater
+        from winnow.legacy import updater
         os.environ["COZEMPIC_PIN"] = "   "
         self.assertTrue(updater._pinned_version())  # truthy → counts as pinned
-        with patch("cozempic.updater._should_check", return_value=True), \
-             patch("cozempic.updater._do_upgrade") as up:
+        with patch("winnow.legacy.updater._should_check", return_value=True), \
+             patch("winnow.legacy.updater._do_upgrade") as up:
             updater.maybe_auto_update(force=True)
             up.assert_not_called()
 
     def test_v_prefix_pin_does_not_false_warn(self):
         # #123 QA P3: COZEMPIC_PIN=v<current> must not warn against <current>.
         import io
-        from cozempic import updater
+        from winnow.legacy import updater
         os.environ["COZEMPIC_PIN"] = "v" + updater.__version__
         buf = io.StringIO()
         with patch("sys.stdout", buf), \
-             patch("cozempic.updater._should_check", return_value=True), \
-             patch("cozempic.updater._do_upgrade"):
+             patch("winnow.legacy.updater._should_check", return_value=True), \
+             patch("winnow.legacy.updater._do_upgrade"):
             updater.maybe_auto_update(force=True)
         self.assertEqual(buf.getvalue(), "", "leading-v pin equal to current must be silent")
 
@@ -286,13 +286,13 @@ class TestAutoUpdateOptOuts(_EnvIsolated):
         # #123 QA P3: a non-version pin still disables update but must NOT print a
         # copy-paste `pip install 'cozempic==garbage'` that errors.
         import io
-        from cozempic import updater
+        from winnow.legacy import updater
         os.environ["COZEMPIC_PIN"] = "garbage"
         buf = io.StringIO()
         with patch("sys.stdout", buf), \
-             patch("cozempic.updater._should_check", return_value=True), \
-             patch("cozempic.updater._mark_checked"), \
-             patch("cozempic.updater._do_upgrade") as up:
+             patch("winnow.legacy.updater._should_check", return_value=True), \
+             patch("winnow.legacy.updater._mark_checked"), \
+             patch("winnow.legacy.updater._do_upgrade") as up:
             updater.maybe_auto_update(force=True)
             up.assert_not_called()       # still pinned → no upgrade
         self.assertNotIn("pip install", buf.getvalue())  # but no broken command
@@ -302,14 +302,14 @@ class TestAutoUpdateOptOuts(_EnvIsolated):
         # NOT a pip-installable version — _VERSION_SHAPE (re.A) must reject it so we
         # never print an un-runnable `pip install 'cozempic==１.８.３２'`.
         import io
-        from cozempic import updater
+        from winnow.legacy import updater
         for v in ("１.８.３２", "١.٨.٣٢"):
             os.environ["COZEMPIC_PIN"] = v
             buf = io.StringIO()
             with patch("sys.stdout", buf), \
-                 patch("cozempic.updater._should_check", return_value=True), \
-                 patch("cozempic.updater._mark_checked"), \
-                 patch("cozempic.updater._do_upgrade") as up:
+                 patch("winnow.legacy.updater._should_check", return_value=True), \
+                 patch("winnow.legacy.updater._mark_checked"), \
+                 patch("winnow.legacy.updater._do_upgrade") as up:
                 updater.maybe_auto_update(force=True)
                 up.assert_not_called()                    # still pinned → no upgrade
             self.assertNotIn("pip install", buf.getvalue())  # no un-runnable command
@@ -322,8 +322,8 @@ class TestHookHonorsOptOuts(unittest.TestCase):
     def test_sessionstart_upgrade_is_guarded(self):
         import json
         from pathlib import Path
-        import cozempic
-        hooks = json.loads((Path(cozempic.__file__).parent / "data" / "hooks.json").read_text())
+        import winnow.legacy
+        hooks = json.loads((Path(winnow.legacy.__file__).parent / "data" / "hooks.json").read_text())
         cmd = hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"]
         # The pip --upgrade must be inside a guard that checks both opt-outs.
         guard = 'if [ -z "$COZEMPIC_NO_AUTO_UPDATE" ] && [ -z "$COZEMPIC_PIN" ]; then'
@@ -373,14 +373,14 @@ class TestHookHonorsOptOuts(unittest.TestCase):
 class TestMaybeAutoUpdateBrew(_EnvIsolated):
     def test_brew_prints_hint_and_does_not_attempt(self):
         import io
-        from cozempic import updater
+        from winnow.legacy import updater
         buf = io.StringIO()
         with patch("sys.stdout", buf), \
-             patch("cozempic.updater._should_check", return_value=True), \
-             patch("cozempic.updater._mark_checked"), \
-             patch("cozempic.updater._get_latest_version", return_value="99.0.0"), \
+             patch("winnow.legacy.updater._should_check", return_value=True), \
+             patch("winnow.legacy.updater._mark_checked"), \
+             patch("winnow.legacy.updater._get_latest_version", return_value="99.0.0"), \
              patch.object(updater, "_install_method", return_value="brew"), \
-             patch("cozempic.updater._do_upgrade") as up:
+             patch("winnow.legacy.updater._do_upgrade") as up:
             updater.maybe_auto_update()
             up.assert_not_called()
         out = buf.getvalue()

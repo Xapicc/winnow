@@ -15,7 +15,7 @@ FIXTURES = Path(__file__).parent / "fixtures" / "sessions"
 
 
 def load_fixture(name: str):
-    from cozempic.session import load_messages
+    from winnow.legacy.session import load_messages
     return load_messages(FIXTURES / name)
 
 
@@ -23,8 +23,8 @@ def load_fixture(name: str):
 
 def test_standard_rx_reduces_bloated_session():
     """Standard prescription must cut a bloated session to under 60% of original size."""
-    from cozempic.registry import PRESCRIPTIONS
-    from cozempic.executor import run_prescription
+    from winnow.legacy.registry import PRESCRIPTIONS
+    from winnow.legacy.executor import run_prescription
 
     messages = load_fixture("solo_bloated.jsonl")
     original_bytes = sum(b for _, _, b in messages)
@@ -37,8 +37,8 @@ def test_standard_rx_reduces_bloated_session():
 
 
 def test_aggressive_rx_reduces_more_than_standard():
-    from cozempic.registry import PRESCRIPTIONS
-    from cozempic.executor import run_prescription
+    from winnow.legacy.registry import PRESCRIPTIONS
+    from winnow.legacy.executor import run_prescription
 
     messages = load_fixture("solo_bloated.jsonl")
     std_msgs, _ = run_prescription(messages, PRESCRIPTIONS["standard"], {})
@@ -52,7 +52,7 @@ def test_aggressive_rx_reduces_more_than_standard():
 
 def test_team_protect_preserves_both_task_results():
     """prune_with_team_protect must keep both Task tool_result messages intact."""
-    from cozempic.guard import prune_with_team_protect
+    from winnow.legacy.guard import prune_with_team_protect
 
     messages = load_fixture("team_two_subagents.jsonl")
     pruned, _, team_state = prune_with_team_protect(messages, rx_name="standard")
@@ -79,8 +79,8 @@ def test_team_protect_preserves_both_task_results():
 def test_fix_corrupted_tool_use_repairs_and_produces_valid_jsonl(tmp_path):
     """fix_corrupted_tool_use must repair the corrupted block and write valid JSONL."""
     import shutil
-    from cozempic.doctor import fix_corrupted_tool_use, check_corrupted_tool_use
-    from cozempic.session import get_projects_dir
+    from winnow.legacy.doctor import fix_corrupted_tool_use, check_corrupted_tool_use
+    from winnow.legacy.session import get_projects_dir
 
     # Copy fixture into a temp projects dir
     proj_dir = tmp_path / "projects" / "test-proj"
@@ -89,7 +89,7 @@ def test_fix_corrupted_tool_use_repairs_and_produces_valid_jsonl(tmp_path):
     shutil.copy(FIXTURES / "corrupted_tool_use.jsonl", dest)
 
     with pytest.MonkeyPatch().context() as mp:
-        mp.setattr("cozempic.session.get_projects_dir", lambda: tmp_path / "projects")
+        mp.setattr("winnow.legacy.session.get_projects_dir", lambda: tmp_path / "projects")
 
         check_result = check_corrupted_tool_use()
         assert check_result.status == "issue", "Should detect corrupted block"
@@ -102,7 +102,7 @@ def test_fix_corrupted_tool_use_repairs_and_produces_valid_jsonl(tmp_path):
                 json.loads(line)
 
         # Repaired block must have name <= 200 chars
-        from cozempic.session import load_messages
+        from winnow.legacy.session import load_messages
         for _, msg, _ in load_messages(dest):
             content = msg.get("message", {}).get("content", [])
             if not isinstance(content, list):
@@ -116,21 +116,21 @@ def test_fix_corrupted_tool_use_repairs_and_produces_valid_jsonl(tmp_path):
 
 def test_fix_orphaned_tool_results_removes_orphan(tmp_path):
     import shutil
-    from cozempic.doctor import check_orphaned_tool_results, fix_orphaned_tool_results
+    from winnow.legacy.doctor import check_orphaned_tool_results, fix_orphaned_tool_results
 
     proj_dir = tmp_path / "projects" / "test-proj"
     proj_dir.mkdir(parents=True)
     shutil.copy(FIXTURES / "orphaned_tool_results.jsonl", proj_dir / "sess.jsonl")
 
     with pytest.MonkeyPatch().context() as mp:
-        mp.setattr("cozempic.session.get_projects_dir", lambda: tmp_path / "projects")
+        mp.setattr("winnow.legacy.session.get_projects_dir", lambda: tmp_path / "projects")
 
         check_result = check_orphaned_tool_results()
         assert check_result.status == "issue"
 
         fix_orphaned_tool_results()
 
-        from cozempic.session import load_messages
+        from winnow.legacy.session import load_messages
         messages = load_messages(proj_dir / "sess.jsonl")
         for _, msg, _ in messages:
             content = msg.get("message", {}).get("content", [])

@@ -30,9 +30,9 @@ import json
 import unittest
 from pathlib import Path
 
-from cozempic.guard import detect_in_flight, safe_to_reload
-from cozempic.team import TEAM_TOOL_NAMES, extract_team_state
-from cozempic.session import load_messages
+from winnow.legacy.guard import detect_in_flight, safe_to_reload
+from winnow.legacy.team import TEAM_TOOL_NAMES, extract_team_state
+from winnow.legacy.session import load_messages
 
 
 def _tu(i, name, inp):
@@ -338,7 +338,7 @@ class TestReloadGateHardening1824(unittest.TestCase):
     def test_net_correlates_spawn_marker_to_paired_tool(self):
         # Directly pin the correlation: the SAME marker text counts only when its
         # paired tool_use is a spawn tool — a Read result must not, an Agent result must.
-        from cozempic.guard import _unresolved_team_coordination
+        from winnow.legacy.guard import _unresolved_team_coordination
         read_m = load_messages(_write(self.tmp, [
             _tu("r1", "Read", {"file_path": "x.py"}), _tr("r1", "agent_id: alice@squad")]))
         self.assertFalse(_unresolved_team_coordination(read_m, None),
@@ -515,7 +515,7 @@ class TestTaskNotificationRealFormat1825(unittest.TestCase):
         self.assertFalse(safe, "an uncompleted background Agent must still block")
 
     def test_terminal_task_statuses_are_inactive(self):
-        from cozempic.team import TeamState, TaskInfo
+        from winnow.legacy.team import TeamState, TaskInfo
         for st in ("closed", "resolved", "finished", "merged", "skipped", "completed", "done"):
             ts = TeamState()
             ts.tasks = [TaskInfo(task_id="T1", subject="do x", status=st)]

@@ -16,11 +16,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from cozempic.session import (
+from winnow.legacy.session import (
     load_messages, load_messages_and_snapshot, save_messages,
     find_sessions, find_current_session,
 )
-from cozempic.executor import run_prescription
+from winnow.legacy.executor import run_prescription
 
 
 class TestSurrogateInStringByteExactP0(unittest.TestCase):
@@ -50,7 +50,7 @@ class TestTeamPrePassUnhashable(unittest.TestCase):
     unhashable list/dict name or id raised TypeError -> guard respawn storm."""
 
     def test_unhashable_name_and_id_do_not_crash_extract(self):
-        from cozempic.team import extract_team_state
+        from winnow.legacy.team import extract_team_state
         for blk in (
             {"type": "tool_use", "id": ["evil"], "name": "Task", "input": {"prompt": "x"}},
             {"type": "tool_use", "id": "ok", "name": ["Task"], "input": {}},
@@ -97,12 +97,12 @@ class TestReadOnlyConsumersNonDictBlock(unittest.TestCase):
         return load_messages(p)
 
     def test_recap_survives_non_dict_block(self):
-        from cozempic.recap import generate_recap
+        from winnow.legacy.recap import generate_recap
         with tempfile.TemporaryDirectory() as d:
             generate_recap(self._session(d))  # must not raise
 
     def test_diagnose_survives_non_dict_block(self):
-        from cozempic.diagnosis import diagnose_session
+        from winnow.legacy.diagnosis import diagnose_session
         with tempfile.TemporaryDirectory() as d:
             diagnose_session(self._session(d))  # must not raise
 

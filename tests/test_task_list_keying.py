@@ -34,8 +34,8 @@ def _tool_result(tool_use_id, text):
 
 def _extract(msgs):
     """extract_team_state with config isolation (no live ~/.claude/teams/ merge)."""
-    from cozempic.team import extract_team_state
-    with patch("cozempic.team.load_team_configs", return_value=[]):
+    from winnow.legacy.team import extract_team_state
+    with patch("winnow.legacy.team.load_team_configs", return_value=[]):
         return extract_team_state(msgs)
 
 

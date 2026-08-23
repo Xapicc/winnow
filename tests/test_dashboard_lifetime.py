@@ -10,9 +10,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from cozempic import cli
-from cozempic.dashboard.lifetime import load_lifetime
-from cozempic.dashboard.render import render_html
+from winnow.legacy import cli
+from winnow.legacy.dashboard.lifetime import load_lifetime
+from winnow.legacy.dashboard.render import render_html
 
 
 def _ledger_file(tmp, data):
@@ -110,7 +110,7 @@ class TestSessionMultiplier(unittest.TestCase):
 
 class TestRecordSavingsSessions(unittest.TestCase):
     def test_distinct_pruned_sessions_counted(self):
-        from cozempic import helpers
+        from winnow.legacy import helpers
 
         with tempfile.TemporaryDirectory() as tmp:
             sav = Path(tmp) / "sav.json"

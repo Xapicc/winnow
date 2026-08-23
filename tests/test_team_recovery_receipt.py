@@ -28,7 +28,7 @@ class TestBuildTeamRecoveryReceiptTerminalStatuses(unittest.TestCase):
     """
 
     def _make_quiescent_state(self, tm_status: str):
-        from cozempic.team import TeamState, TeammateInfo, TaskInfo
+        from winnow.legacy.team import TeamState, TeammateInfo, TaskInfo
         return TeamState(
             team_name="myteam",
             lead_agent_id="lead@myteam",
@@ -49,7 +49,7 @@ class TestBuildTeamRecoveryReceiptTerminalStatuses(unittest.TestCase):
         GREEN after fix: 'failed' in _TEAMMATE_QUIESCENT → has_active_work=False
         → gaps=[] → verdict='complete'.
         """
-        from cozempic.team import build_team_recovery_receipt
+        from winnow.legacy.team import build_team_recovery_receipt
         receipt = build_team_recovery_receipt(self._make_quiescent_state("failed"))
         self.assertEqual(
             "complete",
@@ -66,7 +66,7 @@ class TestBuildTeamRecoveryReceiptTerminalStatuses(unittest.TestCase):
         RED at base: 'cancelled' not in {"done","completed"} → partial.
         GREEN after fix: 'cancelled' in _TEAMMATE_QUIESCENT → complete.
         """
-        from cozempic.team import build_team_recovery_receipt
+        from winnow.legacy.team import build_team_recovery_receipt
         receipt = build_team_recovery_receipt(self._make_quiescent_state("cancelled"))
         self.assertEqual(
             "complete",
@@ -81,7 +81,7 @@ class TestBuildTeamRecoveryReceiptTerminalStatuses(unittest.TestCase):
         RED at base: 'aborted' not in {"done","completed"} → partial.
         GREEN after fix: 'aborted' in _TEAMMATE_QUIESCENT → complete.
         """
-        from cozempic.team import build_team_recovery_receipt
+        from winnow.legacy.team import build_team_recovery_receipt
         receipt = build_team_recovery_receipt(self._make_quiescent_state("aborted"))
         self.assertEqual(
             "complete",
@@ -94,7 +94,7 @@ class TestBuildTeamRecoveryReceiptTerminalStatuses(unittest.TestCase):
 
         Verifies the fix doesn't regress the existing behavior for 'done'.
         """
-        from cozempic.team import build_team_recovery_receipt
+        from winnow.legacy.team import build_team_recovery_receipt
         receipt = build_team_recovery_receipt(self._make_quiescent_state("done"))
         self.assertEqual(
             "complete",
@@ -105,7 +105,7 @@ class TestBuildTeamRecoveryReceiptTerminalStatuses(unittest.TestCase):
 
     def test_completed_teammate_not_active(self):
         """Positive control (GREEN at base): 'completed' was already in the old set."""
-        from cozempic.team import build_team_recovery_receipt
+        from winnow.legacy.team import build_team_recovery_receipt
         receipt = build_team_recovery_receipt(self._make_quiescent_state("completed"))
         self.assertEqual(
             "complete",
@@ -130,8 +130,8 @@ class TestTeammateQuiescentSetParity(unittest.TestCase):
         and the P0-C fix is incomplete.  ERROR at base (_TEAMMATE_QUIESCENT doesn't
         exist yet → ImportError). GREEN after fix.
         """
-        from cozempic.team import _TEAMMATE_QUIESCENT
-        from cozempic.guard import _STATUS_TERMINAL
+        from winnow.legacy.team import _TEAMMATE_QUIESCENT
+        from winnow.legacy.guard import _STATUS_TERMINAL
         self.assertEqual(
             _TEAMMATE_QUIESCENT,
             _STATUS_TERMINAL,

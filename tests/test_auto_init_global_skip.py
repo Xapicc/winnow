@@ -18,7 +18,7 @@ class TestAutoInitGlobalSkip(unittest.TestCase):
 
     def _write_current_hooks(self, claude_dir):
         """Write a settings.json with current-schema cozempic hooks."""
-        from cozempic.init import HOOK_SCHEMA_MARKER
+        from winnow.legacy.init import HOOK_SCHEMA_MARKER
         settings = claude_dir / "settings.json"
         settings.write_text(json.dumps({
             "hooks": {
@@ -49,7 +49,7 @@ class TestAutoInitGlobalSkip(unittest.TestCase):
 
     def test_skips_when_global_hooks_current(self):
         """Global hooks current -> no local init."""
-        from cozempic import cli
+        from winnow.legacy import cli
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "home"
             home_claude = home / ".claude"
@@ -66,7 +66,7 @@ class TestAutoInitGlobalSkip(unittest.TestCase):
 
     def test_fires_when_global_hooks_absent(self):
         """No global hooks -> local auto-init should fire."""
-        from cozempic import cli
+        from winnow.legacy import cli
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "home"
             home_claude = home / ".claude"
@@ -83,7 +83,7 @@ class TestAutoInitGlobalSkip(unittest.TestCase):
 
     def test_fires_when_global_hooks_stale(self):
         """Global hooks stale (old schema) -> local auto-init should fire."""
-        from cozempic import cli
+        from winnow.legacy import cli
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "home"
             home_claude = home / ".claude"
@@ -100,7 +100,7 @@ class TestAutoInitGlobalSkip(unittest.TestCase):
 
     def test_warns_when_global_current_and_local_hooks_present(self):
         """Global hooks current + local hooks exist -> warn to stderr."""
-        from cozempic import cli
+        from winnow.legacy import cli
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "home"
             home_claude = home / ".claude"
@@ -127,7 +127,7 @@ class TestAutoInitGlobalSkip(unittest.TestCase):
 
     def test_no_warn_when_global_current_and_no_local_hooks(self):
         """Global hooks current + no local hooks -> skip silently, no warning."""
-        from cozempic import cli
+        from winnow.legacy import cli
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "home"
             home_claude = home / ".claude"
@@ -155,7 +155,7 @@ class TestAutoInitGlobalSkip(unittest.TestCase):
         the global-skip branch from firing. We verify by making
         _project_is_cozempic_current return False so run_init is called,
         proving the global-skip branch (which would return early) was NOT taken."""
-        from cozempic import cli
+        from winnow.legacy import cli
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "home"
             home_claude = home / ".claude"

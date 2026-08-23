@@ -19,7 +19,7 @@ import time
 import unittest
 from unittest.mock import MagicMock, call, patch
 
-from cozempic.watcher import JsonlWatcher
+from winnow.legacy.watcher import JsonlWatcher
 
 
 # ---------------------------------------------------------------------------
@@ -313,7 +313,7 @@ class TestJsonlWatcherCallbackErrorLoggedPoll(unittest.TestCase):
 
             captured = io.StringIO()
             # Patch sys.stderr in the watcher module so the background thread sees it
-            import cozempic.watcher as watcher_mod
+            import winnow.legacy.watcher as watcher_mod
             old_stderr = watcher_mod.sys.stderr
             watcher_mod.sys.stderr = captured
 
@@ -375,7 +375,7 @@ class TestJsonlWatcherCallbackErrorLoggedPoll(unittest.TestCase):
             w = _make_watcher(path, bad_cb, use_kqueue=False)
 
             captured = io.StringIO()
-            import cozempic.watcher as watcher_mod
+            import winnow.legacy.watcher as watcher_mod
             old_stderr = watcher_mod.sys.stderr
             watcher_mod.sys.stderr = captured
 
@@ -422,7 +422,7 @@ class TestJsonlWatcherCallbackErrorLoggedPoll(unittest.TestCase):
             w = _make_watcher(path, intermittent_cb, use_kqueue=False)
 
             captured = io.StringIO()
-            import cozempic.watcher as watcher_mod
+            import winnow.legacy.watcher as watcher_mod
             old_stderr = watcher_mod.sys.stderr
             watcher_mod.sys.stderr = captured
 
@@ -466,7 +466,7 @@ class TestJsonlWatcherCallbackErrorLoggedKqueue(unittest.TestCase):
             w = _make_watcher(path, bad_cb, use_kqueue=True)
 
             captured = io.StringIO()
-            import cozempic.watcher as watcher_mod
+            import winnow.legacy.watcher as watcher_mod
             old_stderr = watcher_mod.sys.stderr
             watcher_mod.sys.stderr = captured
 
@@ -604,7 +604,7 @@ class TestJsonlWatcherImportIdiom(unittest.TestCase):
 
     def test_module_has_has_kqueue_constant(self):
         """After fix, watcher module must expose _HAS_KQUEUE at module level."""
-        import cozempic.watcher as watcher_mod
+        import winnow.legacy.watcher as watcher_mod
         self.assertTrue(
             hasattr(watcher_mod, "_HAS_KQUEUE"),
             "_HAS_KQUEUE module-level constant missing. W6 not fixed: "
@@ -613,7 +613,7 @@ class TestJsonlWatcherImportIdiom(unittest.TestCase):
 
     def test_init_uses_module_constant_not_import_idiom(self):
         """JsonlWatcher._use_kqueue must be derived from _HAS_KQUEUE, not inline __import__."""
-        import cozempic.watcher as watcher_mod
+        import winnow.legacy.watcher as watcher_mod
         with tempfile.NamedTemporaryFile(delete=False, suffix=".jsonl") as f:
             path = f.name
         try:

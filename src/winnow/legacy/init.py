@@ -28,7 +28,7 @@ def _c(args: str) -> str:
 
 
 # ─── Hook definitions ────────────────────────────────────────────────────────
-# The canonical source is src/cozempic/data/hooks.json (also shipped to
+# The canonical source is src/winnow/legacy/data/hooks.json (also shipped to
 # users via the plugin marketplace as plugin/hooks/hooks.json — kept in sync
 # by tests/test_hooks_sync.py). Editing the dict literal that used to live
 # here is gone; edit the JSON file instead.
@@ -63,7 +63,7 @@ def _load_canonical_hooks() -> dict:
     try:
         try:
             from importlib.resources import files
-            data = files("cozempic").joinpath("data/hooks.json").read_text(encoding="utf-8")
+            data = files("winnow.legacy").joinpath("data/hooks.json").read_text(encoding="utf-8")
         except Exception:
             data = (Path(__file__).parent / "data" / "hooks.json").read_text(encoding="utf-8")
         return json.loads(data).get("hooks", {})

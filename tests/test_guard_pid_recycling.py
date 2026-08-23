@@ -35,15 +35,15 @@ class TestPidIdentityMatchRecycledPid(unittest.TestCase):
     """
 
     def setUp(self):
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
         g._CLAUDE_IDENTITY.clear()
 
     def tearDown(self):
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
         g._CLAUDE_IDENTITY.clear()
 
     def test_recycled_pid_start_time_mismatch_returns_false(self):
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
 
         # Use a real live PID (ourselves) and record its real start_time.
         # _record_claude_identity now validates the PID is Claude (MED-1 hardening);
@@ -60,7 +60,7 @@ class TestPidIdentityMatchRecycledPid(unittest.TestCase):
 
         # Simulate PID recycled: same PID but different start_time (10000s later).
         recycled_start_time = recorded_start_time + 10000.0
-        with patch("cozempic.guard._get_pid_start_time", return_value=recycled_start_time):
+        with patch("winnow.legacy.guard._get_pid_start_time", return_value=recycled_start_time):
             result = g._pid_identity_match(pid, session_id)
 
         self.assertFalse(
@@ -69,7 +69,7 @@ class TestPidIdentityMatchRecycledPid(unittest.TestCase):
         )
 
     def test_matching_pid_start_time_returns_true(self):
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
 
         pid = os.getpid()
         session_id = "aaaa1111bbbb2222cccc3333dddd5555"
@@ -79,13 +79,13 @@ class TestPidIdentityMatchRecycledPid(unittest.TestCase):
         recorded_pid, recorded_start_time = g._CLAUDE_IDENTITY[session_id]
 
         # Same start_time: identity matches.
-        with patch("cozempic.guard._get_pid_start_time", return_value=recorded_start_time):
+        with patch("winnow.legacy.guard._get_pid_start_time", return_value=recorded_start_time):
             result = g._pid_identity_match(pid, session_id)
 
         self.assertTrue(result, "same PID + same start_time must return True")
 
     def test_different_pid_than_recorded_returns_false(self):
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
 
         pid = os.getpid()
         session_id = "aaaa1111bbbb2222cccc3333dddd6666"
@@ -93,7 +93,7 @@ class TestPidIdentityMatchRecycledPid(unittest.TestCase):
             g._record_claude_identity(session_id, pid)
 
         # Pass a completely different PID.
-        with patch("cozempic.guard._get_pid_start_time", return_value=9999999.0):
+        with patch("winnow.legacy.guard._get_pid_start_time", return_value=9999999.0):
             result = g._pid_identity_match(pid + 9999, session_id)
 
         self.assertFalse(result, "different PID than recorded must return False")
@@ -118,15 +118,15 @@ class TestNoResurrectionOnRecycledPid(unittest.TestCase):
     """
 
     def setUp(self):
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
         g._CLAUDE_IDENTITY.clear()
 
     def tearDown(self):
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
         g._CLAUDE_IDENTITY.clear()
 
     def test_recycled_pid_no_resurrection(self):
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
 
         session_id = "ddddddddeeee1111222233334444aaaa"
         fake_pid = 89113
@@ -142,12 +142,12 @@ class TestNoResurrectionOnRecycledPid(unittest.TestCase):
 
             # _pid_is_alive returns True (recycled process IS alive).
             # _get_pid_start_time returns T1 (different process).
-            with patch("cozempic.guard._pid_is_alive", return_value=True), \
-                 patch("cozempic.guard._get_pid_start_time", return_value=T1), \
-                 patch("cozempic.guard._spawn_reload_watcher") as mock_watcher, \
-                 patch("cozempic.guard.write_reload_sentinel") as mock_sentinel, \
-                 patch("cozempic.guard.os.kill") as mock_kill, \
-                 patch("cozempic.guard._detect_terminal_env", return_value="plain"):
+            with patch("winnow.legacy.guard._pid_is_alive", return_value=True), \
+                 patch("winnow.legacy.guard._get_pid_start_time", return_value=T1), \
+                 patch("winnow.legacy.guard._spawn_reload_watcher") as mock_watcher, \
+                 patch("winnow.legacy.guard.write_reload_sentinel") as mock_sentinel, \
+                 patch("winnow.legacy.guard.os.kill") as mock_kill, \
+                 patch("winnow.legacy.guard._detect_terminal_env", return_value="plain"):
                 g._terminate_and_resume(
                     claude_pid=fake_pid,
                     project_dir=td,
@@ -172,15 +172,15 @@ class TestPidIdentityMatchDegrades(unittest.TestCase):
     """
 
     def setUp(self):
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
         g._CLAUDE_IDENTITY.clear()
 
     def tearDown(self):
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
         g._CLAUDE_IDENTITY.clear()
 
     def test_psutil_unavailable_returns_true(self):
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
 
         pid = os.getpid()
         session_id = "aaaa1111bbbb2222cccc3333eeee7777"
@@ -188,7 +188,7 @@ class TestPidIdentityMatchDegrades(unittest.TestCase):
         g._CLAUDE_IDENTITY[session_id] = (pid, 1716220000.0)
 
         # _get_pid_start_time returns None when psutil raises ImportError.
-        with patch("cozempic.guard._get_pid_start_time", return_value=None):
+        with patch("winnow.legacy.guard._get_pid_start_time", return_value=None):
             result = g._pid_identity_match(pid, session_id)
 
         self.assertTrue(
@@ -197,13 +197,13 @@ class TestPidIdentityMatchDegrades(unittest.TestCase):
         )
 
     def test_no_session_id_returns_true(self):
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
 
         result = g._pid_identity_match(os.getpid(), session_id=None)
         self.assertTrue(result, "None session_id must return True (conservative allow)")
 
     def test_session_id_not_recorded_returns_true(self):
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
 
         # Session not in _CLAUDE_IDENTITY at all.
         result = g._pid_identity_match(os.getpid(), session_id="not-recorded-xxxx")
@@ -219,15 +219,15 @@ class TestRecordClaudeIdentityOnStartGuard(unittest.TestCase):
     """
 
     def setUp(self):
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
         g._CLAUDE_IDENTITY.clear()
 
     def tearDown(self):
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
         g._CLAUDE_IDENTITY.clear()
 
     def test_record_called_with_correct_args(self):
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
 
         fake_pid = 12345
         fake_session_id = "sssssssstttt1111222233334444ssss"
@@ -252,18 +252,18 @@ class TestRecordClaudeIdentityOnStartGuard(unittest.TestCase):
             # when session_id is passed, then load_messages, detect_context_window,
             # record_session, etc. Patch everything between session resolution and
             # the watchdog loop so we reach line 503 (_record_claude_identity call).
-            with patch("cozempic.guard._resolve_session_by_id", return_value=fake_session), \
-                 patch("cozempic.guard.find_claude_pid", return_value=fake_pid), \
-                 patch("cozempic.guard._record_claude_identity", side_effect=fake_record), \
-                 patch("cozempic.guard.load_messages", return_value=[]), \
-                 patch("cozempic.tokens.detect_context_window", return_value=200000), \
-                 patch("cozempic.tokens.default_token_thresholds_4tier", return_value=(50000, 110000, 160000)), \
-                 patch("cozempic.session.record_session"), \
-                 patch("cozempic.guard._cleanup_stale_watchers"), \
-                 patch("cozempic.guard.ping_install_if_new"), \
-                 patch("cozempic.guard.maybe_auto_update"), \
-                 patch("cozempic.guard.checkpoint_team"), \
-                 patch("cozempic.guard.time.sleep", side_effect=RuntimeError("stop loop")):
+            with patch("winnow.legacy.guard._resolve_session_by_id", return_value=fake_session), \
+                 patch("winnow.legacy.guard.find_claude_pid", return_value=fake_pid), \
+                 patch("winnow.legacy.guard._record_claude_identity", side_effect=fake_record), \
+                 patch("winnow.legacy.guard.load_messages", return_value=[]), \
+                 patch("winnow.legacy.tokens.detect_context_window", return_value=200000), \
+                 patch("winnow.legacy.tokens.default_token_thresholds_4tier", return_value=(50000, 110000, 160000)), \
+                 patch("winnow.legacy.session.record_session"), \
+                 patch("winnow.legacy.guard._cleanup_stale_watchers"), \
+                 patch("winnow.legacy.guard.ping_install_if_new"), \
+                 patch("winnow.legacy.guard.maybe_auto_update"), \
+                 patch("winnow.legacy.guard.checkpoint_team"), \
+                 patch("winnow.legacy.guard.time.sleep", side_effect=RuntimeError("stop loop")):
                 try:
                     g.start_guard(session_id=fake_session_id, claude_pid=fake_pid)
                 except (RuntimeError, SystemExit):
@@ -281,14 +281,14 @@ class TestLinuxStdlibStartTime(unittest.TestCase):
     """Verify _get_pid_start_time_linux returns a plausible float for self PID."""
 
     def test_returns_float_for_self(self):
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
 
         result = g._get_pid_start_time_linux(os.getpid())
         self.assertIsInstance(result, float, "should return float on Linux")
         self.assertGreater(result, 0.0, "epoch timestamp must be positive")
 
     def test_result_is_before_current_time(self):
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
 
         now = time.time()
         result = g._get_pid_start_time_linux(os.getpid())
@@ -299,14 +299,14 @@ class TestLinuxStdlibStartTime(unittest.TestCase):
         self.assertGreater(result, now - 86400)
 
     def test_nonexistent_pid_returns_none(self):
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
 
         # PID 0 is the idle/swapper process and its stat is not accessible.
         result = g._get_pid_start_time_linux(0)
         self.assertIsNone(result, "invalid/unreachable PID should return None")
 
     def test_same_pid_repeated_call_stable(self):
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
 
         pid = os.getpid()
         r1 = g._get_pid_start_time_linux(pid)
@@ -325,14 +325,14 @@ class TestMacosStdlibStartTime(unittest.TestCase):
     """Verify _get_pid_start_time_macos returns a plausible float for self PID."""
 
     def test_returns_float_for_self(self):
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
 
         result = g._get_pid_start_time_macos(os.getpid())
         self.assertIsInstance(result, float, "should return float on macOS")
         self.assertGreater(result, 0.0, "epoch timestamp must be positive")
 
     def test_result_is_before_current_time(self):
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
 
         now = time.time()
         result = g._get_pid_start_time_macos(os.getpid())
@@ -342,7 +342,7 @@ class TestMacosStdlibStartTime(unittest.TestCase):
         self.assertGreater(result, now - 86400)
 
     def test_nonexistent_pid_returns_none(self):
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
 
         # Use a definitively-dead PID (spawn + reap).
         proc = subprocess.Popen([sys.executable, "-c", ""])
@@ -352,7 +352,7 @@ class TestMacosStdlibStartTime(unittest.TestCase):
         self.assertIsNone(result, "dead PID should return None")
 
     def test_same_pid_repeated_call_stable(self):
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
 
         pid = os.getpid()
         r1 = g._get_pid_start_time_macos(pid)
@@ -364,21 +364,21 @@ class TestMacosStdlibStartTime(unittest.TestCase):
 
     def test_identity_match_uses_macos_backend(self):
         """End-to-end: _pid_identity_match uses the macOS backend when no psutil."""
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
 
         pid = os.getpid()
         session_id = "macostest1111222233334444aaaabbbb"
         g._CLAUDE_IDENTITY.clear()
 
         # Record using the real macOS backend (no psutil mock needed).
-        with patch("cozempic.guard._is_claude_process", return_value=True):
+        with patch("winnow.legacy.guard._is_claude_process", return_value=True):
             g._record_claude_identity(session_id, pid)
 
         self.assertIn(session_id, g._CLAUDE_IDENTITY,
                       "identity should be recorded via macOS ps backend")
 
         # Verify the match works without touching psutil at all.
-        with patch("cozempic.guard._get_pid_start_time_psutil",
+        with patch("winnow.legacy.guard._get_pid_start_time_psutil",
                    side_effect=AssertionError("psutil must not be called")):
             result = g._pid_identity_match(pid, session_id)
 
@@ -395,41 +395,41 @@ class TestStdlibFallthrough(unittest.TestCase):
     """
 
     def setUp(self):
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
         g._CLAUDE_IDENTITY.clear()
 
     def tearDown(self):
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
         g._CLAUDE_IDENTITY.clear()
 
     def test_all_backends_fail_returns_none(self):
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
 
-        with patch("cozempic.guard._get_pid_start_time_linux", return_value=None), \
-             patch("cozempic.guard._get_pid_start_time_macos", return_value=None), \
-             patch("cozempic.guard._get_pid_start_time_psutil", return_value=None):
+        with patch("winnow.legacy.guard._get_pid_start_time_linux", return_value=None), \
+             patch("winnow.legacy.guard._get_pid_start_time_macos", return_value=None), \
+             patch("winnow.legacy.guard._get_pid_start_time_psutil", return_value=None):
             result = g._get_pid_start_time(os.getpid())
 
         self.assertIsNone(result, "all backends failing must return None")
 
     def test_all_backends_fail_pid_match_fails_open(self):
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
 
         pid = os.getpid()
         session_id = "fallthrough111122223333444455556666"
         # Pre-load identity with a known start_time.
         g._CLAUDE_IDENTITY[session_id] = (pid, 1716220000.0)
 
-        with patch("cozempic.guard._get_pid_start_time_linux", return_value=None), \
-             patch("cozempic.guard._get_pid_start_time_macos", return_value=None), \
-             patch("cozempic.guard._get_pid_start_time_psutil", return_value=None):
+        with patch("winnow.legacy.guard._get_pid_start_time_linux", return_value=None), \
+             patch("winnow.legacy.guard._get_pid_start_time_macos", return_value=None), \
+             patch("winnow.legacy.guard._get_pid_start_time_psutil", return_value=None):
             result = g._pid_identity_match(pid, session_id)
 
         self.assertTrue(result, "all backends failing must return True (fail-OPEN)")
 
     def test_linux_backend_tried_first_on_linux(self):
         """On Linux, the Linux backend is tried before macOS and psutil."""
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
         import platform
 
         if platform.system() != "Linux":
@@ -440,10 +440,10 @@ class TestStdlibFallthrough(unittest.TestCase):
             called.append("linux")
             return 1234567890.0
 
-        with patch("cozempic.guard._get_pid_start_time_linux", side_effect=fake_linux), \
-             patch("cozempic.guard._get_pid_start_time_macos",
+        with patch("winnow.legacy.guard._get_pid_start_time_linux", side_effect=fake_linux), \
+             patch("winnow.legacy.guard._get_pid_start_time_macos",
                    side_effect=AssertionError("macOS must not be called on Linux")), \
-             patch("cozempic.guard._get_pid_start_time_psutil",
+             patch("winnow.legacy.guard._get_pid_start_time_psutil",
                    side_effect=AssertionError("psutil must not be called when Linux works")):
             result = g._get_pid_start_time(os.getpid())
 
@@ -452,7 +452,7 @@ class TestStdlibFallthrough(unittest.TestCase):
 
     def test_macos_backend_tried_first_on_darwin(self):
         """On Darwin, the macOS backend is tried before psutil."""
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
         import platform
 
         if platform.system() != "Darwin":
@@ -463,8 +463,8 @@ class TestStdlibFallthrough(unittest.TestCase):
             called.append("macos")
             return 1234567890.0
 
-        with patch("cozempic.guard._get_pid_start_time_macos", side_effect=fake_macos), \
-             patch("cozempic.guard._get_pid_start_time_psutil",
+        with patch("winnow.legacy.guard._get_pid_start_time_macos", side_effect=fake_macos), \
+             patch("winnow.legacy.guard._get_pid_start_time_psutil",
                    side_effect=AssertionError("psutil must not be called when macOS works")):
             result = g._get_pid_start_time(os.getpid())
 
@@ -473,7 +473,7 @@ class TestStdlibFallthrough(unittest.TestCase):
 
     def test_psutil_fallback_when_platform_backend_fails(self):
         """When the platform-native backend returns None, psutil is tried."""
-        import cozempic.guard as g
+        import winnow.legacy.guard as g
         import platform
 
         _sys = platform.system()
@@ -484,13 +484,13 @@ class TestStdlibFallthrough(unittest.TestCase):
             return 9999999999.0
 
         if _sys == "Linux":
-            ctx = patch("cozempic.guard._get_pid_start_time_linux", return_value=None)
+            ctx = patch("winnow.legacy.guard._get_pid_start_time_linux", return_value=None)
         elif _sys == "Darwin":
-            ctx = patch("cozempic.guard._get_pid_start_time_macos", return_value=None)
+            ctx = patch("winnow.legacy.guard._get_pid_start_time_macos", return_value=None)
         else:
             self.skipTest("Only Linux/Darwin dispatch tested here")
 
-        with ctx, patch("cozempic.guard._get_pid_start_time_psutil", side_effect=fake_psutil):
+        with ctx, patch("winnow.legacy.guard._get_pid_start_time_psutil", side_effect=fake_psutil):
             result = g._get_pid_start_time(os.getpid())
 
         self.assertEqual(result, 9999999999.0)

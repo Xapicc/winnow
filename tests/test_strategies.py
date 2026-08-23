@@ -5,11 +5,11 @@ from __future__ import annotations
 import json
 import unittest
 
-from cozempic.helpers import msg_bytes
-from cozempic.registry import STRATEGIES
+from winnow.legacy.helpers import msg_bytes
+from winnow.legacy.registry import STRATEGIES
 
 # Ensure strategies are registered
-import cozempic.strategies  # noqa: F401
+import winnow.legacy.strategies  # noqa: F401
 
 
 def make_message(line_idx: int, msg: dict) -> tuple[int, dict, int]:

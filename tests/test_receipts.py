@@ -9,8 +9,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from cozempic.metrics import ClaudeMetricsAdapter, TriggerInfo, ValidationInfo, validate_receipt
-from cozempic.receipts import (
+from winnow.legacy.metrics import ClaudeMetricsAdapter, TriggerInfo, ValidationInfo, validate_receipt
+from winnow.legacy.receipts import (
     INDEX_FILENAME,
     _session_stem,
     emit_receipt,
@@ -18,7 +18,7 @@ from cozempic.receipts import (
     receipts_enabled,
     write_receipt,
 )
-from cozempic.types import PruneAction, PrescriptionResult, StrategyResult
+from winnow.legacy.types import PruneAction, PrescriptionResult, StrategyResult
 
 
 def _result():

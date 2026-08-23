@@ -30,7 +30,7 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-HOOKS_JSON = REPO_ROOT / "src" / "cozempic" / "data" / "hooks.json"
+HOOKS_JSON = REPO_ROOT / "src" / "winnow" / "legacy" / "data" / "hooks.json"
 
 
 def _load_session_start_command() -> str:

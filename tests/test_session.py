@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
 
-from cozempic.session import (
+from winnow.legacy.session import (
     MAX_LINE_BYTES,
     cwd_to_project_slug,
     find_claude_pid,
@@ -94,7 +94,7 @@ class TestCwdToProjectSlug:
 
     def test_none_cwd_uses_os_getcwd(self):
         """None cwd delegates to os.getcwd()."""
-        with patch("cozempic.session.os.getcwd", return_value="/Users/x/foo"):
+        with patch("winnow.legacy.session.os.getcwd", return_value="/Users/x/foo"):
             result = cwd_to_project_slug(None)
         assert result == "-Users-x-foo"
 
@@ -161,9 +161,9 @@ class TestLoadMessagesLimits:
 class TestFindClaudePid:
     def test_finds_claude_process_in_ancestor_chain(self):
         with (
-            patch("cozempic.session.os.getpid", return_value=400),
+            patch("winnow.legacy.session.os.getpid", return_value=400),
             patch(
-                "cozempic.session.subprocess.run",
+                "winnow.legacy.session.subprocess.run",
                 side_effect=[
                     SimpleNamespace(stdout="300 python\n"),
                     SimpleNamespace(stdout="200 node\n"),
@@ -174,9 +174,9 @@ class TestFindClaudePid:
 
     def test_returns_none_when_detached_guard_parent_is_systemd(self):
         with (
-            patch("cozempic.session.os.getpid", return_value=400),
+            patch("winnow.legacy.session.os.getpid", return_value=400),
             patch(
-                "cozempic.session.subprocess.run",
+                "winnow.legacy.session.subprocess.run",
                 side_effect=[
                     SimpleNamespace(stdout="300 python\n"),
                     SimpleNamespace(stdout="1 systemd\n"),

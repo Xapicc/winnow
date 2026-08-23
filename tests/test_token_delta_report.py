@@ -14,11 +14,11 @@ import io
 import unittest
 from contextlib import redirect_stdout
 
-from cozempic.types import PrescriptionResult
+from winnow.legacy.types import PrescriptionResult
 
 
 def _render(original_tokens, final_tokens):
-    from cozempic.cli import print_prescription_result
+    from winnow.legacy.cli import print_prescription_result
 
     pr = PrescriptionResult(
         prescription_name="aggressive",
@@ -76,7 +76,7 @@ class TestTreatTokenDeltaReport(unittest.TestCase):
 class TestGuardPruneResultFormat(unittest.TestCase):
 
     def test_negative_delta_reports_bytes_only(self):
-        from cozempic.guard import _fmt_prune_result
+        from winnow.legacy.guard import _fmt_prune_result
 
         msg = _fmt_prune_result(
             {"original_tokens": 161_500, "final_tokens": 810_200, "saved_mb": 5.95}
@@ -86,7 +86,7 @@ class TestGuardPruneResultFormat(unittest.TestCase):
         self.assertIn("MB saved", msg)
 
     def test_positive_delta_reports_tokens(self):
-        from cozempic.guard import _fmt_prune_result
+        from winnow.legacy.guard import _fmt_prune_result
 
         msg = _fmt_prune_result(
             {"original_tokens": 385_300, "final_tokens": 108_900, "saved_mb": 5.43}

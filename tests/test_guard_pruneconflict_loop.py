@@ -69,7 +69,7 @@ class _GuardLoopHarness(unittest.TestCase):
         is exhausted the last entry repeats. The loop is forced to stop via
         ``_StopAfterNSleeps`` once ``max_sleeps`` sleeps have occurred so the
         test terminates even if the breaker never exits (the bug)."""
-        from cozempic import guard as guard_mod
+        from winnow.legacy import guard as guard_mod
 
         tmpdir = Path(tempfile.mkdtemp())
         self.addCleanup(lambda: __import__("shutil").rmtree(tmpdir, ignore_errors=True))
@@ -117,12 +117,12 @@ class _GuardLoopHarness(unittest.TestCase):
                 guard_mod, "quick_token_estimate", return_value=token_estimate
             ),
             patch.object(guard_mod, "load_messages", return_value=[]),
-            patch("cozempic.session.record_session"),
+            patch("winnow.legacy.session.record_session"),
             patch.object(guard_mod, "_cleanup_stale_watchers"),
             patch.object(guard_mod, "ping_install_if_new"),
             patch.object(guard_mod, "maybe_auto_update"),
             patch.object(guard_mod, "cleanup_old_backups"),
-            patch("cozempic.tokens.detect_context_window", return_value=1_000_000),
+            patch("winnow.legacy.tokens.detect_context_window", return_value=1_000_000),
         ):
             captured = io.StringIO()
             with patch.object(sys, "stdout", captured):
@@ -165,7 +165,7 @@ class TestPruneDeferredConflictBreaker(_GuardLoopHarness):
         (``prune_deferred_conflict=True``, ``saved_mb=0``, and the overloaded
         ``live_write_skipped=True``) must increment K and eventually
         ``sys.exit(0)`` — it must NOT loop forever."""
-        from cozempic.guard import HARD_LOOP_EXIT_THRESHOLD
+        from winnow.legacy.guard import HARD_LOOP_EXIT_THRESHOLD
 
         failure = {
             "saved_mb": 0.0,
@@ -256,7 +256,7 @@ class TestHard2TierGetsBreaker(_GuardLoopHarness):
     the emergency tier had no breaker and spun forever."""
 
     def test_hard2_deferred_conflict_loop_exits(self):
-        from cozempic.guard import HARD_LOOP_EXIT_THRESHOLD
+        from winnow.legacy.guard import HARD_LOOP_EXIT_THRESHOLD
 
         failure = {
             "saved_mb": 0.0,

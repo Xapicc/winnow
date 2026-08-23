@@ -14,10 +14,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from cozempic import cli
-from cozempic.dashboard.aggregate import aggregate, load_receipts
-from cozempic.dashboard.render import render_dashboard
-from cozempic.metrics import (
+from winnow.legacy import cli
+from winnow.legacy.dashboard.aggregate import aggregate, load_receipts
+from winnow.legacy.dashboard.render import render_dashboard
+from winnow.legacy.metrics import (
     ClaudeMetricsAdapter,
     CodexMetricsAdapter,
     MetricsAdapter,
@@ -25,8 +25,8 @@ from cozempic.metrics import (
     build_receipt,
     validate_receipt,
 )
-from cozempic.receipts import write_receipt
-from cozempic.types import PrescriptionResult, StrategyResult
+from winnow.legacy.receipts import write_receipt
+from winnow.legacy.types import PrescriptionResult, StrategyResult
 
 
 def _res():

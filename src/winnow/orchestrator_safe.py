@@ -38,7 +38,7 @@ carries the evidence tables.
    session's context (§1.7). It is refused. Retrieval is by lookup, not recall
    (SPEC §7).
 
-Nothing in ``src/cozempic/`` is edited to achieve any of this — it is vendored
+Nothing in ``src/winnow/legacy/`` is edited to achieve any of this — it is vendored
 prior art at a pinned version (DECISIONS §0). Where the vendored tree offers no
 switch, this module supplies the mechanism from outside: an argv gate, an
 in-process prescription exclusion, and a filtered plugin directory.
@@ -324,7 +324,7 @@ def live_claude_pid() -> int | None:
     neither string, so the walk stops at the session's own process
     (USAGEFOUNDRY §1.2).
     """
-    from cozempic.session import find_claude_pid
+    from winnow.legacy.session import find_claude_pid
 
     return find_claude_pid()
 
@@ -401,7 +401,7 @@ def apply_strategy_exclusions(
     nothing.
     """
     if prescriptions is None:
-        from cozempic.registry import PRESCRIPTIONS
+        from winnow.legacy.registry import PRESCRIPTIONS
 
         prescriptions = PRESCRIPTIONS
 
@@ -683,8 +683,8 @@ def write_checkpoint(session_path: Path, target_dir: Path) -> Path | None:
 
     Returns the path written, or None when there is no team state to write.
     """
-    from cozempic.session import load_messages_incremental
-    from cozempic.team import extract_team_state, write_team_checkpoint
+    from winnow.legacy.session import load_messages_incremental
+    from winnow.legacy.team import extract_team_state, write_team_checkpoint
 
     # Created first and checked, not assumed: write_team_checkpoint falls back
     # to get_claude_dir()/team-checkpoint.md when the directory it is given does
@@ -714,7 +714,7 @@ def read_checkpoint(target_dir: Path) -> str | None:
     last-written checkpoint of any project, which cli.py:1014 calls a
     cross-project read vector, and it is in the bind mount besides.
     """
-    from cozempic.team import read_team_checkpoint
+    from winnow.legacy.team import read_team_checkpoint
 
     return read_team_checkpoint(Path(target_dir), include_global=False)
 
@@ -868,7 +868,7 @@ def _check_strategy_exclusion() -> Finding:
     exclusion will do when the pruner is next run through this mode.
     """
     try:
-        from cozempic.registry import PRESCRIPTIONS
+        from winnow.legacy.registry import PRESCRIPTIONS
     except ImportError as exc:
         return Finding(
             "strategy-exclusion", False, f"cannot import the vendored tree: {exc}"
@@ -955,7 +955,7 @@ def resolve_session_path(payload: dict, cwd: str | None = None) -> Path | None:
     if isinstance(transcript, str) and transcript:
         return Path(transcript)
 
-    from cozempic.session import find_current_session
+    from winnow.legacy.session import find_current_session
 
     # strict=True refuses the global most-recent fallback, which would checkpoint
     # another project's session (guard.py:367-371 makes the same argument).
@@ -975,16 +975,16 @@ def resolve_session_path(payload: dict, cwd: str | None = None) -> Path | None:
 # dangerous, it is just in the wrong place. A cycle's savings tally and update
 # sentinel belong to the cycle, and $HOME in this container outlives it.
 _HOME_WRITE_REDIRECTS: tuple[tuple[str, str, str], ...] = (
-    ("cozempic.updater", "_CACHE_FILE", "cozempic-update-check"),
-    ("cozempic.updater", "_INSTALL_SENTINEL", "cozempic-installed"),
-    ("cozempic.config", "_CONFIG_FILE_PATH", "cozempic/config.json"),
-    ("cozempic.digest", "DIGEST_DIR", "cozempic"),
-    ("cozempic.digest", "DIGEST_FILE", "cozempic/behavioral-digest.json"),
-    ("cozempic.digest", "DIGEST_MD_FILE", "cozempic/behavioral-digest.md"),
-    ("cozempic.helpers", "_SAVINGS_FILE", "cozempic-savings.json"),
-    ("cozempic.cli", "_GLOBAL_INIT_MARKER", "cozempic-global-initialized"),
-    ("cozempic.init", "_GLOBAL_INIT_MARKER", "cozempic-global-initialized"),
-    ("cozempic.init", "_REMIND_COUNTER", "cozempic-remind-counter"),
+    ("winnow.legacy.updater", "_CACHE_FILE", "cozempic-update-check"),
+    ("winnow.legacy.updater", "_INSTALL_SENTINEL", "cozempic-installed"),
+    ("winnow.legacy.config", "_CONFIG_FILE_PATH", "cozempic/config.json"),
+    ("winnow.legacy.digest", "DIGEST_DIR", "cozempic"),
+    ("winnow.legacy.digest", "DIGEST_FILE", "cozempic/behavioral-digest.json"),
+    ("winnow.legacy.digest", "DIGEST_MD_FILE", "cozempic/behavioral-digest.md"),
+    ("winnow.legacy.helpers", "_SAVINGS_FILE", "cozempic-savings.json"),
+    ("winnow.legacy.cli", "_GLOBAL_INIT_MARKER", "cozempic-global-initialized"),
+    ("winnow.legacy.init", "_GLOBAL_INIT_MARKER", "cozempic-global-initialized"),
+    ("winnow.legacy.init", "_REMIND_COUNTER", "cozempic-remind-counter"),
 )
 
 
@@ -999,7 +999,7 @@ def home_write_targets(target_dir: Path) -> dict[tuple[str, str], Path]:
 def redirect_home_writes(target_dir: Path) -> dict[str, Path]:
     """Point the vendored tree's home-directory state at `target_dir`.
 
-    `cozempic.cli.main` calls `ping_install_if_new()` before it parses argv
+    `winnow.legacy.cli.main` calls `ping_install_if_new()` before it parses argv
     (cli.py:2398), and that writes ~/.cozempic_installed with no env switch in
     front of it — `COZEMPIC_NO_TELEMETRY` stops the network ping, one line
     later, not the write (updater.py:186). So the refusal table cannot cover
@@ -1035,7 +1035,7 @@ def run_cozempic(argv: list[str]) -> int:
     apply_strategy_exclusions()
     redirect_home_writes(data_dir())
 
-    from cozempic.cli import main as cozempic_main
+    from winnow.legacy.cli import main as cozempic_main
 
     saved = sys.argv
     sys.argv = ["cozempic", *argv]

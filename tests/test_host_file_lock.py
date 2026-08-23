@@ -24,7 +24,7 @@ from unittest import mock
 
 import pytest
 
-from cozempic.helpers import _HostFileLock
+from winnow.legacy.helpers import _HostFileLock
 
 
 # ─── Fixtures ────────────────────────────────────────────────────────────────

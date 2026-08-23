@@ -1,6 +1,6 @@
 """Guard against drift between the two on-disk copies of hooks.json.
 
-`src/cozempic/data/hooks.json` is the canonical source loaded by `cozempic init`
+`src/winnow/legacy/data/hooks.json` is the canonical source loaded by `cozempic init`
 into a user's project. `plugin/hooks/hooks.json` ships via the Claude Code
 plugin marketplace. They MUST stay byte-identical so users get the same
 behavior regardless of install path. If you edit one, edit both — this test
@@ -12,7 +12,7 @@ import unittest
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DATA_HOOKS = REPO_ROOT / "src" / "cozempic" / "data" / "hooks.json"
+DATA_HOOKS = REPO_ROOT / "src" / "winnow" / "legacy" / "data" / "hooks.json"
 PLUGIN_HOOKS = REPO_ROOT / "plugin" / "hooks" / "hooks.json"
 
 
@@ -30,7 +30,7 @@ class TestHooksSync(unittest.TestCase):
             plugin.get("hooks"),
             msg=(
                 "data/hooks.json and plugin/hooks/hooks.json have drifted. "
-                "After editing one, run: cp plugin/hooks/hooks.json src/cozempic/data/hooks.json"
+                "After editing one, run: cp plugin/hooks/hooks.json src/winnow/legacy/data/hooks.json"
             ),
         )
 
@@ -50,7 +50,7 @@ class TestHooksSync(unittest.TestCase):
 
     def test_schema_marker_is_current(self):
         """Every hook command must have the current schema marker."""
-        from cozempic.init import HOOK_SCHEMA_MARKER
+        from winnow.legacy.init import HOOK_SCHEMA_MARKER
         canonical = json.loads(DATA_HOOKS.read_text(encoding="utf-8"))
         for event, entries in canonical.get("hooks", {}).items():
             for entry in entries:

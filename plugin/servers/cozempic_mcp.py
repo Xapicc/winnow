@@ -8,7 +8,7 @@ import threading
 from fastmcp import FastMCP
 
 # Ensure all strategies are registered
-import cozempic.strategies  # noqa: F401
+import winnow.legacy.strategies  # noqa: F401
 
 mcp = FastMCP("Cozempic")
 
@@ -20,7 +20,7 @@ def _startup_maintenance() -> None:
     MCP users don't have a TTY so force=True bypasses the isatty() guard.
     """
     try:
-        from cozempic.updater import maybe_auto_update, ping_install_if_new
+        from winnow.legacy.updater import maybe_auto_update, ping_install_if_new
         ping_install_if_new()
         maybe_auto_update(force=True, silent=True)
     except Exception:
@@ -38,11 +38,11 @@ def diagnose_current() -> str:
     and estimated savings for each prescription tier (gentle/standard/aggressive).
     Use this when context is getting heavy or the user asks about session health.
     """
-    from cozempic.session import find_current_session, load_messages
-    from cozempic.diagnosis import diagnose_session
-    from cozempic.tokens import estimate_session_tokens
-    from cozempic.registry import PRESCRIPTIONS
-    from cozempic.executor import run_prescription
+    from winnow.legacy.session import find_current_session, load_messages
+    from winnow.legacy.diagnosis import diagnose_session
+    from winnow.legacy.tokens import estimate_session_tokens
+    from winnow.legacy.registry import PRESCRIPTIONS
+    from winnow.legacy.executor import run_prescription
 
     sess = find_current_session()
     if not sess:
@@ -88,8 +88,8 @@ def estimate_tokens() -> str:
 
     Fast check — reads only the tail of the session file.
     """
-    from cozempic.session import find_current_session, load_messages
-    from cozempic.tokens import quick_token_estimate, detect_context_window
+    from winnow.legacy.session import find_current_session, load_messages
+    from winnow.legacy.tokens import quick_token_estimate, detect_context_window
 
     sess = find_current_session()
     if not sess:
@@ -112,8 +112,8 @@ def estimate_tokens() -> str:
 @mcp.tool()
 def list_sessions() -> str:
     """List all Claude Code sessions with sizes and token estimates."""
-    from cozempic.session import find_sessions
-    from cozempic.tokens import quick_token_estimate
+    from winnow.legacy.session import find_sessions
+    from winnow.legacy.tokens import quick_token_estimate
 
     sessions = find_sessions()
     if not sessions:
@@ -140,13 +140,13 @@ def treat_session(prescription: str = "standard", execute: bool = False) -> str:
         prescription: Prescription tier — 'gentle', 'standard', or 'aggressive'.
         execute: If False (default), dry-run only. If True, apply changes with backup.
     """
-    from cozempic.session import (
+    from winnow.legacy.session import (
         _PruneLock, PruneConflictError, PruneLockError,
         find_current_session, load_messages, load_messages_and_snapshot, save_messages,
     )
-    from cozempic.registry import PRESCRIPTIONS
-    from cozempic.executor import run_prescription
-    from cozempic.tokens import estimate_session_tokens
+    from winnow.legacy.registry import PRESCRIPTIONS
+    from winnow.legacy.executor import run_prescription
+    from winnow.legacy.tokens import estimate_session_tokens
 
     sess = find_current_session(strict=execute)
     if not sess:
@@ -236,7 +236,7 @@ def treat_session(prescription: str = "standard", execute: bool = False) -> str:
 @mcp.tool()
 def list_strategies() -> str:
     """List all available cleaning strategies and prescriptions."""
-    from cozempic.registry import STRATEGIES, PRESCRIPTIONS
+    from winnow.legacy.registry import STRATEGIES, PRESCRIPTIONS
 
     lines = ["Strategies:"]
     lines.append(f"{'Name':<30} {'Tier':<12} {'Expected':>10}  Description")

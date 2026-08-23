@@ -21,7 +21,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import mock
 
-from cozempic.watchdog import (
+from winnow.legacy.watchdog import (
     scan_log_text, scan_guard_logs,
     FUTILE_PCT_FLOOR, LOOP_TRIP_DEFAULT, BACKOFF_CAP_S, STORM_TRIP,
 )
@@ -174,7 +174,7 @@ class TestScanGuardLogs(unittest.TestCase):
 
     def test_flags_live_storm(self):
         self._write("aaa", _respawn_storm(), pid=4242)
-        with mock.patch("cozempic.watchdog._pid_alive", lambda pid: True):
+        with mock.patch("winnow.legacy.watchdog._pid_alive", lambda pid: True):
             hits = scan_guard_logs(self.dir)
         self.assertEqual(len(hits), 1)
         self.assertEqual(hits[0].pid, 4242)
@@ -182,7 +182,7 @@ class TestScanGuardLogs(unittest.TestCase):
 
     def test_dead_pid_reported_not_alive(self):
         self._write("bbb", _respawn_storm(), pid=999999)
-        with mock.patch("cozempic.watchdog._pid_alive", lambda pid: False):
+        with mock.patch("winnow.legacy.watchdog._pid_alive", lambda pid: False):
             hits = scan_guard_logs(self.dir)
         self.assertEqual(len(hits), 1)
         self.assertFalse(hits[0].pid_alive)
@@ -202,7 +202,7 @@ class TestScanGuardLogs(unittest.TestCase):
     def test_tail_read_on_huge_log(self):
         big = _daemon_start() + "".join(_futile_cycle(n=i) for i in range(3000))
         self._write("eee", big, pid=7)
-        with mock.patch("cozempic.watchdog._pid_alive", lambda pid: True):
+        with mock.patch("winnow.legacy.watchdog._pid_alive", lambda pid: True):
             hits = scan_guard_logs(self.dir, max_tail_bytes=64 * 1024)
         self.assertEqual(len(hits), 1)
         self.assertTrue(hits[0].report.looping)
@@ -218,14 +218,14 @@ class TestCliCommand(unittest.TestCase):
 
     def _run(self, fix=False, pid=4242):
         from types import SimpleNamespace
-        from cozempic.cli import cmd_guard_watchdog
+        from winnow.legacy.cli import cmd_guard_watchdog
         (self.dir / "cozempic_guard_zzz.log").write_text(_respawn_storm(), encoding="utf-8")
         (self.dir / "cozempic_guard_zzz.pid").write_text(str(pid), encoding="utf-8")
         args = SimpleNamespace(fix=fix, log_dir=str(self.dir), loop_trip=20)
         return cmd_guard_watchdog(args)
 
     def test_report_only_exits_nonzero_on_live_loop(self):
-        with mock.patch("cozempic.watchdog._pid_alive", lambda pid: True):
+        with mock.patch("winnow.legacy.watchdog._pid_alive", lambda pid: True):
             with self.assertRaises(SystemExit) as cm:
                 self._run(fix=False)
         self.assertEqual(cm.exception.code, 3)
@@ -235,8 +235,8 @@ class TestCliCommand(unittest.TestCase):
         killed = {}
         def fake_kill(pid, sig):
             killed["pid"], killed["sig"] = pid, sig
-        with mock.patch("cozempic.watchdog._pid_alive", lambda pid: True), \
-             mock.patch("cozempic.guard._is_cozempic_guard_process", return_value=True), \
+        with mock.patch("winnow.legacy.watchdog._pid_alive", lambda pid: True), \
+             mock.patch("winnow.legacy.guard._is_cozempic_guard_process", return_value=True), \
              mock.patch("os.kill", fake_kill):
             self._run(fix=True)
         self.assertEqual(killed.get("pid"), 4242)
@@ -268,14 +268,14 @@ class TestFixIdentityGate(unittest.TestCase):
     def _run_fix(self, is_guard: bool) -> dict:
         """Drive cmd_guard_watchdog(fix=True) with identity mock; return kill calls."""
         from types import SimpleNamespace
-        from cozempic.cli import cmd_guard_watchdog
+        from winnow.legacy.cli import cmd_guard_watchdog
         killed: dict = {}
 
         def fake_kill(pid, sig):
             killed["pid"], killed["sig"] = pid, sig
 
-        with mock.patch("cozempic.watchdog._pid_alive", return_value=True), \
-             mock.patch("cozempic.guard._is_cozempic_guard_process", return_value=is_guard), \
+        with mock.patch("winnow.legacy.watchdog._pid_alive", return_value=True), \
+             mock.patch("winnow.legacy.guard._is_cozempic_guard_process", return_value=is_guard), \
              mock.patch("os.kill", fake_kill):
             args = SimpleNamespace(fix=True, log_dir=str(self.dir), loop_trip=20)
             try:

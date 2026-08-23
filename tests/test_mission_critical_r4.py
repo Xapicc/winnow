@@ -15,8 +15,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from cozempic.session import load_messages, load_messages_and_snapshot, save_messages
-from cozempic.executor import run_prescription
+from winnow.legacy.session import load_messages, load_messages_and_snapshot, save_messages
+from winnow.legacy.executor import run_prescription
 
 
 def _write(d: str, lines: list) -> Path:
@@ -64,7 +64,7 @@ class TestNonDictConsumerLeak(unittest.TestCase):
     Every consumer must isinstance-guard, never crash the prune / guard cycle."""
 
     def test_tokens_estimate_survives_nondict_block(self):
-        from cozempic.tokens import estimate_session_tokens
+        from winnow.legacy.tokens import estimate_session_tokens
         with tempfile.TemporaryDirectory() as d:
             p = _write(d, [{
                 "type": "assistant", "uuid": "a1", "parentUuid": None,
@@ -74,7 +74,7 @@ class TestNonDictConsumerLeak(unittest.TestCase):
             estimate_session_tokens(load_messages(p))  # must not raise
 
     def test_team_extract_survives_poisoned_input_fields(self):
-        from cozempic.team import extract_team_state
+        from winnow.legacy.team import extract_team_state
         with tempfile.TemporaryDirectory() as d:
             p = _write(d, [
                 {"type": "assistant", "uuid": "a1", "parentUuid": "u0", "message": {"role": "assistant",
@@ -90,7 +90,7 @@ class TestNonDictConsumerLeak(unittest.TestCase):
             extract_team_state(load_messages(p))  # must not raise
 
     def test_doctor_scanners_survive_poisoned_sessions(self):
-        from cozempic.doctor import _count_corrupted_tool_use, _count_orphaned_tool_results
+        from winnow.legacy.doctor import _count_corrupted_tool_use, _count_orphaned_tool_results
         with tempfile.TemporaryDirectory() as d:
             proj = Path(d) / "p"
             proj.mkdir()
@@ -109,7 +109,7 @@ class TestOverflowTruncatedTailFalseFire(unittest.TestCase):
     benign session. Only a structurally-valid API-error entry may trigger."""
 
     def _rec(self, p):
-        from cozempic.overflow import OverflowRecovery, CircuitBreaker
+        from winnow.legacy.overflow import OverflowRecovery, CircuitBreaker
         return OverflowRecovery(p, "sid", "/tmp", CircuitBreaker("sid"), danger_threshold_mb=0.0)
 
     def test_benign_prose_with_truncated_marker_does_not_fire(self):

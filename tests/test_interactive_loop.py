@@ -29,8 +29,8 @@ class _StopLoop(KeyboardInterrupt):
 def _run_guard(token_estimate: int, env: dict, context_window: int = 200_000):
     """Run start_guard for 2 cycles; return the list of auto_reload values
     passed to guard_prune_cycle."""
-    from cozempic import guard
-    from cozempic.team import TeamState
+    from winnow.legacy import guard
+    from winnow.legacy.team import TeamState
 
     tmp = Path(tempfile.mkdtemp(prefix="cozempic_loop_"))
     sess_path = tmp / "s.jsonl"
@@ -61,27 +61,27 @@ def _run_guard(token_estimate: int, env: dict, context_window: int = 200_000):
 
     with contextlib.ExitStack() as s:
         p = lambda *a, **k: s.enter_context(patch(*a, **k))
-        p("cozempic.guard.find_current_session", return_value=sess)
-        p("cozempic.guard._resolve_session_by_id", return_value=sess)
-        p("cozempic.tokens.detect_context_window", return_value=context_window)
-        p("cozempic.guard.load_messages", return_value=[])
-        p("cozempic.session.record_session", return_value=None)
-        p("cozempic.guard._cleanup_stale_watchers", return_value=None)
-        p("cozempic.guard.ping_install_if_new", return_value=None)
-        p("cozempic.guard.maybe_auto_update", return_value=None)
-        p("cozempic.guard.signal.signal", return_value=None)
-        p("cozempic.guard.find_claude_pid", return_value=4242)
-        p("cozempic.guard._record_claude_identity", return_value=None)
-        p("cozempic.guard.os.kill", return_value=None)
-        p("cozempic.guard._pid_identity_match", return_value=True)
-        p("cozempic.guard._is_claude_process", return_value=True)
-        p("cozempic.guard.checkpoint_team", return_value=TeamState())
-        p("cozempic.guard.quick_token_estimate", return_value=token_estimate)
-        p("cozempic.guard.cleanup_old_backups", return_value=None)
-        p("cozempic.guard._safe_unlink_session_pidfile", return_value=None)
-        p("cozempic.guard._guard_tmp_root", return_value=tmp)
-        p("cozempic.guard.guard_prune_cycle", side_effect=_cycle)
-        p("cozempic.guard.time.sleep", side_effect=_sleep)
+        p("winnow.legacy.guard.find_current_session", return_value=sess)
+        p("winnow.legacy.guard._resolve_session_by_id", return_value=sess)
+        p("winnow.legacy.tokens.detect_context_window", return_value=context_window)
+        p("winnow.legacy.guard.load_messages", return_value=[])
+        p("winnow.legacy.session.record_session", return_value=None)
+        p("winnow.legacy.guard._cleanup_stale_watchers", return_value=None)
+        p("winnow.legacy.guard.ping_install_if_new", return_value=None)
+        p("winnow.legacy.guard.maybe_auto_update", return_value=None)
+        p("winnow.legacy.guard.signal.signal", return_value=None)
+        p("winnow.legacy.guard.find_claude_pid", return_value=4242)
+        p("winnow.legacy.guard._record_claude_identity", return_value=None)
+        p("winnow.legacy.guard.os.kill", return_value=None)
+        p("winnow.legacy.guard._pid_identity_match", return_value=True)
+        p("winnow.legacy.guard._is_claude_process", return_value=True)
+        p("winnow.legacy.guard.checkpoint_team", return_value=TeamState())
+        p("winnow.legacy.guard.quick_token_estimate", return_value=token_estimate)
+        p("winnow.legacy.guard.cleanup_old_backups", return_value=None)
+        p("winnow.legacy.guard._safe_unlink_session_pidfile", return_value=None)
+        p("winnow.legacy.guard._guard_tmp_root", return_value=tmp)
+        p("winnow.legacy.guard.guard_prune_cycle", side_effect=_cycle)
+        p("winnow.legacy.guard.time.sleep", side_effect=_sleep)
         with patch.dict("os.environ", e, clear=True):
             try:
                 guard.start_guard(

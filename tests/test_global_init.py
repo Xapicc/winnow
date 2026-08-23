@@ -17,7 +17,7 @@ class TestGlobalAutoInit(unittest.TestCase):
         return d
 
     def test_skipped_when_env_set(self):
-        from cozempic import cli
+        from winnow.legacy import cli
         with tempfile.TemporaryDirectory() as tmp:
             self._stub_home_claude(tmp)
             with mock.patch.dict(os.environ, {"COZEMPIC_NO_GLOBAL_INIT": "1"}):
@@ -28,7 +28,7 @@ class TestGlobalAutoInit(unittest.TestCase):
                         self.assertFalse(self._stub_marker(tmp).exists())
 
     def test_skipped_when_marker_exists(self):
-        from cozempic import cli
+        from winnow.legacy import cli
         with tempfile.TemporaryDirectory() as tmp:
             self._stub_home_claude(tmp)
             marker = self._stub_marker(tmp)
@@ -43,7 +43,7 @@ class TestGlobalAutoInit(unittest.TestCase):
                             ri.assert_not_called()
 
     def test_skipped_when_no_claude_dir(self):
-        from cozempic import cli
+        from winnow.legacy import cli
         with tempfile.TemporaryDirectory() as tmp:
             # No ~/.claude/ created
             os.environ.pop("COZEMPIC_NO_GLOBAL_INIT", None)
@@ -57,7 +57,7 @@ class TestGlobalAutoInit(unittest.TestCase):
 
     def test_runs_when_unconfigured_non_interactive(self):
         """Non-TTY (CI / Claude subprocess): silent auto-install."""
-        from cozempic import cli
+        from winnow.legacy import cli
         with tempfile.TemporaryDirectory() as tmp:
             self._stub_home_claude(tmp)
             os.environ.pop("COZEMPIC_NO_GLOBAL_INIT", None)
@@ -75,7 +75,7 @@ class TestGlobalAutoInit(unittest.TestCase):
                     self.assertTrue(marker.exists())
 
     def test_interactive_yes_installs(self):
-        from cozempic import cli
+        from winnow.legacy import cli
         with tempfile.TemporaryDirectory() as tmp:
             self._stub_home_claude(tmp)
             os.environ.pop("COZEMPIC_NO_GLOBAL_INIT", None)
@@ -91,7 +91,7 @@ class TestGlobalAutoInit(unittest.TestCase):
 
     def test_interactive_no_skips_install_but_marks(self):
         """User declined — don't install, but DO set marker so we never ask again."""
-        from cozempic import cli
+        from winnow.legacy import cli
         with tempfile.TemporaryDirectory() as tmp:
             self._stub_home_claude(tmp)
             os.environ.pop("COZEMPIC_NO_GLOBAL_INIT", None)
@@ -107,7 +107,7 @@ class TestGlobalAutoInit(unittest.TestCase):
 
     def test_interactive_ctrl_c_treated_as_no(self):
         """KeyboardInterrupt at the prompt is treated as decline (no install, marker set)."""
-        from cozempic import cli
+        from winnow.legacy import cli
         with tempfile.TemporaryDirectory() as tmp:
             self._stub_home_claude(tmp)
             os.environ.pop("COZEMPIC_NO_GLOBAL_INIT", None)
@@ -123,7 +123,7 @@ class TestGlobalAutoInit(unittest.TestCase):
 
     def test_version_check_triggers_init(self):
         """`cozempic --version` (no subcommand) should trigger global init."""
-        from cozempic import cli
+        from winnow.legacy import cli
         with tempfile.TemporaryDirectory() as tmp:
             self._stub_home_claude(tmp)
             os.environ.pop("COZEMPIC_NO_GLOBAL_INIT", None)
@@ -136,7 +136,7 @@ class TestGlobalAutoInit(unittest.TestCase):
 
     def test_help_does_not_trigger_init(self):
         """`cozempic --help` / `-h` must NOT trigger init (purely informational)."""
-        from cozempic import cli
+        from winnow.legacy import cli
         for help_flag in ("--help", "-h"):
             with self.subTest(flag=help_flag):
                 with tempfile.TemporaryDirectory() as tmp:
@@ -152,7 +152,7 @@ class TestGlobalAutoInit(unittest.TestCase):
 
 class TestUninstallHooks(unittest.TestCase):
     def test_removes_cozempic_hooks_only(self):
-        from cozempic.init import wire_hooks, uninstall_hooks
+        from winnow.legacy.init import wire_hooks, uninstall_hooks
         with tempfile.TemporaryDirectory() as tmp:
             # Set up a settings.json with a non-cozempic hook + cozempic hooks
             (Path(tmp) / ".claude").mkdir()
@@ -179,7 +179,7 @@ class TestUninstallHooks(unittest.TestCase):
             self.assertIn("user-hook", ss[0]["hooks"][0]["command"])
 
     def test_idempotent_on_missing_settings(self):
-        from cozempic.init import uninstall_hooks
+        from winnow.legacy.init import uninstall_hooks
         with tempfile.TemporaryDirectory() as tmp:
             result = uninstall_hooks(tmp)
             self.assertEqual(result["removed"], [])
@@ -188,7 +188,7 @@ class TestUninstallHooks(unittest.TestCase):
         """An entry containing BOTH cozempic and user commands in its `hooks`
         list must only lose the cozempic commands. Regression for 'uninstall
         nukes user commands in shared entries' (bug 4.1)."""
-        from cozempic.init import uninstall_hooks, HOOK_SCHEMA_MARKER
+        from winnow.legacy.init import uninstall_hooks, HOOK_SCHEMA_MARKER
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / ".claude").mkdir()
             settings_path = Path(tmp) / ".claude" / "settings.json"
@@ -213,7 +213,7 @@ class TestUninstallHooks(unittest.TestCase):
             self.assertEqual(remaining[0]["command"], "echo 'my-hook'")
 
     def test_malformed_json_does_not_crash(self):
-        from cozempic.init import uninstall_hooks
+        from winnow.legacy.init import uninstall_hooks
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / ".claude").mkdir()
             settings_path = Path(tmp) / ".claude" / "settings.json"
@@ -230,7 +230,7 @@ class TestStaleHookRefresh(unittest.TestCase):
         Uses the realistic pre-v2 command pattern which had `python3 -m cozempic`
         as the fallback wrapper — that's how we detect 'ours' pre-schema.
         """
-        from cozempic.init import wire_hooks, HOOK_SCHEMA_MARKER
+        from winnow.legacy.init import wire_hooks, HOOK_SCHEMA_MARKER
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / ".claude").mkdir()
             settings_path = Path(tmp) / ".claude" / "settings.json"
@@ -264,7 +264,7 @@ class TestStaleHookRefresh(unittest.TestCase):
         requires the FULL canonical wrapper shape (brace-open + python
         fallback), not just one or the other.
         """
-        from cozempic.init import _is_cozempic_command
+        from winnow.legacy.init import _is_cozempic_command
         # Chain with cozempic + user step — no wrapper, no match
         self.assertFalse(_is_cozempic_command("cozempic checkpoint && my-backup.sh"))
         # User hook referencing cozempic in a string — no match
@@ -290,7 +290,7 @@ class TestStaleHookRefresh(unittest.TestCase):
         """Regression for bug 1.3 + 1.4: wire_hooks refresh must preserve
         user-authored commands in a mixed entry AND keep them at their
         original position in the hooks list."""
-        from cozempic.init import wire_hooks
+        from winnow.legacy.init import wire_hooks
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / ".claude").mkdir()
             settings_path = Path(tmp) / ".claude" / "settings.json"
@@ -322,7 +322,7 @@ class TestStaleHookRefresh(unittest.TestCase):
 
     def test_current_schema_hook_is_skipped(self):
         """wire_hooks on an already-current settings.json must not touch it."""
-        from cozempic.init import wire_hooks, run_init
+        from winnow.legacy.init import wire_hooks, run_init
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / ".claude").mkdir()
             # Initial init
@@ -341,12 +341,12 @@ class TestStaleHookRefresh(unittest.TestCase):
 class TestPIDReuseCheck(unittest.TestCase):
     def test_is_cozempic_guard_process_false_for_other_pid(self):
         """Random PID (e.g. init, 1) should not be identified as a cozempic guard."""
-        from cozempic.guard import _is_cozempic_guard_process
+        from winnow.legacy.guard import _is_cozempic_guard_process
         # PID 1 exists on every Unix but isn't cozempic
         self.assertFalse(_is_cozempic_guard_process(1))
 
     def test_is_cozempic_guard_process_false_for_nonexistent(self):
-        from cozempic.guard import _is_cozempic_guard_process
+        from winnow.legacy.guard import _is_cozempic_guard_process
         # Almost certainly not a real PID
         self.assertFalse(_is_cozempic_guard_process(999999))
 
@@ -355,7 +355,7 @@ class TestAtomicWrite(unittest.TestCase):
     def test_save_settings_is_atomic_on_json_error(self):
         """If json serialization raises mid-write, the existing settings.json
         must remain intact (atomic write via tempfile + os.replace)."""
-        from cozempic.init import _save_settings
+        from winnow.legacy.init import _save_settings
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / ".claude").mkdir()
             path = Path(tmp) / ".claude" / "settings.json"
@@ -381,7 +381,7 @@ class TestAtomicWrite(unittest.TestCase):
 
     def test_save_settings_writes_successfully(self):
         """Normal save path must produce the expected content at the target path."""
-        from cozempic.init import _save_settings
+        from winnow.legacy.init import _save_settings
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / ".claude" / "settings.json"
             _save_settings(path, {"hooks": {"SessionStart": []}})
@@ -390,7 +390,7 @@ class TestAtomicWrite(unittest.TestCase):
 
     def test_save_settings_preserves_permissions(self):
         """mkstemp creates 0o600; we must restore the original file's mode."""
-        from cozempic.init import _save_settings
+        from winnow.legacy.init import _save_settings
         import stat
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / ".claude" / "settings.json"
@@ -405,7 +405,7 @@ class TestAtomicWrite(unittest.TestCase):
 class TestWireHooksGracefulParseFailure(unittest.TestCase):
     def test_malformed_settings_returns_error_not_crash(self):
         """wire_hooks on malformed JSON returns error field instead of raising."""
-        from cozempic.init import wire_hooks
+        from winnow.legacy.init import wire_hooks
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / ".claude").mkdir()
             (Path(tmp) / ".claude" / "settings.json").write_text("{not valid")
@@ -420,7 +420,7 @@ class TestDoSMarkerOnFailure(unittest.TestCase):
     def test_marker_touched_on_run_init_failure(self):
         """If run_init raises, the marker must still be touched to prevent
         a DoS loop of re-attempts. (Bug 6.1)"""
-        from cozempic import cli
+        from winnow.legacy import cli
         with tempfile.TemporaryDirectory() as tmp:
             # Fake home with .claude dir
             (Path(tmp) / ".claude").mkdir()

@@ -28,7 +28,7 @@ from .tokens import estimate_session_tokens, quick_token_estimate, calibrate_rat
 from .types import PrescriptionResult, StrategyResult
 
 # Ensure all strategies are registered
-import cozempic.strategies  # noqa: F401
+import winnow.legacy.strategies  # noqa: F401
 
 
 # ─── argparse type= validators ────────────────────────────────────────────

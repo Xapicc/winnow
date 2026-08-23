@@ -38,8 +38,8 @@ def _extract(msgs):
     pass at base for the wrong reason (config-merge finding the live config before
     the JSONL extraction bug is fixed). L11 isolation principle.
     """
-    from cozempic.team import extract_team_state
-    with patch("cozempic.team.load_team_configs", return_value=[]):
+    from winnow.legacy.team import extract_team_state
+    with patch("winnow.legacy.team.load_team_configs", return_value=[]):
         return extract_team_state(msgs)
 
 
@@ -198,7 +198,7 @@ class TestAgentSpawnRecognition(unittest.TestCase):
         After fix: len(state.teammates) >= 1, with a non-benign, non-terminal
         status ('running') that blocks safe_to_reload.
         """
-        from cozempic.guard import _TEAMMATE_BENIGN, _STATUS_TERMINAL
+        from winnow.legacy.guard import _TEAMMATE_BENIGN, _STATUS_TERMINAL
         state = _extract(_spawn_msgs_p1())
         self.assertGreaterEqual(len(state.teammates), 1,
                                 "Agent spawn must create a TeammateInfo entry")
@@ -240,7 +240,7 @@ class TestAgentSpawnRecognition(unittest.TestCase):
         completion signal must block safe_to_reload (return False).
         After fix: safe_to_reload returns (False, reason) with 'teammate' in reason.
         """
-        from cozempic.guard import safe_to_reload
+        from winnow.legacy.guard import safe_to_reload
         msgs = _spawn_msgs_p1()
         state = _extract(msgs)
         safe, reason = safe_to_reload(state, msgs, Path("/tmp/fake_session.jsonl"))
@@ -256,7 +256,7 @@ class TestAgentSpawnRecognition(unittest.TestCase):
         extract_team_state's own scope via _TEAM_EXTRACT_TOOL_NAMES. This ensures
         prune_with_team_protect does NOT over-protect non-team Agent calls.
         """
-        from cozempic.team import TEAM_TOOL_NAMES
+        from winnow.legacy.team import TEAM_TOOL_NAMES
         self.assertNotIn("Agent", TEAM_TOOL_NAMES,
                          "'Agent' must NOT be in TEAM_TOOL_NAMES (would over-protect "
                          "non-team Agent calls in prune_with_team_protect)")
@@ -269,7 +269,7 @@ class TestAgentSpawnRecognition(unittest.TestCase):
         via its own internal predicate, while prune_with_team_protect's
         _is_team_message call does NOT tag them as team-protected.
         """
-        from cozempic.team import _is_team_message
+        from winnow.legacy.team import _is_team_message
         agent_msg = {"message": {"role": "assistant", "content": [
             {"type": "tool_use", "id": "u99", "name": "Agent",
              "input": {"name": "solo-agent", "description": "one-off task"}}
@@ -336,7 +336,7 @@ class TestSendMessageByNameLookup(unittest.TestCase):
                      if t.name == "finder-p1" or "finder-p1" in t.agent_id), None)
         self.assertIsNotNone(mate, "finder-p1 must be in teammates after spawn")
         s = (mate.status or "").strip().lower()
-        from cozempic.guard import _TEAMMATE_BENIGN, _STATUS_TERMINAL
+        from winnow.legacy.guard import _TEAMMATE_BENIGN, _STATUS_TERMINAL
         self.assertNotIn(s, _TEAMMATE_BENIGN,
                          f"After spawn + SendMessage, status must not be benign, got {s!r}")
         self.assertNotIn(s, _STATUS_TERMINAL,
@@ -367,7 +367,7 @@ class TestIdleNotificationTransition(unittest.TestCase):
 
         After fix: the teammate's status becomes 'idle' (∈ _TEAMMATE_BENIGN).
         """
-        from cozempic.guard import _TEAMMATE_BENIGN
+        from winnow.legacy.guard import _TEAMMATE_BENIGN
         state = _extract(self._msgs_with_idle())
         mate = next((t for t in state.teammates
                      if t.name == "finder-p2" or "finder-p2" in t.agent_id), None)
@@ -383,7 +383,7 @@ class TestIdleNotificationTransition(unittest.TestCase):
         After fix: the correct path — teammate exists + is idle → safe.
         The test also verifies state is NOT empty (proving the correct path is taken).
         """
-        from cozempic.guard import safe_to_reload
+        from winnow.legacy.guard import safe_to_reload
         msgs = self._msgs_with_idle()
         state = _extract(msgs)
         self.assertFalse(state.is_empty(),
@@ -399,7 +399,7 @@ class TestIdleNotificationTransition(unittest.TestCase):
         keep the teammate's status as 'running' (not 'idle'). Chronology guard:
         the SendMessage at line 3 is AFTER the idle at line 2 → stays blocking.
         """
-        from cozempic.guard import safe_to_reload, _TEAMMATE_BENIGN
+        from winnow.legacy.guard import safe_to_reload, _TEAMMATE_BENIGN
         msgs = [
             (0, _tool_use("u1", "Agent", {"name": "finder-p2", "description": "find issues"}), 200),
             (1, _tool_result("u1", _SPAWN_RESULT_P2), 300),
@@ -424,7 +424,7 @@ class TestIdleNotificationTransition(unittest.TestCase):
         Only the exact JSON idle_notification body triggers the transition.
         This prevents false-idle transitions from progress-update prose blocks.
         """
-        from cozempic.guard import _TEAMMATE_BENIGN
+        from winnow.legacy.guard import _TEAMMATE_BENIGN
         prose_msg = (
             '<teammate-message teammate_id="finder-p2" summary="progress update">'
             'I have completed the first 3 files and found no issues.'
@@ -465,8 +465,8 @@ class TestStatusBasedSafetyInvariant(unittest.TestCase):
 
         No session-ID comparison needed — "running" can only come from this session.
         """
-        from cozempic.guard import safe_to_reload
-        from cozempic.team import TeamState, TeammateInfo
+        from winnow.legacy.guard import safe_to_reload
+        from winnow.legacy.team import TeamState, TeammateInfo
         # Even with a completely arbitrary lead_session_id, "running" must block.
         for session_id in ("", "old-session", "aabbccdd", None):
             state = TeamState(
@@ -489,8 +489,8 @@ class TestStatusBasedSafetyInvariant(unittest.TestCase):
         'config' ∈ _TEAMMATE_BENIGN. This is the mechanism that prevents stale
         configs from wedging reloads — not a session-ID comparison.
         """
-        from cozempic.guard import safe_to_reload
-        from cozempic.team import TeamState, TeammateInfo
+        from winnow.legacy.guard import safe_to_reload
+        from winnow.legacy.team import TeamState, TeammateInfo
         state = TeamState(
             team_name="old-team",
             teammates=[TeammateInfo("alice@old-team", "alice", status="config")],
@@ -501,8 +501,8 @@ class TestStatusBasedSafetyInvariant(unittest.TestCase):
 
     def test_idle_teammate_never_blocks(self):
         """INVARIANT: idle teammate (status='idle', from idle_notification) is benign."""
-        from cozempic.guard import safe_to_reload
-        from cozempic.team import TeamState, TeammateInfo
+        from winnow.legacy.guard import safe_to_reload
+        from winnow.legacy.team import TeamState, TeammateInfo
         state = TeamState(
             team_name="myteam",
             teammates=[TeammateInfo("alice@myteam", "alice", status="idle")],
@@ -512,8 +512,8 @@ class TestStatusBasedSafetyInvariant(unittest.TestCase):
 
     def test_terminal_teammate_never_blocks(self):
         """INVARIANT: terminal status (completed/failed/done) never blocks."""
-        from cozempic.guard import safe_to_reload, _STATUS_TERMINAL
-        from cozempic.team import TeamState, TeammateInfo
+        from winnow.legacy.guard import safe_to_reload, _STATUS_TERMINAL
+        from winnow.legacy.team import TeamState, TeammateInfo
         for status in sorted(_STATUS_TERMINAL)[:3]:
             state = TeamState(
                 team_name="myteam",
@@ -598,7 +598,7 @@ class TestFullScenario(unittest.TestCase):
 
         This is THE critical regression guard for F1.
         """
-        from cozempic.guard import safe_to_reload
+        from winnow.legacy.guard import safe_to_reload
         msgs = self._pure_sendmessage_msgs(n_spawns=3)
         state = _extract(msgs)
         # After fix, state must not be empty (teammates are visible)
@@ -621,7 +621,7 @@ class TestFullScenario(unittest.TestCase):
         no protection was active). After fix: teammates exist + all are idle → True.
         This test validates the CORRECT path post-fix (all idle → benign → safe).
         """
-        from cozempic.guard import safe_to_reload
+        from winnow.legacy.guard import safe_to_reload
         n = 3
         msgs = list(self._pure_sendmessage_msgs(n_spawns=n))
         idx = len(msgs)
@@ -688,14 +688,14 @@ class TestStaleConfigAntiWedge(unittest.TestCase):
         merge_config_into_state must NOT overwrite lead_session_id when the
         config was matched only by team name (not by session identity).
         """
-        from cozempic.guard import safe_to_reload
+        from winnow.legacy.guard import safe_to_reload
         msgs = self._stale_spawn_msgs()
         live_path = Path("/tmp/LIVE-SESSION-2222.jsonl")
 
         with unittest.mock.patch(
-            "cozempic.team.load_team_configs", return_value=[self._STALE_CONFIG]
+            "winnow.legacy.team.load_team_configs", return_value=[self._STALE_CONFIG]
         ):
-            from cozempic.team import extract_team_state
+            from winnow.legacy.team import extract_team_state
             state = extract_team_state(msgs)
 
         # After fix: lead_session_id must NOT be overwritten by stale config's value;
@@ -714,7 +714,7 @@ class TestStaleConfigAntiWedge(unittest.TestCase):
         This test is GREEN at base (wrong reason); after fix it must stay GREEN
         for the right reason (same session → block).
         """
-        from cozempic.guard import safe_to_reload
+        from winnow.legacy.guard import safe_to_reload
         msgs = self._stale_spawn_msgs()
         live_path = Path("/tmp/LIVE-SESSION-2222.jsonl")
         matching_config = {
@@ -724,9 +724,9 @@ class TestStaleConfigAntiWedge(unittest.TestCase):
             "members": [],
         }
         with unittest.mock.patch(
-            "cozempic.team.load_team_configs", return_value=[matching_config]
+            "winnow.legacy.team.load_team_configs", return_value=[matching_config]
         ):
-            from cozempic.team import extract_team_state
+            from winnow.legacy.team import extract_team_state
             state = extract_team_state(msgs)
 
         safe, reason = safe_to_reload(state, msgs, live_path)
@@ -754,7 +754,7 @@ class TestIdleNotificationPruneProtection(unittest.TestCase):
 
         After fix: _is_team_message returns True → carrier is prune-protected.
         """
-        from cozempic.team import _is_team_message
+        from winnow.legacy.team import _is_team_message
         idle_carrier = _user_content(
             '<teammate-message teammate_id="finder-p1@myteam" summary="idle">'
             '{"type":"idle_notification","from":"finder-p1","idleReason":"available"}'
@@ -784,7 +784,7 @@ class TestFailedAgentSpawnNoWedge(unittest.TestCase):
         After fix: a spawn result with no 'agent_id:' line transitions the
         placeholder to a terminal status → safe_to_reload returns (True, ...).
         """
-        from cozempic.guard import safe_to_reload
+        from winnow.legacy.guard import safe_to_reload
         msgs = [
             (0, _tool_use("u1", "Agent", {"name": "finder-p1", "description": "find"}), 200),
             (1, _tool_result("u1", "Error: quota exceeded. No agent was created."), 300),
@@ -814,7 +814,7 @@ class TestFailedAgentSpawnNoWedge(unittest.TestCase):
 
         This is GREEN at base (wrong reason); must stay GREEN after H-1 fix.
         """
-        from cozempic.guard import safe_to_reload
+        from winnow.legacy.guard import safe_to_reload
         spawn_result = (
             "Spawned successfully.\nagent_id: finder-p1@myteam\n"
             "name: finder-p1\nteam_name: myteam\nRunning."
@@ -858,8 +858,8 @@ class TestGateRemoval(unittest.TestCase):
         one that doesn't match the session path) must block safe_to_reload.
         After gate removal: the block is unconditional → returns (False, ...).
         """
-        from cozempic.guard import safe_to_reload
-        from cozempic.team import TeamState, TeammateInfo
+        from winnow.legacy.guard import safe_to_reload
+        from winnow.legacy.team import TeamState, TeammateInfo
         # Simulate a state where a stale config injected a wrong lead_session_id
         # but the JSONL gave a "running" teammate (the real current-session signal).
         state = TeamState(
@@ -884,8 +884,8 @@ class TestGateRemoval(unittest.TestCase):
         config.json (not seen in JSONL). 'config' ∈ _TEAMMATE_BENIGN → never blocks.
         This test documents the real safety mechanism.
         """
-        from cozempic.guard import safe_to_reload
-        from cozempic.team import TeamState, TeammateInfo
+        from winnow.legacy.guard import safe_to_reload
+        from winnow.legacy.team import TeamState, TeammateInfo
         state = TeamState(
             team_name="myteam",
             teammates=[TeammateInfo("alice@myteam", "alice", status="config")],
@@ -906,8 +906,8 @@ class TestGateRemoval(unittest.TestCase):
           config lists the same member IDs).
         After gate removal: block is unconditional on "running" status → safe=False.
         """
-        from cozempic.guard import safe_to_reload
-        from cozempic.team import TeamState, TeammateInfo
+        from winnow.legacy.guard import safe_to_reload
+        from winnow.legacy.team import TeamState, TeammateInfo
         # Construct the post-merge state directly: JSONL gave finder-p1 "running",
         # but stale config successfully injected OLD-SESSION-1111 as lead_session_id.
         state = TeamState(
@@ -943,7 +943,7 @@ class TestNestedTeammateMessageRegex(unittest.TestCase):
         (an idle_notification). The outer 'lead' must NOT be transitioned to idle.
         After fix: only 'alice' is transitioned.
         """
-        from cozempic.team import extract_team_state, TeammateInfo
+        from winnow.legacy.team import extract_team_state, TeammateInfo
         # Build a message with a nested block: outer=lead (NOT idle), inner=alice (idle)
         nested_content = (
             '<teammate-message teammate_id="lead" summary="forwarded">'
@@ -963,7 +963,7 @@ class TestNestedTeammateMessageRegex(unittest.TestCase):
             }), 100),
             (1, _user_content(nested_content), 200),
         ]
-        with patch("cozempic.team.load_team_configs", return_value=[]):
+        with patch("winnow.legacy.team.load_team_configs", return_value=[]):
             state = extract_team_state(msgs)
 
         lead_mate = next((t for t in state.teammates
@@ -971,7 +971,7 @@ class TestNestedTeammateMessageRegex(unittest.TestCase):
         alice_mate = next((t for t in state.teammates
                            if t.name == "alice" or t.agent_id == "alice@myteam"), None)
 
-        from cozempic.guard import _TEAMMATE_BENIGN
+        from winnow.legacy.guard import _TEAMMATE_BENIGN
         if lead_mate is not None:
             s = (lead_mate.status or "").strip().lower()
             self.assertNotIn(
@@ -1009,7 +1009,7 @@ class TestAgentsActiveTeammateBlind(unittest.TestCase):
 
     def _compute_agents_active(self, state):
         """Delegate to the guard helper so tests exercise the real production logic."""
-        from cozempic.guard import _compute_agents_active
+        from winnow.legacy.guard import _compute_agents_active
         return _compute_agents_active(state)
 
     def test_running_teammate_empty_subagents_agents_active_false_at_base(self):
@@ -1021,7 +1021,7 @@ class TestAgentsActiveTeammateBlind(unittest.TestCase):
         At base (guard.py:974-979 unchanged) it returns False → daemon K-exits and
         orphans the teammate.
         """
-        from cozempic.team import TeamState, TeammateInfo, SubagentInfo
+        from winnow.legacy.team import TeamState, TeammateInfo, SubagentInfo
         state = TeamState(
             team_name="myteam",
             lead_agent_id="lead@myteam",
@@ -1044,7 +1044,7 @@ class TestAgentsActiveTeammateBlind(unittest.TestCase):
         This test documents the quiescent-session invariant: once all agents finish, the
         daemon is allowed to exit without deferral.
         """
-        from cozempic.team import TeamState, TeammateInfo
+        from winnow.legacy.team import TeamState, TeammateInfo
         state = TeamState(
             team_name="myteam",
             lead_agent_id="lead@myteam",
@@ -1064,7 +1064,7 @@ class TestAgentsActiveTeammateBlind(unittest.TestCase):
         """Positive control — GREEN at base: an idle teammate (benign status) with no
         subagents should NOT count as active.
         """
-        from cozempic.team import TeamState, TeammateInfo
+        from winnow.legacy.team import TeamState, TeammateInfo
         state = TeamState(
             team_name="myteam",
             lead_agent_id="lead@myteam",
@@ -1085,7 +1085,7 @@ class TestAgentsActiveTeammateBlind(unittest.TestCase):
 
         This verifies the EXISTING subagent coverage is NOT broken by the fix.
         """
-        from cozempic.team import TeamState, SubagentInfo
+        from winnow.legacy.team import TeamState, SubagentInfo
         state = TeamState(
             team_name="myteam",
             lead_agent_id="lead@myteam",
@@ -1109,7 +1109,7 @@ class TestAgentsActiveTeammateBlind(unittest.TestCase):
         to catch the regression — but it documents that the combined case works after the
         fix and the teammate side is verified independently.
         """
-        from cozempic.team import TeamState, TeammateInfo, SubagentInfo
+        from winnow.legacy.team import TeamState, TeammateInfo, SubagentInfo
         state = TeamState(
             team_name="myteam",
             lead_agent_id="lead@myteam",
@@ -1127,7 +1127,7 @@ class TestAgentsActiveTeammateBlind(unittest.TestCase):
 
     def test_empty_state_not_active(self):
         """Invariant (GREEN at base): empty TeamState → agents_active False."""
-        from cozempic.team import TeamState
+        from winnow.legacy.team import TeamState
         state = TeamState(
             team_name="",
             lead_agent_id="",
@@ -1154,8 +1154,8 @@ class TestAgentsActiveTeammateBlind(unittest.TestCase):
         A newly-created team member sitting at 'unknown' before any task-status
         notification arrives must not block K-exit deferral.
         """
-        from cozempic.guard import _compute_agents_active
-        from cozempic.team import TeamState, TeammateInfo
+        from winnow.legacy.guard import _compute_agents_active
+        from winnow.legacy.team import TeamState, TeammateInfo
         state = TeamState(
             team_name="myteam",
             lead_agent_id="lead@myteam",
@@ -1195,8 +1195,8 @@ class TestComputeAgentsActiveAllowlistFix(unittest.TestCase):
         At base (ALLOWLIST): None not in ('running','unknown') -> False -> K-exit proceeds.
         After fix (DENYLIST): '' not in _STATUS_TERMINAL -> True -> K-exit deferred.
         """
-        from cozempic.guard import _compute_agents_active
-        from cozempic.team import TeamState, SubagentInfo
+        from winnow.legacy.guard import _compute_agents_active
+        from winnow.legacy.team import TeamState, SubagentInfo
         state = TeamState(
             team_name="t", lead_agent_id="l@t", lead_session_id="s",
             config_source="jsonl",
@@ -1215,8 +1215,8 @@ class TestComputeAgentsActiveAllowlistFix(unittest.TestCase):
         At base (ALLOWLIST): 'busy' not in ('running','unknown') -> False -> K-exit proceeds.
         After fix (DENYLIST): 'busy' not in _STATUS_TERMINAL -> True -> K-exit deferred.
         """
-        from cozempic.guard import _compute_agents_active
-        from cozempic.team import TeamState, SubagentInfo
+        from winnow.legacy.guard import _compute_agents_active
+        from winnow.legacy.team import TeamState, SubagentInfo
         state = TeamState(
             team_name="t", lead_agent_id="l@t", lead_session_id="s",
             config_source="jsonl",
@@ -1235,8 +1235,8 @@ class TestComputeAgentsActiveAllowlistFix(unittest.TestCase):
         At base (ALLOWLIST): '' not in ('running','unknown') -> False -> K-exit proceeds.
         After fix (DENYLIST): '' not in _STATUS_TERMINAL -> True -> K-exit deferred.
         """
-        from cozempic.guard import _compute_agents_active
-        from cozempic.team import TeamState, SubagentInfo
+        from winnow.legacy.guard import _compute_agents_active
+        from winnow.legacy.team import TeamState, SubagentInfo
         state = TeamState(
             team_name="t", lead_agent_id="l@t", lead_session_id="s",
             config_source="jsonl",
@@ -1250,12 +1250,12 @@ class TestComputeAgentsActiveAllowlistFix(unittest.TestCase):
         )
 
     def test_is_active_subagent_helper_exists(self):
-        """After fix: _is_active_subagent must be importable from cozempic.guard.
+        """After fix: _is_active_subagent must be importable from winnow.legacy.guard.
 
         ERROR at base (function doesn't exist yet).
         GREEN after fix.
         """
-        from cozempic.guard import _is_active_subagent
+        from winnow.legacy.guard import _is_active_subagent
         self.assertTrue(callable(_is_active_subagent))
 
     def test_running_subagent_still_active_after_denylist_fix(self):
@@ -1263,8 +1263,8 @@ class TestComputeAgentsActiveAllowlistFix(unittest.TestCase):
 
         The DENYLIST must not regress the existing behavior for 'running' status.
         """
-        from cozempic.guard import _compute_agents_active
-        from cozempic.team import TeamState, SubagentInfo
+        from winnow.legacy.guard import _compute_agents_active
+        from winnow.legacy.team import TeamState, SubagentInfo
         state = TeamState(
             team_name="t", lead_agent_id="l@t", lead_session_id="s",
             config_source="jsonl",
@@ -1282,8 +1282,8 @@ class TestComputeAgentsActiveAllowlistFix(unittest.TestCase):
         At base (ALLOWLIST): 'completed' not in ('running','unknown') -> False (correct).
         After fix (DENYLIST): 'completed' in _STATUS_TERMINAL -> False (correct).
         """
-        from cozempic.guard import _compute_agents_active
-        from cozempic.team import TeamState, SubagentInfo
+        from winnow.legacy.guard import _compute_agents_active
+        from winnow.legacy.team import TeamState, SubagentInfo
         state = TeamState(
             team_name="t", lead_agent_id="l@t", lead_session_id="s",
             config_source="jsonl",
@@ -1296,11 +1296,11 @@ class TestComputeAgentsActiveAllowlistFix(unittest.TestCase):
         )
 
     def test_hard_cap_exit_desc_helper_exists(self):
-        """After fix: _hard_cap_exit_desc must be importable from cozempic.guard.
+        """After fix: _hard_cap_exit_desc must be importable from winnow.legacy.guard.
 
         ERROR at base (function doesn't exist yet per Q-B answer: extract helper).
         """
-        from cozempic.guard import _hard_cap_exit_desc
+        from winnow.legacy.guard import _hard_cap_exit_desc
         self.assertTrue(callable(_hard_cap_exit_desc))
 
     def test_hard_cap_exit_desc_teammate_only_no_subagents_label(self):
@@ -1310,8 +1310,8 @@ class TestComputeAgentsActiveAllowlistFix(unittest.TestCase):
         After fix, for state with a running teammate and no subagents, the description
         must contain 'teammate(s)' and must NOT contain 'subagent(s)'.
         """
-        from cozempic.guard import _hard_cap_exit_desc
-        from cozempic.team import TeamState, TeammateInfo
+        from winnow.legacy.guard import _hard_cap_exit_desc
+        from winnow.legacy.team import TeamState, TeammateInfo
         state = TeamState(
             team_name="t", lead_agent_id="l@t", lead_session_id="s",
             config_source="jsonl",

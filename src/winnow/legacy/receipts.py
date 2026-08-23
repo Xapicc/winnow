@@ -1,6 +1,6 @@
 """Receipt persistence — D1 of the dashboard build path.
 
-Writes ``PruneReceipt`` records (see :mod:`cozempic.metrics`) to a LOCAL,
+Writes ``PruneReceipt`` records (see :mod:`winnow.legacy.metrics`) to a LOCAL,
 append-only log the dashboard reads. Never network — this is local provenance,
 distinct from any telemetry, and honors a dedicated opt-out.
 

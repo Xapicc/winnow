@@ -106,7 +106,7 @@ class TestOrphanShellRootExclusion:
         This test FAILS pre-fix (PruneValidationError raised unexpectedly)
         and PASSES post-fix (no exception raised).
         """
-        from cozempic.safety import validate_post_prune
+        from winnow.legacy.safety import validate_post_prune
 
         before = self._resumed_session()
         # Simulate what happens after orphan-fix drops root: 'root' absent from after.
@@ -129,7 +129,7 @@ class TestOrphanShellRootExclusion:
 
         This test FAILS pre-fix (PruneValidationError raised) and PASSES post-fix.
         """
-        from cozempic.safety import validate_post_prune
+        from winnow.legacy.safety import validate_post_prune
 
         before = self._resumed_session()
         # a-001 still has parentUuid='root' (as if not relinked yet).
@@ -146,7 +146,7 @@ class TestOrphanShellRootExclusion:
         This test PASSES both pre-fix AND post-fix. It guards against an over-broad
         fix that exempts ALL root drops instead of only orphan-shell drops.
         """
-        from cozempic.safety import validate_post_prune, PruneValidationError
+        from winnow.legacy.safety import validate_post_prune, PruneValidationError
 
         before = [
             _user(0, "real-root", None),  # normal user msg — NOT an orphan shell
@@ -164,7 +164,7 @@ class TestOrphanShellRootExclusion:
 
         PASSES both pre-fix and post-fix. Guards against over-broad orphan exclusion.
         """
-        from cozempic.safety import validate_post_prune, PruneValidationError
+        from winnow.legacy.safety import validate_post_prune, PruneValidationError
 
         before = [
             _user(0, "root", None),
@@ -194,7 +194,7 @@ class TestOrphanShellNonRoot:
 
         FAILS pre-fix (PruneValidationError raised), PASSES post-fix.
         """
-        from cozempic.safety import validate_post_prune
+        from winnow.legacy.safety import validate_post_prune
 
         # u-orphan: a mid-chain user whose sole content is a cross-session tool_result
         u_orphan = (2, {
@@ -258,8 +258,8 @@ class TestFullPipelineOrphanShell:
         This reproduces the reviewer's live-reproduced abort.
         FAILS pre-fix (PruneValidationError raised), PASSES post-fix.
         """
-        import cozempic.strategies  # noqa: F401
-        from cozempic.executor import run_prescription
+        import winnow.legacy.strategies  # noqa: F401
+        from winnow.legacy.executor import run_prescription
 
         session = self._build_resumed_session(n_pairs=5)
         # POST-FIX: must NOT raise. PRE-FIX: raises C2 (or C1).
@@ -271,12 +271,12 @@ class TestFullPipelineOrphanShell:
 class TestGuardAbortContractRewritten:
     """H-1: correct mock target + 3 assertions.
 
-    The old test patched cozempic.executor.run_prescription. Guard.py binds
+    The old test patched winnow.legacy.executor.run_prescription. Guard.py binds
     via `from .executor import run_prescription` at import time, so the mock
     never fires. The test was GREEN via the saved_bytes<=0 early-return, NOT
     via the abort branch.
 
-    This rewrite patches cozempic.guard.prune_with_team_protect (what guard
+    This rewrite patches winnow.legacy.guard.prune_with_team_protect (what guard
     actually calls) and asserts all three abort-contract invariants.
     """
 
@@ -289,8 +289,8 @@ class TestGuardAbortContractRewritten:
         """
         import json as _json
         from unittest.mock import patch
-        from cozempic.safety import PruneValidationError
-        from cozempic.guard import guard_prune_cycle
+        from winnow.legacy.safety import PruneValidationError
+        from winnow.legacy.guard import guard_prune_cycle
 
         # Large enough session that saved_bytes won't be ≤0 if the mock fires
         msgs = [
@@ -310,9 +310,9 @@ class TestGuardAbortContractRewritten:
                 {"failed_check": "C2", "surviving_count": 0},
             )
 
-        with patch("cozempic.guard.prune_with_team_protect",
+        with patch("winnow.legacy.guard.prune_with_team_protect",
                    side_effect=_raising) as mock_pwtp, \
-             patch("cozempic.guard._terminate_and_resume") as mock_tar:
+             patch("winnow.legacy.guard._terminate_and_resume") as mock_tar:
             result = guard_prune_cycle(
                 session_path=session_path,
                 rx_name="standard",
@@ -344,17 +344,17 @@ class TestGuardAbortContractRewritten:
         module import time. Patching the executor module attribute after import
         does NOT rebind guard.py's local reference.
         """
-        from cozempic import guard as guard_mod
+        from winnow.legacy import guard as guard_mod
 
         original_fn = guard_mod.run_prescription
         with __import__("unittest.mock", fromlist=["patch"]).patch(
-            "cozempic.executor.run_prescription"
+            "winnow.legacy.executor.run_prescription"
         ) as mock_rp:
             current_fn = guard_mod.run_prescription
 
         # Guard's local name is unchanged by the patch
         assert current_fn is original_fn, (
-            "Patching cozempic.executor.run_prescription should NOT rebind "
+            "Patching winnow.legacy.executor.run_prescription should NOT rebind "
             "guard.py's already-imported reference."
         )
         mock_rp.assert_not_called()
@@ -382,7 +382,7 @@ class TestAssertionRedProofs:
         This test verifies both: (1) naive check passes (demonstrates the gap),
         (2) our C2 raises (proves we catch what naive misses).
         """
-        from cozempic.safety import validate_post_prune, PruneValidationError
+        from winnow.legacy.safety import validate_post_prune, PruneValidationError
 
         before = [
             _user(0, "real-root", None),
@@ -424,7 +424,7 @@ class TestAssertionRedProofs:
         (It's GREEN both pre and post fix — documents that C1 baseline-relative
         logic was already correct in round-1 for the cross-session case.)
         """
-        from cozempic.safety import validate_post_prune
+        from winnow.legacy.safety import validate_post_prune
 
         # root references a prior-session uuid (not in before)
         before = [

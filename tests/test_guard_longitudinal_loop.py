@@ -22,8 +22,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import mock
 
-import cozempic.guard as G
-from cozempic.guard import HARD_LOOP_EXIT_THRESHOLD
+import winnow.legacy.guard as G
+from winnow.legacy.guard import HARD_LOOP_EXIT_THRESHOLD
 
 
 class _EmptyState:
@@ -79,10 +79,10 @@ class TestLongitudinalUnprunableLoop(unittest.TestCase):
         }
         cms = [mock.patch.object(G, name, fn) for name, fn in patches.items()]
         cms.append(mock.patch.object(G.time, "sleep", lambda s: self.sleeps.append(s)))
-        cms.append(mock.patch("cozempic.tokens.detect_context_window", lambda *a, **k: 1_000_000))
-        cms.append(mock.patch("cozempic.tokens.default_token_thresholds_4tier",
+        cms.append(mock.patch("winnow.legacy.tokens.detect_context_window", lambda *a, **k: 1_000_000))
+        cms.append(mock.patch("winnow.legacy.tokens.default_token_thresholds_4tier",
                               lambda cw: (250_000, 550_000, 800_000)))
-        cms.append(mock.patch("cozempic.session.record_session", lambda *a, **k: None))
+        cms.append(mock.patch("winnow.legacy.session.record_session", lambda *a, **k: None))
         for c in cms:
             c.start()
         try:
@@ -139,7 +139,7 @@ class TestLongitudinalUnprunableLoop(unittest.TestCase):
         # A DETERMINISTIC per-cycle error must NOT spin forever as an inert-but-alive
         # daemon (watchdog-invisible) — it must escalate after GUARD_CYCLE_ERROR_EXIT
         # and exit(1) so SessionStart respawns (C2). Estimator raises EVERY cycle.
-        from cozempic.guard import GUARD_CYCLE_ERROR_EXIT
+        from winnow.legacy.guard import GUARD_CYCLE_ERROR_EXIT
         calls = {"n": 0}
         def always_raises(*a, **k):
             calls["n"] += 1
@@ -155,7 +155,7 @@ class TestLongitudinalUnprunableLoop(unittest.TestCase):
         # guard skips that session and keeps running. Raise it 8x (> the exit
         # threshold of 5) then behave; the run must reach the normal K-exit (code 0),
         # proving the decode error never escalated to the respawn exit(1).
-        from cozempic.guard import GUARD_CYCLE_ERROR_EXIT
+        from winnow.legacy.guard import GUARD_CYCLE_ERROR_EXIT
         calls = {"n": 0}
         def decode_then_ok(*a, **k):
             calls["n"] += 1

@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 import unittest
 
-from cozempic.helpers import msg_bytes
-from cozempic.registry import STRATEGIES
+from winnow.legacy.helpers import msg_bytes
+from winnow.legacy.registry import STRATEGIES
 
-import cozempic.strategies  # noqa: F401
+import winnow.legacy.strategies  # noqa: F401
 
 
 def make_message(line_idx: int, msg: dict) -> tuple[int, dict, int]:
@@ -63,7 +63,7 @@ class TestMinifyDiffGate(unittest.TestCase):
     space-indented line into '[...unchanged...]' = silent data loss (audit P1)."""
 
     def test_real_diff_still_collapses(self):
-        from cozempic.strategies.standard import _minify_tool_content
+        from winnow.legacy.strategies.standard import _minify_tool_content
         ctx = "".join(f" unchanged context line number {i}\n" for i in range(12))
         diff = "--- a/x.py\n+++ b/x.py\n@@ -1,14 +1,14 @@\n" + ctx + "-old\n+new\n"
         out = _minify_tool_content(diff)
@@ -73,7 +73,7 @@ class TestMinifyDiffGate(unittest.TestCase):
     def test_single_fake_hunk_line_with_indented_logs_preserved(self):
         # Fleet repro: ONE hunk-shaped line in non-diff output (no ---/+++ envelope)
         # must NOT open the gate; indented log lines must survive verbatim.
-        from cozempic.strategies.standard import _minify_tool_content
+        from winnow.legacy.strategies.standard import _minify_tool_content
         content = (
             "Replaying journal @@ -1 +1 @@ marker found:\n"
             "   ERROR connection refused to db-primary\n"
@@ -89,7 +89,7 @@ class TestMinifyDiffGate(unittest.TestCase):
     def test_git_log_p_second_commit_body_preserved(self):
         # Fleet P1: content after a hunk (a git-log-p second commit's indented
         # message body) must survive — in_hunk must reset after the hunk ends.
-        from cozempic.strategies.standard import _minify_tool_content
+        from winnow.legacy.strategies.standard import _minify_tool_content
         ctx = "".join(f" ctx line {i}\n" for i in range(12))
         content = (
             "commit abc123\n"
@@ -107,7 +107,7 @@ class TestMinifyDiffGate(unittest.TestCase):
                       "content after the hunk must NOT be collapsed away")
 
     def test_indented_config_after_fake_hunk_preserved(self):
-        from cozempic.strategies.standard import _minify_tool_content
+        from winnow.legacy.strategies.standard import _minify_tool_content
         content = (
             "@@ -1 +1 @@\n"
             "   api_key = SECRET_DO_NOT_LOSE\n"
@@ -123,7 +123,7 @@ class TestMinifyDiffGate(unittest.TestCase):
     def test_non_diff_with_at_at_substring_preserved(self):
         # Prose/log that merely contains '@@' and space-indented lines must be
         # returned VERBATIM — not run through the diff collapser.
-        from cozempic.strategies.standard import _minify_tool_content
+        from winnow.legacy.strategies.standard import _minify_tool_content
         content = (
             "Decorator usage:\n"
             "  @@app.route\n"           # '@@' but NOT a hunk header
@@ -136,7 +136,7 @@ class TestMinifyDiffGate(unittest.TestCase):
                          "non-diff content must be preserved verbatim, never collapsed")
 
     def test_indented_prose_block_not_destroyed(self):
-        from cozempic.strategies.standard import _minify_tool_content
+        from winnow.legacy.strategies.standard import _minify_tool_content
         content = "Log output:\n" + "".join(f"   line {i}\n" for i in range(40)) + "@@ note @@\n"
         self.assertEqual(_minify_tool_content(content), content)
 
@@ -290,7 +290,7 @@ class TestToolResultAge(unittest.TestCase):
 
     def test_in_standard_prescription(self):
         """Strategy should be in standard and aggressive prescriptions."""
-        from cozempic.registry import PRESCRIPTIONS
+        from winnow.legacy.registry import PRESCRIPTIONS
         self.assertIn("tool-result-age", PRESCRIPTIONS["standard"])
         self.assertIn("tool-result-age", PRESCRIPTIONS["aggressive"])
         self.assertNotIn("tool-result-age", PRESCRIPTIONS["gentle"])

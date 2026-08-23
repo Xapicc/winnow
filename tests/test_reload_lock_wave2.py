@@ -23,7 +23,7 @@ from unittest.mock import patch
 
 class TestReloadLockAcquireRelease(unittest.TestCase):
     def test_basic_acquire_release(self):
-        from cozempic.reload_lock import _ReloadLock, _lock_path_for
+        from winnow.legacy.reload_lock import _ReloadLock, _lock_path_for
         sid = "test-session-acq-rel"
         lock_path = _lock_path_for(sid)
         # Clean state
@@ -37,7 +37,7 @@ class TestReloadLockAcquireRelease(unittest.TestCase):
             lock_path.unlink(missing_ok=True)
 
     def test_lock_contents_have_pid_and_initiator(self):
-        from cozempic.reload_lock import _ReloadLock, _lock_path_for, INIT_CLI_RELOAD
+        from winnow.legacy.reload_lock import _ReloadLock, _lock_path_for, INIT_CLI_RELOAD
         sid = "test-session-contents"
         lock_path = _lock_path_for(sid)
         lock_path.unlink(missing_ok=True)
@@ -57,7 +57,7 @@ class TestReloadLockAcquireRelease(unittest.TestCase):
 
 class TestReloadLockSingleFlight(unittest.TestCase):
     def test_second_acquire_raises_reload_lock_held(self):
-        from cozempic.reload_lock import _ReloadLock, ReloadLockHeld, _lock_path_for
+        from winnow.legacy.reload_lock import _ReloadLock, ReloadLockHeld, _lock_path_for
         sid = "test-single-flight"
         lock_path = _lock_path_for(sid)
         lock_path.unlink(missing_ok=True)
@@ -74,7 +74,7 @@ class TestReloadLockSingleFlight(unittest.TestCase):
 
     def test_concurrent_threads_only_one_wins(self):
         """20 threads racing for the same lock — exactly one succeeds."""
-        from cozempic.reload_lock import _ReloadLock, ReloadLockHeld, _lock_path_for
+        from winnow.legacy.reload_lock import _ReloadLock, ReloadLockHeld, _lock_path_for
         sid = "test-concurrent-threads"
         lock_path = _lock_path_for(sid)
         lock_path.unlink(missing_ok=True)
@@ -122,7 +122,7 @@ class TestReloadLockStaleHolder(unittest.TestCase):
     def test_stale_pid_cleanup(self):
         """If lock file has a PID that's no longer alive, acquire should
         clean it up and proceed."""
-        from cozempic.reload_lock import _ReloadLock, _lock_path_for
+        from winnow.legacy.reload_lock import _ReloadLock, _lock_path_for
         sid = "test-stale-pid"
         lock_path = _lock_path_for(sid)
         lock_path.unlink(missing_ok=True)
@@ -146,7 +146,7 @@ class TestReloadLockStaleHolder(unittest.TestCase):
 class TestReloadLockWedged(unittest.TestCase):
     def test_wedged_lock_raises_with_wedged_flag(self):
         """If lock file holder PID is alive AND age > WEDGE_TTL_SECONDS, raise with wedged=True."""
-        from cozempic.reload_lock import _ReloadLock, ReloadLockHeld, _lock_path_for, WEDGE_TTL_SECONDS
+        from winnow.legacy.reload_lock import _ReloadLock, ReloadLockHeld, _lock_path_for, WEDGE_TTL_SECONDS
         sid = "test-wedged"
         lock_path = _lock_path_for(sid)
         lock_path.unlink(missing_ok=True)
@@ -169,7 +169,7 @@ class TestReloadLockWedged(unittest.TestCase):
 
 class TestReloadLockWait(unittest.TestCase):
     def test_acquire_with_wait_succeeds_when_lock_released(self):
-        from cozempic.reload_lock import _ReloadLock, acquire_with_wait, _lock_path_for
+        from winnow.legacy.reload_lock import _ReloadLock, acquire_with_wait, _lock_path_for
         sid = "test-wait-success"
         lock_path = _lock_path_for(sid)
         lock_path.unlink(missing_ok=True)
@@ -207,7 +207,7 @@ class TestReloadLockWait(unittest.TestCase):
 
     def test_acquire_with_wait_raises_when_wedged(self):
         """Wedged locks (age > TTL) should not be waited for — surface immediately."""
-        from cozempic.reload_lock import acquire_with_wait, ReloadLockHeld, _lock_path_for, WEDGE_TTL_SECONDS
+        from winnow.legacy.reload_lock import acquire_with_wait, ReloadLockHeld, _lock_path_for, WEDGE_TTL_SECONDS
         sid = "test-wait-wedged"
         lock_path = _lock_path_for(sid)
         lock_path.unlink(missing_ok=True)
@@ -231,7 +231,7 @@ class TestReloadLockWait(unittest.TestCase):
 
 class TestReloadLockSessionIdSanitization(unittest.TestCase):
     def test_path_in_session_id_uses_stem(self):
-        from cozempic.reload_lock import _slug_for, _lock_path_for
+        from winnow.legacy.reload_lock import _slug_for, _lock_path_for
         # Full path with .jsonl — should reduce to first 12 chars of the UUID stem
         slug = _slug_for("/Users/foo/.claude/projects/abc/f641174c-d784-4aab.jsonl")
         self.assertEqual(slug, "f641174c-d78")
@@ -241,14 +241,14 @@ class TestReloadLockSessionIdSanitization(unittest.TestCase):
         self.assertNotIn("\\", slug)
 
     def test_malicious_session_id_sanitized(self):
-        from cozempic.reload_lock import _slug_for
+        from winnow.legacy.reload_lock import _slug_for
         slug = _slug_for("../../etc/passwd")
         # Should not contain path traversal chars
         self.assertNotIn("..", slug)
         self.assertNotIn("/", slug)
 
     def test_lock_path_in_tempdir(self):
-        from cozempic.reload_lock import _lock_path_for
+        from winnow.legacy.reload_lock import _lock_path_for
         path = _lock_path_for("abc123")
         self.assertEqual(path.parent, Path(tempfile.gettempdir()))
         self.assertEqual(path.name, "cozempic_reload_abc123.lock")
@@ -266,9 +266,9 @@ class TestReloadLockSessionIdSanitization(unittest.TestCase):
         (uppercase kept), while spawn_lock._slug_for produces "abcd1234efgh"
         and guard._reload_armed_path produces "abcd1234efgh" → assertEqual FAILS.
         """
-        from cozempic.reload_lock import _slug_for as rl_slug
-        from cozempic.spawn_lock import _slug_for as sl_slug
-        from cozempic.guard import _reload_armed_path
+        from winnow.legacy.reload_lock import _slug_for as rl_slug
+        from winnow.legacy.spawn_lock import _slug_for as sl_slug
+        from winnow.legacy.guard import _reload_armed_path
 
         # Non-UUID uppercase input: 12+ chars, contains upper letters.
         raw = "ABCD1234EFGH-XX"
@@ -304,9 +304,9 @@ class TestReloadLockSessionIdSanitization(unittest.TestCase):
         and dashes) is already lowercase, so .lower() is a no-op. The slug must
         equal the first 12 chars of the UUID across all three producers.
         """
-        from cozempic.reload_lock import _slug_for as rl_slug
-        from cozempic.spawn_lock import _slug_for as sl_slug
-        from cozempic.guard import _reload_armed_path
+        from winnow.legacy.reload_lock import _slug_for as rl_slug
+        from winnow.legacy.spawn_lock import _slug_for as sl_slug
+        from winnow.legacy.guard import _reload_armed_path
 
         uuid = "f641174c-d784-4aab-8f29-3a1c2b456def"
         expected = "f641174c-d78"  # first 12 chars, all lowercase already
@@ -331,7 +331,7 @@ class TestReloadLockSessionIdSanitization(unittest.TestCase):
         for any standard lowercase UUID, ensuring live armed-sentinels are not
         orphaned on upgrade.
         """
-        from cozempic.guard import _reload_armed_path
+        from winnow.legacy.guard import _reload_armed_path
 
         uuid = "f641174c-d784-4aab-8f29-3a1c2b456def"
         # Pre-fix formula (the inline that was in guard before P0-A)
@@ -357,8 +357,8 @@ class TestReloadLockSessionIdSanitization(unittest.TestCase):
         stem first, producing 'mysession-ab'. This is the split-brain XF-1 for path
         inputs: the reload-lock and the armed sentinel live under different slugs.
         """
-        from cozempic.guard import _reload_armed_path
-        from cozempic.reload_lock import _slug_for as rl_slug
+        from winnow.legacy.guard import _reload_armed_path
+        from winnow.legacy.reload_lock import _slug_for as rl_slug
 
         path_input = '/Users/foo/MySession-ABC.jsonl'
         armed_path = _reload_armed_path(path_input)
@@ -377,8 +377,8 @@ class TestReloadLockSessionIdSanitization(unittest.TestCase):
 
         Same divergence as T1 but on the ledger path producer.
         """
-        from cozempic.guard import _reload_ledger_path
-        from cozempic.reload_lock import _slug_for as rl_slug
+        from winnow.legacy.guard import _reload_ledger_path
+        from winnow.legacy.reload_lock import _slug_for as rl_slug
 
         path_input = '/Users/foo/MySession-ABC.jsonl'
         ledger_path = _reload_ledger_path(path_input, Path('/dummy'))
@@ -400,7 +400,7 @@ class TestReloadLockSessionIdSanitization(unittest.TestCase):
         and the reload sentinel target different conceptual session slots when
         both have None/empty session_id.
         """
-        from cozempic.guard import _reload_armed_path
+        from winnow.legacy.guard import _reload_armed_path
 
         armed_path = _reload_armed_path(None, None)
         self.assertIn("default", armed_path.name,
@@ -419,8 +419,8 @@ class TestReloadLockSessionIdSanitization(unittest.TestCase):
         for the path input, while _slug_for produces 'mysession-ab'. After P0-A both
         call _slug_for, so they agree with each other AND with the lock.
         """
-        from cozempic.guard import _reload_armed_path, _reload_ledger_path
-        from cozempic.reload_lock import _slug_for as rl_slug
+        from winnow.legacy.guard import _reload_armed_path, _reload_ledger_path
+        from winnow.legacy.reload_lock import _slug_for as rl_slug
 
         path_input = '/Users/foo/MySession-ABC.jsonl'
         armed_path = _reload_armed_path(path_input)
@@ -449,7 +449,7 @@ class TestReloadLockSessionIdSanitization(unittest.TestCase):
         GREEN at HEAD (the code is correct) and guards against future ordering
         regressions.
         """
-        from cozempic.reload_lock import _slug_for
+        from winnow.legacy.reload_lock import _slug_for
         slug = _slug_for('/Users/foo/ABCDEF123456.jsonl')
         self.assertEqual(slug, 'abcdef123456')
         self.assertEqual(slug, slug.lower(), "Slug must be fully lowercase")
@@ -458,8 +458,8 @@ class TestReloadLockSessionIdSanitization(unittest.TestCase):
 
     def test_slug_parity_ledger_path_matches_reload_lock(self):
         """_reload_ledger_path must use the same slug as reload_lock._slug_for."""
-        from cozempic.guard import _reload_ledger_path
-        from cozempic.reload_lock import _slug_for as rl_slug
+        from winnow.legacy.guard import _reload_ledger_path
+        from winnow.legacy.reload_lock import _slug_for as rl_slug
 
         raw = "ABCD1234EFGH-XX"
         ledger_path = _reload_ledger_path(raw, Path("/tmp/ignored.jsonl"))
@@ -481,8 +481,8 @@ class TestReloadLockProcessAlive(unittest.TestCase):
 
     def test_permissionerror_treats_as_alive(self):
         """PermissionError on kill(pid,0) must return True (cross-user = alive)."""
-        from cozempic.reload_lock import _is_process_alive
-        with patch('cozempic.reload_lock.os.kill', side_effect=PermissionError):
+        from winnow.legacy.reload_lock import _is_process_alive
+        with patch('winnow.legacy.reload_lock.os.kill', side_effect=PermissionError):
             result = _is_process_alive(1234)
         self.assertTrue(result,
             "_is_process_alive must return True for PermissionError — "
@@ -490,25 +490,25 @@ class TestReloadLockProcessAlive(unittest.TestCase):
 
     def test_processlookuperror_treats_as_dead(self):
         """ProcessLookupError on kill(pid,0) must still return False (no such process)."""
-        from cozempic.reload_lock import _is_process_alive
-        with patch('cozempic.reload_lock.os.kill', side_effect=ProcessLookupError):
+        from winnow.legacy.reload_lock import _is_process_alive
+        with patch('winnow.legacy.reload_lock.os.kill', side_effect=ProcessLookupError):
             result = _is_process_alive(1234)
         self.assertFalse(result,
             "_is_process_alive must return False for ProcessLookupError")
 
     def test_pid_zero_or_negative_returns_false(self):
         """pid <= 0 is invalid — must return False without calling os.kill."""
-        from cozempic.reload_lock import _is_process_alive
+        from winnow.legacy.reload_lock import _is_process_alive
         self.assertFalse(_is_process_alive(0))
         self.assertFalse(_is_process_alive(-1))
         self.assertFalse(_is_process_alive(-999))
 
     def test_parity_with_spawn_lock(self):
         """reload_lock and spawn_lock must agree on PermissionError semantics."""
-        from cozempic.reload_lock import _is_process_alive as rl_alive
-        from cozempic.spawn_lock import _is_process_alive as sl_alive
-        with patch('cozempic.reload_lock.os.kill', side_effect=PermissionError), \
-             patch('cozempic.spawn_lock.os.kill', side_effect=PermissionError):
+        from winnow.legacy.reload_lock import _is_process_alive as rl_alive
+        from winnow.legacy.spawn_lock import _is_process_alive as sl_alive
+        with patch('winnow.legacy.reload_lock.os.kill', side_effect=PermissionError), \
+             patch('winnow.legacy.spawn_lock.os.kill', side_effect=PermissionError):
             rl_result = rl_alive(1234)
             sl_result = sl_alive(1234)
         self.assertEqual(rl_result, sl_result,
@@ -522,7 +522,7 @@ class TestReloadLockSymlinkDefense(unittest.TestCase):
     than follow into an arbitrary file."""
 
     def test_o_nofollow_blocks_symlink_target(self):
-        from cozempic.reload_lock import _ReloadLock, _lock_path_for
+        from winnow.legacy.reload_lock import _ReloadLock, _lock_path_for
         sid = "test-symlink-defense"
         lock_path = _lock_path_for(sid)
         lock_path.unlink(missing_ok=True)
@@ -574,8 +574,8 @@ class TestRound2ReviewerFindings(unittest.TestCase):
         NOT truncated (proving the parity contract holds with a widened _slug_for).
         """
         import inspect
-        from cozempic import guard
-        from cozempic.reload_lock import _reload_sentinel_path_for
+        from winnow.legacy import guard
+        from winnow.legacy.reload_lock import _reload_sentinel_path_for
 
         # --- structural check ---
         source = inspect.getsource(guard._spawn_reload_watcher)
@@ -589,7 +589,7 @@ class TestRound2ReviewerFindings(unittest.TestCase):
 
         # --- behavioural parity under widened _slug_for ---
         wide_slug = "abcdefghijklmno"  # 15 chars
-        with patch('cozempic.reload_lock._slug_for', return_value=wide_slug):
+        with patch('winnow.legacy.reload_lock._slug_for', return_value=wide_slug):
             sentinel_slug = _reload_sentinel_path_for("my-test-session-99").name[
                 len("cozempic_reload_"):-len(".in-flight")
             ]
@@ -608,7 +608,7 @@ class TestRound2ReviewerFindings(unittest.TestCase):
         any truthy non-str.  P0-A switched to _slug_for(raw) which executes
         '/' in session_id — TypeError for int/Path.  Restore coercion at call site.
         """
-        from cozempic.guard import _reload_armed_path
+        from winnow.legacy.guard import _reload_armed_path
         try:
             result = _reload_armed_path(123, None)
         except TypeError as exc:
@@ -621,7 +621,7 @@ class TestRound2ReviewerFindings(unittest.TestCase):
 
     def test_reload_ledger_path_non_str_session_id_does_not_raise(self):
         """M-2 parity: _reload_ledger_path(123, ...) must not raise TypeError."""
-        from cozempic.guard import _reload_ledger_path
+        from winnow.legacy.guard import _reload_ledger_path
         from pathlib import Path
         try:
             result = _reload_ledger_path(123, Path("/tmp/dummy.jsonl"))
@@ -638,7 +638,7 @@ class TestRound2ReviewerFindings(unittest.TestCase):
 class TestReloadCliWaitFlag(unittest.TestCase):
     def test_cmd_reload_has_wait_argument(self):
         """`cozempic reload --wait` flag must exist on the parser."""
-        from cozempic.cli import build_parser
+        from winnow.legacy.cli import build_parser
         parser = build_parser()
         # Parse a minimal `reload --wait 10` to confirm the flag exists
         args = parser.parse_args(["reload", "--wait", "10"])
@@ -654,7 +654,7 @@ class TestGuardDefersReloadWhenLockHeld(unittest.TestCase):
     def test_guard_prune_cycle_imports_reload_lock(self):
         """Verify guard_prune_cycle imports the reload lock primitive."""
         import inspect
-        from cozempic.guard import guard_prune_cycle
+        from winnow.legacy.guard import guard_prune_cycle
         src = inspect.getsource(guard_prune_cycle)
         self.assertIn("_ReloadLock", src,
             "guard_prune_cycle must use _ReloadLock")
@@ -669,7 +669,7 @@ class TestGuardDefersReloadWhenLockHeld(unittest.TestCase):
 class TestOverflowDefersWhenLockHeld(unittest.TestCase):
     def test_overflow_recover_uses_reload_lock(self):
         import inspect
-        from cozempic.overflow import OverflowRecovery
+        from winnow.legacy.overflow import OverflowRecovery
         src = inspect.getsource(OverflowRecovery._do_recover)
         self.assertIn("_ReloadLock", src,
             "OverflowRecovery._do_recover must use _ReloadLock")

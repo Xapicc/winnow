@@ -37,7 +37,7 @@ def _race_worker(
     import subprocess as _subprocess
     from unittest.mock import patch as _patch
 
-    from cozempic.guard import start_guard_daemon
+    from winnow.legacy.guard import start_guard_daemon
 
     _real_popen = _subprocess.Popen
 
@@ -46,7 +46,7 @@ def _race_worker(
             self.pid = pid
 
     def _fake_popen(cmd_parts, **kwargs):
-        # Fake ONLY the daemon-spawn Popen (python -m cozempic.cli guard).
+        # Fake ONLY the daemon-spawn Popen (python -m winnow.legacy.cli guard).
         # Every other subprocess use — notably the `ps` identity probe inside
         # _is_cozempic_guard_process, which subprocess.run drives via
         # `with Popen(...) as p: p.communicate()` — must run for real; the
@@ -55,7 +55,7 @@ def _race_worker(
         # loser worker into an 'undefined' outcome (the deterministically-dead
         # gate this test is supposed to be).
         parts = cmd_parts if isinstance(cmd_parts, (list, tuple)) else [cmd_parts]
-        is_daemon_spawn = any("cozempic.cli" in str(p) for p in parts) or (
+        is_daemon_spawn = any("winnow.legacy.cli" in str(p) for p in parts) or (
             any("cozempic" in str(p) for p in parts) and any(str(p) == "guard" for p in parts)
         )
         if is_daemon_spawn:
@@ -63,9 +63,9 @@ def _race_worker(
         return _real_popen(cmd_parts, **kwargs)
 
     with (
-        _patch("cozempic.guard.subprocess.Popen", side_effect=_fake_popen),
-        _patch("cozempic.guard.find_claude_pid", return_value=12345),
-        _patch("cozempic.guard._cleanup_legacy_pid"),
+        _patch("winnow.legacy.guard.subprocess.Popen", side_effect=_fake_popen),
+        _patch("winnow.legacy.guard.find_claude_pid", return_value=12345),
+        _patch("winnow.legacy.guard._cleanup_legacy_pid"),
     ):
         try:
             barrier_handle.wait(timeout=10.0)
@@ -93,7 +93,7 @@ class TestThreeProcessContention(unittest.TestCase):
     SESSION_ID = "fade1234-5678-9abc-def0-2026051811cc"
 
     def setUp(self):
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
 
         self.pid_path = _pid_file_for_session(self.SESSION_ID)
         self.pid_path.unlink(missing_ok=True)
@@ -175,7 +175,7 @@ class TestV4TenProcessContention(unittest.TestCase):
     ITERATIONS = 30
 
     def setUp(self):
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
 
         self.pid_path = _pid_file_for_session(self.SESSION_ID)
         self.pid_path.unlink(missing_ok=True)
@@ -259,7 +259,7 @@ class TestNoPlaceholderPidVisible(unittest.TestCase):
     SESSION_ID = "babe1234-5678-9abc-def0-2026051811dd"
 
     def setUp(self):
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
 
         self.pid_path = _pid_file_for_session(self.SESSION_ID)
         self.pid_path.unlink(missing_ok=True)
@@ -274,7 +274,7 @@ class TestNoPlaceholderPidVisible(unittest.TestCase):
     def test_no_placeholder_pid_ever_visible(self):
         """Run start_guard_daemon while a tight reader loop observes the
         pidfile. Any observation of '0' is a Bug 3 regression."""
-        from cozempic.guard import start_guard_daemon
+        from winnow.legacy.guard import start_guard_daemon
 
         observed_values: list[str] = []
         stop = {"flag": False}
@@ -293,9 +293,9 @@ class TestNoPlaceholderPidVisible(unittest.TestCase):
         t.start()
 
         with (
-            patch("cozempic.guard.subprocess.Popen") as mock_popen,
-            patch("cozempic.guard.find_claude_pid", return_value=12345),
-            patch("cozempic.guard._cleanup_legacy_pid"),
+            patch("winnow.legacy.guard.subprocess.Popen") as mock_popen,
+            patch("winnow.legacy.guard.find_claude_pid", return_value=12345),
+            patch("winnow.legacy.guard._cleanup_legacy_pid"),
         ):
             mock_popen.return_value.pid = 88888
             result = start_guard_daemon(
@@ -336,7 +336,7 @@ class TestFreshWindowEnvVarClamping(unittest.TestCase):
         active _FRESH_PIDFILE_SECONDS value."""
         import importlib
 
-        import cozempic.spawn_lock as sl
+        import winnow.legacy.spawn_lock as sl
 
         prior = os.environ.get(self.ENV_VAR)
         try:
@@ -358,7 +358,7 @@ class TestFreshWindowEnvVarClamping(unittest.TestCase):
         """``inf`` is not finite → must fall back to default. Without the
         clamp, an inf fresh window would treat every pidfile as fresh
         forever — peer-claim recovery would never fire."""
-        from cozempic.spawn_lock import _DEFAULT_FRESH
+        from winnow.legacy.spawn_lock import _DEFAULT_FRESH
 
         for val in ("inf", "Infinity", "-inf", "1e400"):  # 1e400 → inf
             with self.subTest(value=val):
@@ -371,7 +371,7 @@ class TestFreshWindowEnvVarClamping(unittest.TestCase):
         """``0``, ``-1``, ``-100`` are <=0 → must fall back to default.
         Without the clamp, a 0/negative fresh window would never classify
         anything as fresh, defeating the peer-protection window."""
-        from cozempic.spawn_lock import _DEFAULT_FRESH
+        from winnow.legacy.spawn_lock import _DEFAULT_FRESH
 
         for val in ("0", "0.0", "-1", "-100", "-0.001"):
             with self.subTest(value=val):
@@ -386,7 +386,7 @@ class TestFreshWindowEnvVarClamping(unittest.TestCase):
         higher are almost certainly typos (e.g. ``COZEMPIC_PIDFILE_FRESH_SECONDS=300000``
         meaning "1e10 ns" or similar) that would let stale pidfiles from
         crashed prior spawns block new ones for hours."""
-        from cozempic.spawn_lock import _DEFAULT_FRESH, _FRESH_MAX
+        from winnow.legacy.spawn_lock import _DEFAULT_FRESH, _FRESH_MAX
 
         for val in (str(_FRESH_MAX + 1), "1e10", "999999"):
             with self.subTest(value=val):
@@ -397,7 +397,7 @@ class TestFreshWindowEnvVarClamping(unittest.TestCase):
 
     def test_env_var_nan_clamps(self):
         """``nan`` is not finite per IEEE-754 → must fall back to default."""
-        from cozempic.spawn_lock import _DEFAULT_FRESH
+        from winnow.legacy.spawn_lock import _DEFAULT_FRESH
 
         self.assertEqual(
             self._reload_with_env("nan"), _DEFAULT_FRESH,
@@ -406,7 +406,7 @@ class TestFreshWindowEnvVarClamping(unittest.TestCase):
 
     def test_env_var_garbage_clamps(self):
         """Non-numeric junk (``abc``, empty-after-strip, mixed) → default."""
-        from cozempic.spawn_lock import _DEFAULT_FRESH
+        from winnow.legacy.spawn_lock import _DEFAULT_FRESH
 
         for val in ("abc", "5seconds", "five", "  "):
             with self.subTest(value=val):
@@ -428,7 +428,7 @@ class TestFreshWindowEnvVarClamping(unittest.TestCase):
     def test_env_var_unset_uses_default(self):
         """No env var set → default applies (regression check on the
         ``raw is None`` branch)."""
-        from cozempic.spawn_lock import _DEFAULT_FRESH
+        from winnow.legacy.spawn_lock import _DEFAULT_FRESH
 
         self.assertEqual(self._reload_with_env(None), _DEFAULT_FRESH)
 
@@ -453,7 +453,7 @@ class TestSymlinkDefense(unittest.TestCase):
     SESSION_ID = "ca7ec0de-1234-5678-9abc-2026051811f0"
 
     def setUp(self):
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
 
         self.pid_path = _pid_file_for_session(self.SESSION_ID)
         self.tmp_pid_path = self.pid_path.with_suffix(".pid.tmp")
@@ -488,7 +488,7 @@ class TestSymlinkDefense(unittest.TestCase):
         the victim untouched."""
         from unittest.mock import patch
 
-        from cozempic.guard import start_guard_daemon
+        from winnow.legacy.guard import start_guard_daemon
 
         # Plant the symlink BEFORE start_guard_daemon runs.
         os.symlink(str(self.victim), str(self.tmp_pid_path))
@@ -503,11 +503,11 @@ class TestSymlinkDefense(unittest.TestCase):
 
         with (
             patch(
-                "cozempic.guard.subprocess.Popen",
+                "winnow.legacy.guard.subprocess.Popen",
                 side_effect=lambda *a, **k: _DummyProc(99999),
             ),
-            patch("cozempic.guard.find_claude_pid", return_value=12345),
-            patch("cozempic.guard._cleanup_legacy_pid"),
+            patch("winnow.legacy.guard.find_claude_pid", return_value=12345),
+            patch("winnow.legacy.guard._cleanup_legacy_pid"),
         ):
             result = start_guard_daemon(
                 cwd=str(self.tmpdir),
@@ -545,7 +545,7 @@ class TestFileNotFoundErrorRecovery(unittest.TestCase):
     SESSION_ID = "feed1234-5678-9abc-def0-2026051811ee"
 
     def setUp(self):
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
 
         self.pid_path = _pid_file_for_session(self.SESSION_ID)
         self.pid_path.unlink(missing_ok=True)
@@ -559,7 +559,7 @@ class TestFileNotFoundErrorRecovery(unittest.TestCase):
 
     def test_filenotfounderror_recovery(self):
         """First open(log_file) raises FileNotFoundError, second succeeds."""
-        from cozempic.guard import start_guard_daemon
+        from winnow.legacy.guard import start_guard_daemon
 
         # We track open() calls on the log_file path; the FIRST call raises,
         # the rest are passed through. Mock os.makedirs to confirm the retry
@@ -575,11 +575,11 @@ class TestFileNotFoundErrorRecovery(unittest.TestCase):
             return real_open(path, *args, **kwargs)
 
         with (
-            patch("cozempic.guard.subprocess.Popen") as mock_popen,
-            patch("cozempic.guard.find_claude_pid", return_value=12345),
-            patch("cozempic.guard._cleanup_legacy_pid"),
+            patch("winnow.legacy.guard.subprocess.Popen") as mock_popen,
+            patch("winnow.legacy.guard.find_claude_pid", return_value=12345),
+            patch("winnow.legacy.guard._cleanup_legacy_pid"),
             patch("builtins.open", side_effect=fake_open),
-            patch("cozempic.guard.os.makedirs") as mock_makedirs,
+            patch("winnow.legacy.guard.os.makedirs") as mock_makedirs,
         ):
             mock_popen.return_value.pid = 77777
             result = start_guard_daemon(
@@ -608,7 +608,7 @@ class TestDaemonSpawnLockUnit(unittest.TestCase):
         """Post-V4-rework: the spawn claim writes to the .pid file directly
         (the PID file IS the lock, no separate sentinel). This pins that
         contract."""
-        from cozempic.spawn_lock import daemon_spawn_lock
+        from winnow.legacy.spawn_lock import daemon_spawn_lock
 
         sid = "deadbeef-1234-5678-9abc-de00deadbeef"
         with daemon_spawn_lock(sid) as lock_path:
@@ -621,7 +621,7 @@ class TestDaemonSpawnLockUnit(unittest.TestCase):
 
     def test_double_acquire_raises(self):
         """A second concurrent acquire MUST raise DaemonAlreadyStarting."""
-        from cozempic.spawn_lock import DaemonAlreadyStarting, daemon_spawn_lock
+        from winnow.legacy.spawn_lock import DaemonAlreadyStarting, daemon_spawn_lock
 
         sid = "deadbeef-1234-5678-9abc-de00cafebabe"
         with daemon_spawn_lock(sid):
@@ -631,7 +631,7 @@ class TestDaemonSpawnLockUnit(unittest.TestCase):
 
     def test_release_allows_reacquire(self):
         """After the first lock exits, a fresh acquire succeeds."""
-        from cozempic.spawn_lock import daemon_spawn_lock
+        from winnow.legacy.spawn_lock import daemon_spawn_lock
 
         sid = "deadbeef-1234-5678-9abc-de00f00dbabe"
         with daemon_spawn_lock(sid):
@@ -690,7 +690,7 @@ class TestC2_SlugConvergence(unittest.TestCase):
         and returns None. We report None ↔ ValueError, else the
         12-char prefix that ends up in the pid path.
         """
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
 
         try:
             p = _pid_file_for_session(session_id)
@@ -858,11 +858,11 @@ class TestC2_SlugConvergence(unittest.TestCase):
         contract above will silently change shape — this assertion catches
         the drift at the source-of-truth level.
         """
-        # cozempic.data is a namespace package — __file__ is None.
-        # Use cozempic.__file__ then walk to the sibling data/ dir.
-        import cozempic
+        # winnow.legacy.data is a namespace package — __file__ is None.
+        # Use winnow.legacy.__file__ then walk to the sibling data/ dir.
+        import winnow.legacy
 
-        hooks_path = Path(cozempic.__file__).parent / "data" / "hooks.json"
+        hooks_path = Path(winnow.legacy.__file__).parent / "data" / "hooks.json"
         self.assertTrue(
             hooks_path.exists(),
             f"hooks.json not found at {hooks_path}",

@@ -15,14 +15,14 @@ class TestGuardSignalHandling(unittest.TestCase):
 class TestBackupCleanupIntegration(unittest.TestCase):
     def test_cleanup_old_backups_importable(self):
         """cleanup_old_backups can be imported from session module."""
-        from cozempic.session import cleanup_old_backups
+        from winnow.legacy.session import cleanup_old_backups
         self.assertTrue(callable(cleanup_old_backups))
 
 
 class TestReloadSelfDaemon(unittest.TestCase):
     def test_no_daemon_no_op(self):
         """reload_self_daemon returns reloaded=False when no daemon exists for the session."""
-        from cozempic.guard import reload_self_daemon
+        from winnow.legacy.guard import reload_self_daemon
         result = reload_self_daemon(
             cwd="/tmp",
             session_id="11111111-2222-3333-4444-555555555555",
@@ -32,7 +32,7 @@ class TestReloadSelfDaemon(unittest.TestCase):
 
     def test_explicit_session_with_no_daemon_does_not_spawn(self):
         """When the named session has no live daemon, reload_self must not spawn one."""
-        from cozempic.guard import reload_self_daemon
+        from winnow.legacy.guard import reload_self_daemon
         # Explicit, fake session id — no PID file, no daemon. Must short-circuit
         # without ever calling start_guard_daemon.
         result = reload_self_daemon(
@@ -46,7 +46,7 @@ class TestReloadSelfDaemon(unittest.TestCase):
 
 class TestGuardDaemonPidHandoff(unittest.TestCase):
     def test_start_guard_daemon_passes_explicit_claude_pid_to_child(self):
-        from cozempic.guard import start_guard_daemon
+        from winnow.legacy.guard import start_guard_daemon
 
         with tempfile.TemporaryDirectory() as tmpdir:
             # Use a valid-shape UUID — start_guard_daemon validates session_id
@@ -68,11 +68,11 @@ class TestGuardDaemonPidHandoff(unittest.TestCase):
             # _guard_tmp_root() returns /tmp but tempfile.gettempdir() returns
             # /var/folders/…/T (the two differ, leaving files after teardown).
             with (
-                patch("cozempic.guard._guard_tmp_root", return_value=tmp),
-                patch("cozempic.guard._cleanup_legacy_pid"),
-                patch("cozempic.guard._is_guard_running_for_session", return_value=None),
-                patch("cozempic.guard.find_claude_pid", return_value=9999),
-                patch("cozempic.guard.subprocess.Popen", side_effect=fake_popen),
+                patch("winnow.legacy.guard._guard_tmp_root", return_value=tmp),
+                patch("winnow.legacy.guard._cleanup_legacy_pid"),
+                patch("winnow.legacy.guard._is_guard_running_for_session", return_value=None),
+                patch("winnow.legacy.guard.find_claude_pid", return_value=9999),
+                patch("winnow.legacy.guard.subprocess.Popen", side_effect=fake_popen),
             ):
                 result = start_guard_daemon(
                     cwd=tmpdir,

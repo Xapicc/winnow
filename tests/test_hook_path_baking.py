@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from cozempic import init as cz
+from winnow.legacy import init as cz
 
 
 class TestResolveAndBake(unittest.TestCase):
@@ -43,22 +43,22 @@ class TestResolveAndBake(unittest.TestCase):
         # must NOT realpath — a uv-tool venv python must be returned as-is so its
         # site-packages (which has cozempic) is used by `-m cozempic`.
         p = "/Users/x/.local/share/uv/tools/cozempic/bin/python3.12"
-        with patch("cozempic.init.sys.executable", p):
+        with patch("winnow.legacy.init.sys.executable", p):
             got, _ = cz._resolve_cozempic_python()
             self.assertEqual(got, p)
 
     def test_resolve_flags_uvx_ephemeral(self):
         for p in ("/Users/x/.cache/uv/environments-v2/abc/bin/python3",
                   "/private/var/folders/xx/T/uvx-tmp/bin/python"):
-            with patch("cozempic.init.sys.executable", p):
+            with patch("winnow.legacy.init.sys.executable", p):
                 _, eph = cz._resolve_cozempic_python()
                 self.assertTrue(eph, f"{p} should be ephemeral")
 
     def test_resolve_degrades_when_sys_executable_empty(self):
         # exotic frozen interpreters can have an empty sys.executable — must NOT
         # return "" (which would bake an empty `'' -m cozempic` no-op command).
-        with patch("cozempic.init.sys.executable", ""), \
-                patch("cozempic.init.shutil.which", return_value="/usr/bin/python3"):
+        with patch("winnow.legacy.init.sys.executable", ""), \
+                patch("winnow.legacy.init.shutil.which", return_value="/usr/bin/python3"):
             got, _ = cz._resolve_cozempic_python()
             self.assertEqual(got, "/usr/bin/python3")
 
@@ -70,7 +70,7 @@ class TestResolveAndBake(unittest.TestCase):
     def test_resolve_flags_persistent_not_ephemeral(self):
         for p in ("/Users/x/.local/share/uv/tools/cozempic/bin/python3.12",
                   "/opt/homebrew/bin/python3", "/usr/local/bin/python3.11"):
-            with patch("cozempic.init.sys.executable", p):
+            with patch("winnow.legacy.init.sys.executable", p):
                 _, eph = cz._resolve_cozempic_python()
                 self.assertFalse(eph, f"{p} should be persistent")
 
@@ -78,7 +78,7 @@ class TestResolveAndBake(unittest.TestCase):
 class TestWireHooksBakes(unittest.TestCase):
     def test_wire_hooks_writes_absolute_fallback_and_reports_ephemeral(self):
         with tempfile.TemporaryDirectory() as tmp:
-            with patch("cozempic.init._resolve_cozempic_python",
+            with patch("winnow.legacy.init._resolve_cozempic_python",
                        return_value=("/abs/uvtool/bin/python3.12", False)):
                 res = cz.wire_hooks(tmp)
             self.assertFalse(res["ephemeral"])
@@ -93,7 +93,7 @@ class TestWireHooksBakes(unittest.TestCase):
 
     def test_wire_hooks_propagates_ephemeral_true(self):
         with tempfile.TemporaryDirectory() as tmp:
-            with patch("cozempic.init._resolve_cozempic_python",
+            with patch("winnow.legacy.init._resolve_cozempic_python",
                        return_value=("/tmp/uvx/bin/python", True)):
                 res = cz.wire_hooks(tmp)
             self.assertTrue(res["ephemeral"])

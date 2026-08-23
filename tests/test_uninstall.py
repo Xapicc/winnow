@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from cozempic import init as cz_init
+from winnow.legacy import init as cz_init
 
 # A realistic cozempic hook command (carries the schema marker + canonical wrapper
 # shape that _is_cozempic_command recognizes — a bare "cozempic ..." is NOT matched
@@ -31,7 +31,7 @@ class _Base(unittest.TestCase):
             patch.dict(os.environ, {"HOME": str(self.home)}),
             patch.object(cz_init, "_GLOBAL_INIT_MARKER", self.home / ".cozempic_global_initialized"),
             patch.object(cz_init, "_REMIND_COUNTER", self.home / ".cozempic_remind_counter"),
-            patch("cozempic.session.get_claude_dir", return_value=self.home / ".claude"),
+            patch("winnow.legacy.session.get_claude_dir", return_value=self.home / ".claude"),
         ]
         for p in self._patches:
             p.start()
@@ -132,7 +132,7 @@ class TestPreviewAndDryRun(_Base):
         self.assertEqual(sp.read_text(), before)  # untouched
 
     def test_cmd_dry_run_changes_nothing(self):
-        from cozempic import cli
+        from winnow.legacy import cli
 
         sp = self._write_global_settings(_settings_with({
             "SessionStart": [{"hooks": [{"type": "command", "command": COZ_CMD}]}]

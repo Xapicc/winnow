@@ -41,7 +41,7 @@ class TestHardLoopBackoffHelper(unittest.TestCase):
     locked in without depending on the larger guard loop."""
 
     def test_returns_interval_below_backoff_start(self):
-        from cozempic.guard import HARD_LOOP_BACKOFF_START, _hard_loop_backoff_sleep
+        from winnow.legacy.guard import HARD_LOOP_BACKOFF_START, _hard_loop_backoff_sleep
 
         for k in range(HARD_LOOP_BACKOFF_START):
             self.assertEqual(_hard_loop_backoff_sleep(k, 30), 30)
@@ -49,7 +49,7 @@ class TestHardLoopBackoffHelper(unittest.TestCase):
     def test_exponential_backoff_curve(self):
         """Curve at the published defaults (start=3, cap=300, interval=30):
         K=3 → 60, K=4 → 120, K=5 → 240, K=6+ → 300 (capped)."""
-        from cozempic.guard import _hard_loop_backoff_sleep
+        from winnow.legacy.guard import _hard_loop_backoff_sleep
 
         expected = {3: 60, 4: 120, 5: 240, 6: 300, 7: 300, 8: 300, 9: 300}
         for k, want in expected.items():
@@ -60,7 +60,7 @@ class TestHardLoopBackoffHelper(unittest.TestCase):
             )
 
     def test_cap_respected_for_unusual_intervals(self):
-        from cozempic.guard import (
+        from winnow.legacy.guard import (
             HARD_LOOP_BACKOFF_CAP_SECONDS,
             _hard_loop_backoff_sleep,
         )
@@ -88,7 +88,7 @@ class TestHardLoopExitAndReset(unittest.TestCase):
         consumed the loop is forced to stop via ``_StopAfterNSleeps`` from
         time.sleep so the test terminates.
         """
-        from cozempic import guard as guard_mod
+        from winnow.legacy import guard as guard_mod
 
         tmpdir = Path(tempfile.mkdtemp())
         self.addCleanup(lambda: __import__("shutil").rmtree(tmpdir, ignore_errors=True))
@@ -144,12 +144,12 @@ class TestHardLoopExitAndReset(unittest.TestCase):
                 guard_mod, "quick_token_estimate", return_value=token_estimate
             ),
             patch.object(guard_mod, "load_messages", return_value=[]),
-            patch("cozempic.session.record_session"),
+            patch("winnow.legacy.session.record_session"),
             patch.object(guard_mod, "_cleanup_stale_watchers"),
             patch.object(guard_mod, "ping_install_if_new"),
             patch.object(guard_mod, "maybe_auto_update"),
             patch.object(guard_mod, "cleanup_old_backups"),
-            patch("cozempic.tokens.detect_context_window", return_value=1_000_000),
+            patch("winnow.legacy.tokens.detect_context_window", return_value=1_000_000),
         ):
             captured = io.StringIO()
             with patch.object(sys, "stdout", captured):
@@ -184,7 +184,7 @@ class TestHardLoopExitAndReset(unittest.TestCase):
 
     def test_exit_after_threshold_cycles(self):
         """10 consecutive 0-byte HARD prunes → sys.exit(0) with diagnostic."""
-        from cozempic.guard import HARD_LOOP_EXIT_THRESHOLD
+        from winnow.legacy.guard import HARD_LOOP_EXIT_THRESHOLD
 
         result = self._run_loop([0.0] * (HARD_LOOP_EXIT_THRESHOLD + 2))
         self.assertEqual(

@@ -32,7 +32,7 @@ def _make_msg(idx: int, msg_type: str, uuid_val: str = "", **extra) -> tuple[int
 class TestPermissionModeInMetaTypes:
     def test_permission_mode_in_meta_types(self):
         """RED at base: 'permission-mode' is absent from gentle._META_TYPES."""
-        from cozempic.strategies import gentle
+        from winnow.legacy.strategies import gentle
         # gentle._META_TYPES is defined INSIDE strategy_compact_summary_collapse
         # (a local set). We verify via introspection or by triggering the strategy.
         # Access via the function's source inspection is fragile; instead build a
@@ -93,9 +93,9 @@ class TestCompactSummaryKeepsLastPermissionMode:
 
     def test_compact_summary_keeps_last_permission_mode(self):
         """RED at base: compact-summary-collapse drops pm-002 (last permission-mode)."""
-        import cozempic.strategies  # noqa: F401 — ensure strategies registered
-        from cozempic.executor import run_prescription
-        from cozempic.config import FloorConfig
+        import winnow.legacy.strategies  # noqa: F401 — ensure strategies registered
+        from winnow.legacy.executor import run_prescription
+        from winnow.legacy.config import FloorConfig
 
         session = self._build_session()
 
@@ -150,9 +150,9 @@ class TestLastOfTypeTagProtectsPermissionMode:
 
     def test_last_of_type_tag_protects_permission_mode(self):
         """RED at base: executor has no tagging machinery; pm-5 can be dropped."""
-        import cozempic.strategies  # noqa: F401
-        from cozempic.executor import run_prescription, _tag_last_of_metadata_types
-        from cozempic.config import FloorConfig
+        import winnow.legacy.strategies  # noqa: F401
+        from winnow.legacy.executor import run_prescription, _tag_last_of_metadata_types
+        from winnow.legacy.config import FloorConfig
 
         session = self._build_session_5pm()
 
@@ -184,9 +184,9 @@ class TestLastOfTypeTagProtectsPermissionMode:
 
     def test_singleton_tag_does_not_leak_to_output(self):
         """The internal __cozempic_metadata_singleton__ tag must never appear in run_prescription output."""
-        import cozempic.strategies  # noqa: F401
-        from cozempic.executor import run_prescription
-        from cozempic.config import FloorConfig
+        import winnow.legacy.strategies  # noqa: F401
+        from winnow.legacy.executor import run_prescription
+        from winnow.legacy.config import FloorConfig
 
         session = self._build_session_5pm()
         result, _ = run_prescription(

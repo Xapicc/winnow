@@ -43,8 +43,8 @@ class TestPostPruneTokenProgressGate(unittest.TestCase):
         shutil.rmtree(self.scratch, ignore_errors=True)
 
     def _run(self, pre_total, post_total, savings_calls):
-        from cozempic.team import TeamState
-        from cozempic.guard import guard_prune_cycle
+        from winnow.legacy.team import TeamState
+        from winnow.legacy.guard import guard_prune_cycle
         team = MagicMock(spec=TeamState)
         team.is_empty.return_value = True
         team.team_name = None
@@ -59,17 +59,17 @@ class TestPostPruneTokenProgressGate(unittest.TestCase):
             except StopIteration:
                 return MagicMock(total=post_total)
 
-        with patch("cozempic.guard._guard_tmp_root", return_value=self.scratch), \
-             patch("cozempic.guard.load_messages", return_value=orig), \
-             patch("cozempic.guard.prune_with_team_protect", return_value=(pruned, {}, team)), \
-             patch("cozempic.guard.save_messages", side_effect=lambda *a, **k: None), \
-             patch("cozempic.guard.snapshot_session", return_value=MagicMock()), \
-             patch("cozempic.guard._terminate_and_resume",
+        with patch("winnow.legacy.guard._guard_tmp_root", return_value=self.scratch), \
+             patch("winnow.legacy.guard.load_messages", return_value=orig), \
+             patch("winnow.legacy.guard.prune_with_team_protect", return_value=(pruned, {}, team)), \
+             patch("winnow.legacy.guard.save_messages", side_effect=lambda *a, **k: None), \
+             patch("winnow.legacy.guard.snapshot_session", return_value=MagicMock()), \
+             patch("winnow.legacy.guard._terminate_and_resume",
                    side_effect=lambda *a, **k: k.get("write_pruned", lambda: None)()), \
-             patch("cozempic.helpers.record_savings",
+             patch("winnow.legacy.helpers.record_savings",
                    side_effect=lambda *a, **k: savings_calls.append(a)), \
-             patch("cozempic.tokens.estimate_session_tokens", side_effect=_est), \
-             patch("cozempic.tokens.calibrate_ratio", return_value=0.5):
+             patch("winnow.legacy.tokens.estimate_session_tokens", side_effect=_est), \
+             patch("winnow.legacy.tokens.calibrate_ratio", return_value=0.5):
             return guard_prune_cycle(
                 session_path=self.session_path, rx_name="aggressive", config=None,
                 auto_reload=True, claude_pid=999999, session_id="abcdef012345",
@@ -104,7 +104,7 @@ class TestPostPruneTokenProgressGate(unittest.TestCase):
 
 class TestReloadRateLedger(unittest.TestCase):
     def test_helper_caps_after_max_in_window(self):
-        from cozempic.guard import _reload_rate_exceeded
+        from winnow.legacy.guard import _reload_rate_exceeded
         d = Path(tempfile.mkdtemp(prefix="cozempic_ledger_"))
         try:
             p = d / "h.json"
@@ -122,7 +122,7 @@ class TestReloadRateLedger(unittest.TestCase):
     def test_helper_survives_respawn_same_path(self):
         # "respawn" = fresh _reload_rate_exceeded calls against the SAME on-disk
         # path. The 4th within the window must cap from persisted state.
-        from cozempic.guard import _reload_rate_exceeded
+        from winnow.legacy.guard import _reload_rate_exceeded
         d = Path(tempfile.mkdtemp(prefix="cozempic_ledger_"))
         try:
             p = d / "h.json"
@@ -132,7 +132,7 @@ class TestReloadRateLedger(unittest.TestCase):
             shutil.rmtree(d, ignore_errors=True)
 
     def test_corrupt_ledger_degrades_open(self):
-        from cozempic.guard import _reload_rate_exceeded
+        from winnow.legacy.guard import _reload_rate_exceeded
         d = Path(tempfile.mkdtemp(prefix="cozempic_ledger_"))
         try:
             p = d / "h.json"
@@ -143,10 +143,10 @@ class TestReloadRateLedger(unittest.TestCase):
             shutil.rmtree(d, ignore_errors=True)
 
     def test_malicious_session_id_confined(self):
-        from cozempic.guard import _reload_ledger_path
+        from winnow.legacy.guard import _reload_ledger_path
         scratch = Path(tempfile.mkdtemp(prefix="cozempic_tmproot_"))
         try:
-            with patch("cozempic.guard._guard_tmp_root", return_value=scratch):
+            with patch("winnow.legacy.guard._guard_tmp_root", return_value=scratch):
                 p = _reload_ledger_path("../../etc/passwd", Path("/x/s.jsonl"))
                 # must stay inside the tmp root, sanitized
                 self.assertEqual(p.parent, scratch)
@@ -156,8 +156,8 @@ class TestReloadRateLedger(unittest.TestCase):
             shutil.rmtree(scratch, ignore_errors=True)
 
     def test_guard_cycle_caps_reload_when_ledger_full(self):
-        from cozempic.team import TeamState
-        from cozempic.guard import guard_prune_cycle, _reload_ledger_path, _reload_rate_exceeded
+        from winnow.legacy.team import TeamState
+        from winnow.legacy.guard import guard_prune_cycle, _reload_ledger_path, _reload_rate_exceeded
         tmpdir = Path(tempfile.mkdtemp(prefix="cozempic_loopfix2_"))
         scratch = Path(tempfile.mkdtemp(prefix="cozempic_tmproot_"))
         try:
@@ -180,20 +180,20 @@ class TestReloadRateLedger(unittest.TestCase):
                 except StopIteration:
                     return MagicMock(total=40_000)
 
-            with patch("cozempic.guard._guard_tmp_root", return_value=scratch):
+            with patch("winnow.legacy.guard._guard_tmp_root", return_value=scratch):
                 # Pre-fill the ledger (in the scratch tmp root) to the cap.
                 ledger = _reload_ledger_path(sid, session_path)
                 import time
                 for _ in range(3):
                     _reload_rate_exceeded(ledger, now=time.time())
-                with patch("cozempic.guard.load_messages", return_value=orig), \
-                     patch("cozempic.guard.prune_with_team_protect", return_value=(pruned, {}, team)), \
-                     patch("cozempic.guard.save_messages", side_effect=lambda *a, **k: None), \
-                     patch("cozempic.guard.snapshot_session", return_value=MagicMock()), \
-                     patch("cozempic.guard._terminate_and_resume",
+                with patch("winnow.legacy.guard.load_messages", return_value=orig), \
+                     patch("winnow.legacy.guard.prune_with_team_protect", return_value=(pruned, {}, team)), \
+                     patch("winnow.legacy.guard.save_messages", side_effect=lambda *a, **k: None), \
+                     patch("winnow.legacy.guard.snapshot_session", return_value=MagicMock()), \
+                     patch("winnow.legacy.guard._terminate_and_resume",
                            side_effect=lambda *a, **k: terminate_called.append(True)), \
-                     patch("cozempic.tokens.estimate_session_tokens", side_effect=_est), \
-                     patch("cozempic.tokens.calibrate_ratio", return_value=0.5):
+                     patch("winnow.legacy.tokens.estimate_session_tokens", side_effect=_est), \
+                     patch("winnow.legacy.tokens.calibrate_ratio", return_value=0.5):
                     r = guard_prune_cycle(
                         session_path=session_path, rx_name="standard", config=None,
                         auto_reload=True, claude_pid=999999, session_id=sid,
@@ -208,15 +208,15 @@ class TestReloadRateLedger(unittest.TestCase):
 
 class TestVersionedPruneCounter(unittest.TestCase):
     def test_record_savings_pings_versioned_counter(self):
-        from cozempic import helpers, __version__
+        from winnow.legacy import helpers, __version__
         urls = []
 
         def _fake_urlopen(req, *a, **k):
             urls.append(req.full_url if hasattr(req, "full_url") else str(req))
             return MagicMock()
 
-        with patch("cozempic.helpers._HostFileLock"), \
-             patch("cozempic.helpers.atomic_write_text"), \
+        with patch("winnow.legacy.helpers._HostFileLock"), \
+             patch("winnow.legacy.helpers.atomic_write_text"), \
              patch("urllib.request.urlopen", side_effect=_fake_urlopen):
             helpers.record_savings(123_456, total_tokens=500_000, turn_count=10)
         vtag = "".join(c if (c.isalnum() or c == "_") else "_" for c in __version__.replace(".", "_"))
@@ -225,12 +225,12 @@ class TestVersionedPruneCounter(unittest.TestCase):
                         f"versioned counter prunes_v{vtag} must be pinged; got {urls}")
 
     def test_no_telemetry_env_suppresses_all_pings(self):
-        from cozempic import helpers
+        from winnow.legacy import helpers
         import os
         urls = []
         with patch.dict(os.environ, {"COZEMPIC_NO_TELEMETRY": "1"}), \
-             patch("cozempic.helpers._HostFileLock"), \
-             patch("cozempic.helpers.atomic_write_text"), \
+             patch("winnow.legacy.helpers._HostFileLock"), \
+             patch("winnow.legacy.helpers.atomic_write_text"), \
              patch("urllib.request.urlopen", side_effect=lambda *a, **k: urls.append(1)):
             helpers.record_savings(123_456, total_tokens=500_000, turn_count=10)
         self.assertEqual(urls, [], "COZEMPIC_NO_TELEMETRY must suppress all pings")

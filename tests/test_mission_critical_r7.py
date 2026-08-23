@@ -18,7 +18,7 @@ from unittest import mock
 
 class TestDoctorFixSurrogateNoCrash(unittest.TestCase):
     def test_fix_corrupted_tool_use_survives_lone_surrogate(self):
-        from cozempic import doctor
+        from winnow.legacy import doctor
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "s.jsonl"
             badname = 'Bash" command="' + "x" * 250 + '"'  # corrupted tool_use name (>200)
@@ -31,12 +31,12 @@ class TestDoctorFixSurrogateNoCrash(unittest.TestCase):
                 msg = doctor.fix_corrupted_tool_use()  # must NOT raise UnicodeEncodeError
             self.assertIn("Repaired", msg)
             # the repaired file must reload cleanly
-            from cozempic.session import load_messages
+            from winnow.legacy.session import load_messages
             self.assertTrue(load_messages(p))
 
     def test_run_doctor_fix_does_not_abort_on_one_raising_fix(self):
         # A fix that raises must be contained — later checks still run.
-        from cozempic import doctor
+        from winnow.legacy import doctor
         with mock.patch.object(doctor, "find_sessions", return_value=[]):
             results = doctor.run_doctor(fix=True)  # must not raise
         self.assertTrue(results)
@@ -48,8 +48,8 @@ class TestCombinedSurrogateByteExact(unittest.TestCase):
     out-of-band surrogate, not the whole line (R7 byte-drift P3 eliminated)."""
 
     def test_real_byte_stays_exact_when_combined_with_out_of_band_surrogate(self):
-        from cozempic.session import load_messages_and_snapshot, save_messages, load_messages
-        from cozempic.executor import run_prescription
+        from winnow.legacy.session import load_messages_and_snapshot, save_messages, load_messages
+        from winnow.legacy.executor import run_prescription
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "s.jsonl"
             p.write_bytes(
@@ -68,7 +68,7 @@ class TestCombinedSurrogateByteExact(unittest.TestCase):
 
 class TestRedosBoundedRangePolyMiss(unittest.TestCase):
     def test_adjacent_bounded_ranges_flagged(self):
-        from cozempic.helpers import _pattern_is_redos_risky as risky
+        from winnow.legacy.helpers import _pattern_is_redos_risky as risky
         # Adjacent bounded variable-width ranges backtrack polynomially -> must flag.
         for p in [r"a.{1,500}.{1,500}.{1,500}.{1,500}.{1,500}b", r".{1,50}.{1,50}", r"x{2,9}y{2,9}"]:
             self.assertTrue(risky(p), f"bounded-range poly pattern not flagged: {p}")
@@ -84,7 +84,7 @@ class TestRedosBoundedRangePolyMiss(unittest.TestCase):
         # which can NEVER under-reject. Every freeze vector the precise rules missed
         # (empty-alternation separators, class-overlapping literals, group-wrapped /
         # optional-separated variables) MUST be flagged.
-        from cozempic.helpers import _pattern_is_redos_risky as risky
+        from winnow.legacy.helpers import _pattern_is_redos_risky as risky
         for p in [r".*(?:Z|).*(?:Z|).*(?:Z|).*c", r"a*(b|)a*(b|)a*(b|)a*c",
                   r".*a.*a.*a.*a.*X", r".*log.*log.*log.*END", r".*/.*/.*/.*/x",
                   r".*X.*X.*X.*X.*Y", r".*X.*X.*Y",
@@ -114,7 +114,7 @@ class TestRedosBoundedRangePolyMiss(unittest.TestCase):
         # R12: the alternation backtracking class is closed categorically — nested,
         # unquantified-chain, and overlapping ambiguous alternations all freeze and
         # can't be distinguished from benign ones, so ANY `|` is refused.
-        from cozempic.helpers import _pattern_is_redos_risky as risky
+        from winnow.legacy.helpers import _pattern_is_redos_risky as risky
         for p in [r"((a|a))+c", "(a|a)" * 25 + "b", "(a|a|a)" * 16 + "x",
                   "(aa|a)" * 20 + "X", r"foo|bar|baz", r"(TODO|FIXME)+"]:
             self.assertTrue(risky(p), f"alternation must be categorically flagged: {p}")

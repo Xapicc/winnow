@@ -29,7 +29,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from cozempic.helpers import _pid_is_alive as _canonical_pid_is_alive
+from winnow.legacy.helpers import _pid_is_alive as _canonical_pid_is_alive
 
 
 # ─────────────────────────── GC-1: SIGTERM handler ───────────────────────────
@@ -39,7 +39,7 @@ class TestSigtermHandlerCleansUp(unittest.TestCase):
 
     def test_sigterm_handler_calls_safe_unlink(self):
         """SIGTERM fires after pidfile is written — _safe_unlink_session_pidfile must be called."""
-        from cozempic import guard
+        from winnow.legacy import guard
 
         unlinked_ids = []
         cleared_ids = []
@@ -135,18 +135,18 @@ class TestPidIsAliveMigratedToHelpers(unittest.TestCase):
     """helpers.py must export _pid_is_alive after GC-3."""
 
     def test_pid_is_alive_importable_from_helpers(self):
-        """_pid_is_alive must be importable from cozempic.helpers."""
+        """_pid_is_alive must be importable from winnow.legacy.helpers."""
         self.assertTrue(callable(_canonical_pid_is_alive))
 
     def test_session_imports_pid_is_alive_from_helpers(self):
-        """cozempic.session._pid_alive must be the canonical helpers._pid_is_alive."""
-        from cozempic import session
+        """winnow.legacy.session._pid_alive must be the canonical helpers._pid_is_alive."""
+        from winnow.legacy import session
         self.assertIs(getattr(session, "_pid_alive", None), _canonical_pid_is_alive,
                       "session._pid_alive must be the canonical helpers._pid_is_alive after GC-3")
 
     def test_watchdog_imports_pid_is_alive_from_helpers(self):
-        """cozempic.watchdog._pid_alive must be the canonical helpers._pid_is_alive."""
-        from cozempic import watchdog
+        """winnow.legacy.watchdog._pid_alive must be the canonical helpers._pid_is_alive."""
+        from winnow.legacy import watchdog
         self.assertIs(getattr(watchdog, "_pid_alive", None), _canonical_pid_is_alive,
                       "watchdog._pid_alive must be the canonical helpers._pid_is_alive after GC-3")
 
@@ -268,14 +268,14 @@ class TestRecordActiveTranscriptRetainsLivePids(unittest.TestCase):
         GREEN after fix: string keys are coerced to int → live probes pass →
         both entries survive.
         """
-        from cozempic.session import record_active_transcript
+        from winnow.legacy.session import record_active_transcript
 
         # Re-use live_pid1 as the caller slot — it is already in the file so
         # it gets overwritten (that's fine).  We care that live_pid2 survives.
         new_pid = self._live_pid1
 
         with (
-            patch("cozempic.session.get_claude_dir", return_value=self._claude_dir),
+            patch("winnow.legacy.session.get_claude_dir", return_value=self._claude_dir),
         ):
             record_active_transcript(
                 transcript_path=str(self._new_transcript),
@@ -316,7 +316,7 @@ class TestSigtermHandlerCleanupSurvivesCheckpointRaise(unittest.TestCase):
         GREEN after fix: except Exception swallows checkpoint error → finally
         cleanup runs → sys.exit(0) → only SystemExit escapes.
         """
-        from cozempic import guard
+        from winnow.legacy import guard
 
         unlinked = []
         cleared = []
@@ -370,7 +370,7 @@ class TestSigtermHandlerCleanupSurvivesWatcherRaise(unittest.TestCase):
         so a raising stop() propagates before _safe_unlink_session_pidfile and
         clear_armed are reached, and sys.exit(0) is never called.
         """
-        from cozempic import guard
+        from winnow.legacy import guard
 
         unlinked = []
         cleared = []

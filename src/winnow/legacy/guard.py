@@ -201,7 +201,7 @@ from .helpers import (
     strip_pattern_tags,
 )
 from .registry import PRESCRIPTIONS
-import cozempic.strategies  # noqa: F401 — register strategies so guard_prune_cycle can actually prune (#15)
+import winnow.legacy.strategies  # noqa: F401 — register strategies so guard_prune_cycle can actually prune (#15)
 from .session import (
     PruneConflictError,
     PruneLockError,
@@ -3636,7 +3636,7 @@ def start_guard_daemon(
     try:
         # Build the guard command
         cmd_parts = [
-            sys.executable, "-m", "cozempic.cli", "guard",
+            sys.executable, "-m", "winnow.legacy.cli", "guard",
             "--cwd", cwd,
             "--threshold", str(threshold_mb),
             "--interval", str(interval),
@@ -3836,7 +3836,7 @@ def _is_cozempic_guard_process(pid: int) -> bool:
     Guards against PID reuse: when our daemon exits and the kernel recycles
     its PID to an unrelated user process, a blind `os.kill(pid, SIGTERM)` on
     the recycled PID is a confused-deputy bug (we'd kill something arbitrary).
-    Inspects the process's argv; requires BOTH "cozempic.cli guard" (matches
+    Inspects the process's argv; requires BOTH "winnow.legacy.cli guard" (matches
     our spawn pattern in start_guard_daemon) OR the explicit entry-point
     "cozempic guard" — not just substring "cozempic" + "guard" which could
     match unrelated things like `vim /tmp/cozempic_guard_notes.md`.
@@ -3859,9 +3859,9 @@ def _is_cozempic_guard_process(pid: int) -> bool:
         # by pyenv / Homebrew / distro packaging.
         if not (binary == "cozempic" or re.fullmatch(r"^python(\d+(\.\d+)*)?$", binary)):
             return False
-        # "cozempic.cli" and "guard" must appear as discrete arg tokens, not as
+        # "winnow.legacy.cli" and "guard" must appear as discrete arg tokens, not as
         # substrings in filenames/paths (grep, less, vim on our source tree).
-        if "cozempic.cli" in tokens and "guard" in tokens:
+        if "winnow.legacy.cli" in tokens and "guard" in tokens:
             return True
         if len(tokens) >= 2 and binary == "cozempic" and tokens[1] == "guard":
             return True

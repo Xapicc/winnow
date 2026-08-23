@@ -20,7 +20,7 @@ busy-but-prunable session) stays benign so a long agent run can't trip the K-exi
 
 import unittest
 
-from cozempic.guard import _hard_prune_counts_as_futile, _MIN_PRUNE_RATIO
+from winnow.legacy.guard import _hard_prune_counts_as_futile, _MIN_PRUNE_RATIO
 
 
 class TestUnprunableLiveLoopF641174c(unittest.TestCase):

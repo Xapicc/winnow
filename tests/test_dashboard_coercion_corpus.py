@@ -23,18 +23,18 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from cozempic.dashboard.aggregate import _context_pct, _int, aggregate
-from cozempic.dashboard.lifetime import _num_or_zero, load_lifetime
-from cozempic.dashboard.render import _fmt_bytes, _fmt_int, _fmt_tokens
-from cozempic.metrics import (
+from winnow.legacy.dashboard.aggregate import _context_pct, _int, aggregate
+from winnow.legacy.dashboard.lifetime import _num_or_zero, load_lifetime
+from winnow.legacy.dashboard.render import _fmt_bytes, _fmt_int, _fmt_tokens
+from winnow.legacy.metrics import (
     ClaudeMetricsAdapter,
     TriggerInfo,
     build_receipt,
     serialize_receipt,
     validate_receipt,
 )
-from cozempic.receipts import receipts_enabled
-from cozempic.types import PrescriptionResult, StrategyResult
+from winnow.legacy.receipts import receipts_enabled
+from winnow.legacy.types import PrescriptionResult, StrategyResult
 
 _HUGE_INT = 10 ** 400  # same sentinel as test_input_coercion_corpus.py
 _MAX_RECEIPT_INT = 10 ** 15  # referenced for assertions
@@ -757,7 +757,7 @@ class TestLifetimeBandNonFloat(unittest.TestCase):
     """F-D: render_html must not crash when ledger contains a non-float/non-finite field."""
 
     def _render_with_ledger(self, ledger):
-        from cozempic.dashboard.render import render_html
+        from winnow.legacy.dashboard.render import render_html
         data = aggregate([])  # empty receipts — valid views dict
         render_html(data, generated_ts="2026-06-01T00:00:00Z", ledger=ledger)
 
@@ -799,7 +799,7 @@ class TestSessionStemControlChars(unittest.TestCase):
         return {"session": {"id_hash": id_hash}}
 
     def _stem(self, id_hash):
-        from cozempic.receipts import _session_stem
+        from winnow.legacy.receipts import _session_stem
         return _session_stem(self._make_receipt_with_id(id_hash))
 
     def test_newline_stripped(self):
@@ -822,7 +822,7 @@ class TestSessionStemControlChars(unittest.TestCase):
 
     def test_write_receipt_with_newline_id_creates_valid_file(self):
         """F-E: write_receipt with newline in id produces a discoverable, valid filename."""
-        from cozempic.receipts import _session_stem
+        from winnow.legacy.receipts import _session_stem
         receipt = _make_minimal_receipt()
         receipt["session"]["id_hash"] = "sha256:abc\ndef123456"
         stem = _session_stem(receipt)

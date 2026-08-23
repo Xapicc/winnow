@@ -4,9 +4,9 @@ Captures the contracts that The incremental loader (`load_messages_incremental` 
 and `_is_claude_process` mtime-recency fallback must satisfy.
 
 Why these tests are RED on current main:
-  - `cozempic.session.load_messages_incremental` does not exist yet (ImportError
+  - `winnow.legacy.session.load_messages_incremental` does not exist yet (ImportError
     at test-collection time for every Test_* class that imports it).
-  - `cozempic.guard._is_claude_process` does not accept `session_path=` yet.
+  - `winnow.legacy.guard._is_claude_process` does not accept `session_path=` yet.
 
 Bug map (from AUDIT_REPORT_leak.md §5):
   Incremental-loader contracts
@@ -40,7 +40,7 @@ from unittest.mock import patch
 
 import pytest
 
-from cozempic.session import MAX_LINE_BYTES, load_messages
+from winnow.legacy.session import MAX_LINE_BYTES, load_messages
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -93,7 +93,7 @@ class Test_MemoryGrowth(unittest.TestCase):
     """
 
     def test_incremental_keeps_rss_bounded_over_many_cycles(self):
-        from cozempic.session import load_messages_incremental  # RED: not defined on main
+        from winnow.legacy.session import load_messages_incremental  # RED: not defined on main
 
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
@@ -127,7 +127,7 @@ class Test_IncrementalAppend(unittest.TestCase):
     """
 
     def test_incremental_matches_full_read_after_append(self):
-        from cozempic.session import load_messages_incremental  # RED: not defined on main
+        from winnow.legacy.session import load_messages_incremental  # RED: not defined on main
 
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
@@ -145,7 +145,7 @@ class Test_IncrementalAppend(unittest.TestCase):
 
     def test_incremental_parses_only_new_lines_on_second_call(self):
         import json as _json
-        from cozempic.session import load_messages_incremental  # RED: not defined on main
+        from winnow.legacy.session import load_messages_incremental  # RED: not defined on main
 
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
@@ -162,7 +162,7 @@ class Test_IncrementalAppend(unittest.TestCase):
                 call_count["n"] += 1
                 return real_loads(s, *a, **kw)
 
-            with patch("cozempic.session.json.loads", side_effect=counting_loads):
+            with patch("winnow.legacy.session.json.loads", side_effect=counting_loads):
                 load_messages_incremental(jsonl)
 
             # Only 3 appended lines should be parsed — not the full 13.
@@ -184,7 +184,7 @@ class Test_RewriteDetection(unittest.TestCase):
     """
 
     def test_os_replace_triggers_full_reread(self):
-        from cozempic.session import load_messages_incremental  # RED: not defined on main
+        from winnow.legacy.session import load_messages_incremental  # RED: not defined on main
 
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
@@ -203,7 +203,7 @@ class Test_RewriteDetection(unittest.TestCase):
             self.assertEqual(second, load_messages(jsonl))
 
     def test_in_place_truncation_triggers_full_reread(self):
-        from cozempic.session import load_messages_incremental  # RED: not defined on main
+        from winnow.legacy.session import load_messages_incremental  # RED: not defined on main
 
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
@@ -234,7 +234,7 @@ class Test_CacheBounded(unittest.TestCase):
     """
 
     def test_cache_list_is_bounded(self):
-        from cozempic.session import (
+        from winnow.legacy.session import (
             MAX_CACHED_MESSAGES,  # RED: constant not exported on main
             _INCR_CACHE,            # RED: cache dict not present on main
             load_messages_incremental,
@@ -267,7 +267,7 @@ class Test_ConcurrentLoad(unittest.TestCase):
     """
 
     def test_four_threads_get_consistent_view(self):
-        from cozempic.session import load_messages_incremental  # RED: not defined on main
+        from winnow.legacy.session import load_messages_incremental  # RED: not defined on main
 
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
@@ -310,7 +310,7 @@ class Test_PartialLineTailSafe(unittest.TestCase):
     """
 
     def test_partial_trailing_line_is_skipped_then_picked_up(self):
-        from cozempic.session import load_messages_incremental  # RED: not defined on main
+        from winnow.legacy.session import load_messages_incremental  # RED: not defined on main
 
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
@@ -345,7 +345,7 @@ class Test_ClaudeProcessMtimeFallback(unittest.TestCase):
     """
 
     def test_fresh_mtime_overrides_ps_false(self):
-        from cozempic.guard import _is_claude_process  # RED: signature lacks session_path on main
+        from winnow.legacy.guard import _is_claude_process  # RED: signature lacks session_path on main
 
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
@@ -356,7 +356,7 @@ class Test_ClaudeProcessMtimeFallback(unittest.TestCase):
             fake_ps = subprocess.CompletedProcess(
                 args=["ps"], returncode=0, stdout="/usr/bin/zsh -l\n", stderr="",
             )
-            with patch("cozempic.guard.subprocess.run", return_value=fake_ps):
+            with patch("winnow.legacy.guard.subprocess.run", return_value=fake_ps):
                 result = _is_claude_process(12345, session_path=jsonl)
 
             self.assertTrue(
@@ -365,7 +365,7 @@ class Test_ClaudeProcessMtimeFallback(unittest.TestCase):
             )
 
     def test_aged_mtime_does_not_corroborate(self):
-        from cozempic.guard import _is_claude_process  # RED: signature lacks session_path on main
+        from winnow.legacy.guard import _is_claude_process  # RED: signature lacks session_path on main
 
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
@@ -378,7 +378,7 @@ class Test_ClaudeProcessMtimeFallback(unittest.TestCase):
             fake_ps = subprocess.CompletedProcess(
                 args=["ps"], returncode=0, stdout="/usr/bin/zsh -l\n", stderr="",
             )
-            with patch("cozempic.guard.subprocess.run", return_value=fake_ps):
+            with patch("winnow.legacy.guard.subprocess.run", return_value=fake_ps):
                 result = _is_claude_process(12345, session_path=jsonl)
 
             self.assertFalse(
@@ -401,7 +401,7 @@ class Test_SameSizeRewriteInvalidation(unittest.TestCase):
     """
 
     def test_in_place_same_size_rewrite_returns_fresh_content(self):
-        from cozempic.session import (
+        from winnow.legacy.session import (
             _INCR_CACHE,
             load_messages,
             load_messages_incremental,
@@ -440,7 +440,7 @@ class Test_CacheLRUAcrossSessions(unittest.TestCase):
     """
 
     def test_cache_bounded_by_max_cache_sessions(self):
-        from cozempic.session import (
+        from winnow.legacy.session import (
             MAX_CACHE_SESSIONS,
             _INCR_CACHE,
             load_messages_incremental,
@@ -461,7 +461,7 @@ class Test_CacheLRUAcrossSessions(unittest.TestCase):
             )
 
     def test_cache_evicts_least_recently_used(self):
-        from cozempic.session import (
+        from winnow.legacy.session import (
             MAX_CACHE_SESSIONS,
             _INCR_CACHE,
             load_messages_incremental,
@@ -504,7 +504,7 @@ class Test_TerminateAndResumeAcceptsSessionPath(unittest.TestCase):
 
     def test_terminate_and_resume_signature_accepts_session_path(self):
         import inspect
-        from cozempic.guard import _terminate_and_resume
+        from winnow.legacy.guard import _terminate_and_resume
         sig = inspect.signature(_terminate_and_resume)
         self.assertIn(
             "session_path", sig.parameters,
@@ -517,7 +517,7 @@ class Test_TerminateAndResumeAcceptsSessionPath(unittest.TestCase):
         _terminate_and_resume MUST carry session_path."""
         import inspect
         import re as _re
-        from cozempic.guard import _terminate_and_resume
+        from winnow.legacy.guard import _terminate_and_resume
         src = inspect.getsource(_terminate_and_resume)
         # Find every _is_claude_process( ... ) invocation and confirm each
         # references session_path. Matches across linebreaks.

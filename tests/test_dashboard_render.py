@@ -9,16 +9,16 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from cozempic import cli
-from cozempic.dashboard.render import (
+from winnow.legacy import cli
+from winnow.legacy.dashboard.render import (
     dashboard_path,
     render_dashboard,
     render_html,
     write_dashboard,
 )
-from cozempic.metrics import ClaudeMetricsAdapter, TriggerInfo, build_receipt
-from cozempic.receipts import write_receipt
-from cozempic.types import PrescriptionResult, StrategyResult
+from winnow.legacy.metrics import ClaudeMetricsAdapter, TriggerInfo, build_receipt
+from winnow.legacy.receipts import write_receipt
+from winnow.legacy.types import PrescriptionResult, StrategyResult
 
 
 def _data(**over):
@@ -95,7 +95,7 @@ class TestRenderHtml(unittest.TestCase):
     def test_negative_values_formatted(self):
         # negative reclaim formats correctly (tested at the formatter level since
         # the summary cards were removed as redundant with the lifetime band)
-        from cozempic.dashboard.render import _fmt_bytes, _fmt_tokens
+        from winnow.legacy.dashboard.render import _fmt_bytes, _fmt_tokens
 
         self.assertEqual(_fmt_tokens(-5000), "-5.0K")
         self.assertEqual(_fmt_bytes(-2048), "-2.0 KB")

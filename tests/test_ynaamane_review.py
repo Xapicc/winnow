@@ -13,7 +13,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from cozempic.overflow import CircuitBreaker, OverflowRecovery
+from winnow.legacy.overflow import CircuitBreaker, OverflowRecovery
 
 
 class TestOverflowGateFailClosed(unittest.TestCase):
@@ -39,13 +39,13 @@ class TestOverflowGateFailClosed(unittest.TestCase):
             rec = self._recovery(breaker)
             with (
                 patch.object(rec, "detect_overflow", return_value=True),
-                patch("cozempic.guard.guard_prune_cycle", return_value={"saved_mb": 1.0,
+                patch("winnow.legacy.guard.guard_prune_cycle", return_value={"saved_mb": 1.0,
                       "original_tokens": 1000, "final_tokens": 500}),
-                patch("cozempic.guard._terminate_and_resume") as mock_kill,
-                patch("cozempic.guard.checkpoint_team"),
-                patch("cozempic.session.find_claude_pid", return_value=None),
+                patch("winnow.legacy.guard._terminate_and_resume") as mock_kill,
+                patch("winnow.legacy.guard.checkpoint_team"),
+                patch("winnow.legacy.session.find_claude_pid", return_value=None),
                 # make the safety gate itself throw
-                patch("cozempic.guard.safe_to_reload", side_effect=RuntimeError("boom")),
+                patch("winnow.legacy.guard.safe_to_reload", side_effect=RuntimeError("boom")),
             ):
                 rec.recover()
             # FAIL-CLOSED: on a gate error we must DEFER — never kill a session that
@@ -63,12 +63,12 @@ class TestOverflowGateFailClosed(unittest.TestCase):
             rec = self._recovery(breaker)
             with (
                 patch.object(rec, "detect_overflow", return_value=True),
-                patch("cozempic.guard.guard_prune_cycle", return_value={"saved_mb": 1.0,
+                patch("winnow.legacy.guard.guard_prune_cycle", return_value={"saved_mb": 1.0,
                       "original_tokens": 1000, "final_tokens": 500}),
-                patch("cozempic.guard._terminate_and_resume") as mock_kill,
-                patch("cozempic.guard.checkpoint_team"),
-                patch("cozempic.session.find_claude_pid", return_value=None),
-                patch("cozempic.guard.safe_to_reload", return_value=(False, "agents active")),
+                patch("winnow.legacy.guard._terminate_and_resume") as mock_kill,
+                patch("winnow.legacy.guard.checkpoint_team"),
+                patch("winnow.legacy.session.find_claude_pid", return_value=None),
+                patch("winnow.legacy.guard.safe_to_reload", return_value=(False, "agents active")),
             ):
                 rec.recover()
             mock_kill.assert_not_called()
@@ -81,14 +81,14 @@ class TestNonStrTextNoCrash(unittest.TestCase):
     """#2: a non-str `text` must not crash extract_team_state / _extract_block_text."""
 
     def test_extract_block_text_non_str(self):
-        from cozempic.team import _extract_block_text
+        from winnow.legacy.team import _extract_block_text
         blk = {"type": "tool_result", "tool_use_id": "x",
                "content": [{"type": "text", "text": 99999}]}
         self.assertEqual(_extract_block_text(blk), "")  # no TypeError
 
     def test_extract_team_state_non_str_text(self):
-        from cozempic.session import load_messages
-        from cozempic.team import extract_team_state
+        from winnow.legacy.session import load_messages
+        from winnow.legacy.team import extract_team_state
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "s.jsonl"
             p.write_text(json.dumps({"type": "assistant", "uuid": "a1", "message": {"role": "assistant",
@@ -102,11 +102,11 @@ class TestConfigErrorNotSwallowed(unittest.TestCase):
     """#6: a user ConfigError must propagate, not be mislabeled as a malformed message."""
 
     def test_config_error_propagates(self):
-        import cozempic.strategies.aggressive  # noqa: register strategies
-        from cozempic.registry import STRATEGIES
-        from cozempic.session import load_messages
-        from cozempic.executor import run_prescription
-        from cozempic._validation import ConfigError
+        import winnow.legacy.strategies.aggressive  # noqa: register strategies
+        from winnow.legacy.registry import STRATEGIES
+        from winnow.legacy.session import load_messages
+        from winnow.legacy.executor import run_prescription
+        from winnow.legacy._validation import ConfigError
         mega = [n for n in STRATEGIES if "mega" in n]
         self.assertTrue(mega)
         with tempfile.TemporaryDirectory() as d:
@@ -126,7 +126,7 @@ class TestWatchdogErrorStormDiscriminator(unittest.TestCase):
     thresholds (R14)."""
 
     def test_healthy_pruning_guard_with_stale_escalations_not_flagged(self):
-        from cozempic.watchdog import scan_log_text
+        from winnow.legacy.watchdog import scan_log_text
         text = ("Guard daemon started\n"
                 + "  Guard cycle-error escalation: 5 consecutive cycle errors\n" * 3  # dead gen
                 + "Guard daemon started\n"
@@ -134,7 +134,7 @@ class TestWatchdogErrorStormDiscriminator(unittest.TestCase):
         self.assertFalse(scan_log_text(text).looping)
 
     def test_multi_generation_error_storm_flagged(self):
-        from cozempic.watchdog import scan_log_text
+        from winnow.legacy.watchdog import scan_log_text
         # 26 generations, each 5 errors + 1 escalation then exit, ZERO prunes — the
         # exact storm generation-scoping let escape (each gen < the thresholds).
         gen = ("--- Guard daemon started ---\n"
@@ -143,7 +143,7 @@ class TestWatchdogErrorStormDiscriminator(unittest.TestCase):
         self.assertTrue(scan_log_text(gen * 26).looping)
 
     def test_single_inert_generation_flagged(self):
-        from cozempic.watchdog import scan_log_text
+        from winnow.legacy.watchdog import scan_log_text
         text = "Guard daemon started\n" + "  Guard: skipping a cycle after an unexpected error (1/5): E\n" * 22
         self.assertTrue(scan_log_text(text).looping)
 
@@ -151,7 +151,7 @@ class TestWatchdogErrorStormDiscriminator(unittest.TestCase):
         # R15 FN: the total_prune_cycles==0 gate let an error storm escape if ANY stray
         # productive prune line survived in the tail. The errors-outnumber-productive-
         # prunes rule flags it (130 errors >> 1 prune).
-        from cozempic.watchdog import scan_log_text
+        from winnow.legacy.watchdog import scan_log_text
         gen = ("--- Guard daemon started ---\n"
                + "  Guard: skipping a cycle after an unexpected error (1/5): E\n" * 5
                + "  Guard cycle-error escalation: 5 consecutive cycle errors\n")
@@ -161,14 +161,14 @@ class TestWatchdogErrorStormDiscriminator(unittest.TestCase):
     def test_R15_healthy_idle_multi_restart_not_flagged(self):
         # R15 FP: a healthy idle guard (short sessions, 0 prunes, 0 errors) with several
         # restarts must NOT be flagged (the daemon_starts-only trigger false-flagged it).
-        from cozempic.watchdog import scan_log_text
+        from winnow.legacy.watchdog import scan_log_text
         text = "--- Guard daemon started ---\nCWD: /x\n  Read-only — live session not rewritten\n" * 6
         self.assertFalse(scan_log_text(text).looping)
 
     def test_R15_healthy_busy_with_transient_errors_not_flagged(self):
         # A long healthy daemon: many productive prunes, a few transient errors that do
         # NOT outnumber the prunes -> not flagged.
-        from cozempic.watchdog import scan_log_text
+        from winnow.legacy.watchdog import scan_log_text
         text = ("--- Guard daemon started ---\n"
                 + "  Pruned: 12,345 tokens freed (48.0%)\n" * 50
                 + "  Guard: skipping a cycle after an unexpected error (1/5): E\n" * 20)
@@ -179,7 +179,7 @@ class TestAtomicCheckpoint(unittest.TestCase):
     """#5: write_team_checkpoint writes atomically (no partial file)."""
 
     def test_checkpoint_written(self):
-        from cozempic.team import TeamState, write_team_checkpoint
+        from winnow.legacy.team import TeamState, write_team_checkpoint
         with tempfile.TemporaryDirectory() as d:
             path = write_team_checkpoint(TeamState(team_name="t"), project_dir=Path(d))
             self.assertTrue(path.exists() and path.read_text())
@@ -189,7 +189,7 @@ class TestRedosNonCapturingGroupNotOverRejected(unittest.TestCase):
     """LOW: rule-2 must not over-reject (?:abc)+ / (?i:abc)+ / (?P<n>abc)+."""
 
     def test_non_capturing_groups_allowed(self):
-        from cozempic.helpers import _pattern_is_redos_risky as risky
+        from winnow.legacy.helpers import _pattern_is_redos_risky as risky
         for p in [r"(?:abc)+", r"(?i:abc)+", r"(?P<n>abc)+"]:
             self.assertFalse(risky(p), f"non-capturing/flag/named group over-rejected: {p}")
         for p in [r"(?:a+)+", r"(?:a|b)+"]:  # genuinely dangerous still flagged

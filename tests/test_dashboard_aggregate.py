@@ -8,10 +8,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from cozempic.dashboard.aggregate import aggregate, load_receipts
-from cozempic.metrics import ClaudeMetricsAdapter, TriggerInfo, ValidationInfo, build_receipt
-from cozempic.receipts import receipts_dir, write_receipt
-from cozempic.types import PrescriptionResult, StrategyResult
+from winnow.legacy.dashboard.aggregate import aggregate, load_receipts
+from winnow.legacy.metrics import ClaudeMetricsAdapter, TriggerInfo, ValidationInfo, build_receipt
+from winnow.legacy.receipts import receipts_dir, write_receipt
+from winnow.legacy.types import PrescriptionResult, StrategyResult
 
 
 def _receipt(*, outcome="committed", tokens=(2000, 1500), agent="claude", session="s1",

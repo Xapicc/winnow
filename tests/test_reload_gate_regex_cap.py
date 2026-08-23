@@ -57,7 +57,7 @@ class TestDetectInFlightReDoSCap(unittest.TestCase):
 
     def _detect(self, raw_text: str) -> dict:
         """Call detect_in_flight with a single user message carrying raw_text."""
-        from cozempic.guard import detect_in_flight
+        from winnow.legacy.guard import detect_in_flight
         msgs = [{"type": "user", "content": raw_text}]
         return detect_in_flight(msgs)
 
@@ -99,7 +99,7 @@ class TestDetectInFlightReDoSCap(unittest.TestCase):
         RED-at-base (cap=1 patch): assertFalse(result.get("agent")) raises
         AssertionError because agent-xyz is registered but NOT cleared.
         """
-        import cozempic.guard as _guard
+        import winnow.legacy.guard as _guard
 
         # Full message sequence:
         #   1. Agent tool_use (adds tu-1 to use_ids)
@@ -149,7 +149,7 @@ class TestDetectInFlightReDoSCap(unittest.TestCase):
         (not vacuous): with a real cap the notification clears the agent; without it
         the agent stays stranded.
         """
-        import cozempic.guard as _guard
+        import winnow.legacy.guard as _guard
 
         msgs = [
             {
@@ -190,8 +190,8 @@ def _extract_isolated(msgs):
     Shared by TestExtractTeamStateReDoSCap and TestExtractTeamStateTeammateMsgCap
     to avoid duplicating the patch context manager in each class.
     """
-    from cozempic.team import extract_team_state
-    with patch("cozempic.team.load_team_configs", return_value=[]):
+    from winnow.legacy.team import extract_team_state
+    with patch("winnow.legacy.team.load_team_configs", return_value=[]):
         return extract_team_state(msgs)
 
 
@@ -364,7 +364,7 @@ class TestExtractTeamStateReDoSCap(unittest.TestCase):
         Fail-safe: missed notification → over-defers reload (recoverable), never
         under-blocks (SIGKILL).
         """
-        import cozempic.team as _team
+        import winnow.legacy.team as _team
 
         msgs = _task_spawn_with_notif()
         with patch.object(_team, "_RELOAD_GATE_SCAN_CAP", 1):
@@ -457,7 +457,7 @@ class TestExtractTeamStateTeammateMsgCap(unittest.TestCase):
           `for tm_match in _TEAMMATE_MSG_RE.finditer(content):`
         and run this test — it will fail because the status becomes "idle".
         """
-        from cozempic.team import _RELOAD_GATE_SCAN_CAP
+        from winnow.legacy.team import _RELOAD_GATE_SCAN_CAP
 
         idle_notif = (
             '<teammate-message teammate_id="worker" summary="done">'
@@ -489,7 +489,7 @@ class TestScanCapSharedConstant(unittest.TestCase):
     """_RELOAD_GATE_SCAN_CAP must come from _constants so guard and team share one object.
 
     RED at base (22feb3b): _constants.py does not exist → ImportError on
-    `from cozempic import _constants`.  All three tests are RED.
+    `from winnow.legacy import _constants`.  All three tests are RED.
 
     GREEN after P0-A: both guard.py and team.py import from _constants → assertIs
     identity checks pass (same int object via module attribute, not interning).
@@ -497,8 +497,8 @@ class TestScanCapSharedConstant(unittest.TestCase):
 
     def test_guard_cap_imported_from_constants(self):
         """guard._RELOAD_GATE_SCAN_CAP must be the same object as _constants._RELOAD_GATE_SCAN_CAP."""
-        from cozempic import guard
-        from cozempic import _constants
+        from winnow.legacy import guard
+        from winnow.legacy import _constants
         self.assertIs(
             guard._RELOAD_GATE_SCAN_CAP,
             _constants._RELOAD_GATE_SCAN_CAP,
@@ -508,8 +508,8 @@ class TestScanCapSharedConstant(unittest.TestCase):
 
     def test_team_cap_imported_from_constants(self):
         """team._RELOAD_GATE_SCAN_CAP must be the same object as _constants._RELOAD_GATE_SCAN_CAP."""
-        from cozempic import team
-        from cozempic import _constants
+        from winnow.legacy import team
+        from winnow.legacy import _constants
         self.assertIs(
             team._RELOAD_GATE_SCAN_CAP,
             _constants._RELOAD_GATE_SCAN_CAP,
@@ -518,7 +518,7 @@ class TestScanCapSharedConstant(unittest.TestCase):
 
     def test_guard_and_team_caps_are_same_object(self):
         """guard and team must reference the exact same constant object."""
-        from cozempic import guard, team
+        from winnow.legacy import guard, team
         self.assertIs(
             guard._RELOAD_GATE_SCAN_CAP,
             team._RELOAD_GATE_SCAN_CAP,
@@ -549,7 +549,7 @@ class TestTNIDREAttributeTolerance(unittest.TestCase):
     """
 
     def _detect(self, raw_text: str) -> dict:
-        from cozempic.guard import detect_in_flight
+        from winnow.legacy.guard import detect_in_flight
         # Full sequence: Agent launch → spawn-ack (populates launched_agent)
         # → task-notification with attributed <task-id> (must clear it).
         msgs = [

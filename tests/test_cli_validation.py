@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from cozempic.cli import _prescan_argv, _positive_float, build_parser, _digest_session
+from winnow.legacy.cli import _prescan_argv, _positive_float, build_parser, _digest_session
 
 
 class TestPositiveFloatArgparseHelper:
@@ -247,11 +247,11 @@ class TestStartGuardOrderingValidation:
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
     def _call_start_guard(self, **kwargs):
-        from cozempic.guard import start_guard
+        from winnow.legacy.guard import start_guard
         return start_guard(**kwargs)
 
     def test_soft_mb_equal_hard_mb_rejected(self):
-        from cozempic._validation import ConfigError
+        from winnow.legacy._validation import ConfigError
         with _assert_raises_like(ConfigError, "strictly less"):
             self._call_start_guard(
                 threshold_mb=50.0,
@@ -260,7 +260,7 @@ class TestStartGuardOrderingValidation:
             )
 
     def test_soft_mb_greater_than_hard_mb_rejected(self):
-        from cozempic._validation import ConfigError
+        from winnow.legacy._validation import ConfigError
         with _assert_raises_like(ConfigError, "strictly less"):
             self._call_start_guard(
                 threshold_mb=50.0,
@@ -269,7 +269,7 @@ class TestStartGuardOrderingValidation:
             )
 
     def test_soft_tokens_greater_than_threshold_tokens_rejected(self):
-        from cozempic._validation import ConfigError
+        from winnow.legacy._validation import ConfigError
         with _assert_raises_like(ConfigError, "strictly less"):
             self._call_start_guard(
                 threshold_mb=50.0,
@@ -301,7 +301,7 @@ class TestStartGuardNanInfValidation:
                             find_current_session     (jsonl directory scan)
                             _is_guard_running_for_session (pid file read)
                             _guard_tmp_root          (redirects pid/log path construction)
-                            cozempic.spawn_lock.DaemonSpawnClaim (O_CREAT|O_EXCL on .pid)
+                            winnow.legacy.spawn_lock.DaemonSpawnClaim (O_CREAT|O_EXCL on .pid)
                             subprocess.Popen         (daemon spawn)
                           Teardown removes the tempdir unconditionally.
                           Acceptance: BEFORE/AFTER ls /tmp/cozempic_guard_* count equal
@@ -320,8 +320,8 @@ class TestStartGuardNanInfValidation:
         """start_guard(threshold_mb=float('nan')) must raise ConfigError with 'finite'.
         RED at base: nan <= 0 is False, validation bypassed; ValueError raised downstream
         at int(nan * 1024 * 1024) instead of ConfigError at the validation block."""
-        from cozempic.guard import start_guard
-        from cozempic._validation import ConfigError
+        from winnow.legacy.guard import start_guard
+        from winnow.legacy._validation import ConfigError
         with _assert_raises_like(ConfigError, "finite"):
             start_guard(threshold_mb=float("nan"), cwd=self._tmpdir)
 
@@ -329,8 +329,8 @@ class TestStartGuardNanInfValidation:
         """start_guard(threshold_mb=float('inf')) must raise ConfigError with 'finite'.
         RED at base: inf <= 0 is False; OverflowError raised downstream at int(inf)
         instead of ConfigError at the validation block."""
-        from cozempic.guard import start_guard
-        from cozempic._validation import ConfigError
+        from winnow.legacy.guard import start_guard
+        from winnow.legacy._validation import ConfigError
         with _assert_raises_like(ConfigError, "finite"):
             start_guard(threshold_mb=float("inf"), cwd=self._tmpdir)
 
@@ -343,8 +343,8 @@ class TestStartGuardNanInfValidation:
         ConfigError at the validation block. Same class of bug as P0-F
         (coerce_positive_float). Fix: widen the gate to isinstance(_v, (int, float))
         so huge ints enter the try/except OverflowError path."""
-        from cozempic.guard import start_guard
-        from cozempic._validation import ConfigError
+        from winnow.legacy.guard import start_guard
+        from winnow.legacy._validation import ConfigError
         with _assert_raises_like(ConfigError, "finite"):
             start_guard(threshold_mb=10**400, cwd=self._tmpdir)
 
@@ -361,19 +361,19 @@ class TestStartGuardNanInfValidation:
           - find_current_session     (jsonl directory scan — fires when no session_id)
           - _is_guard_running_for_session (pid file read)
           - _guard_tmp_root          (redirects pid/log path construction to self._tmpdir)
-          - cozempic.spawn_lock.DaemonSpawnClaim (O_CREAT|O_EXCL on .pid — the leak source)
+          - winnow.legacy.spawn_lock.DaemonSpawnClaim (O_CREAT|O_EXCL on .pid — the leak source)
           - subprocess.Popen         (daemon spawn — must never be reached)
         """
-        from cozempic.guard import start_guard_daemon
-        from cozempic._validation import ConfigError
+        from winnow.legacy.guard import start_guard_daemon
+        from winnow.legacy._validation import ConfigError
         with (
-            patch("cozempic.guard._cleanup_legacy_pid"),
-            patch("cozempic.guard._reload_sentinel_active", return_value=False),
-            patch("cozempic.guard.find_current_session", return_value=None),
-            patch("cozempic.guard._is_guard_running_for_session", return_value=None),
-            patch("cozempic.guard._guard_tmp_root", return_value=Path(self._tmpdir)),
-            patch("cozempic.spawn_lock.DaemonSpawnClaim"),
-            patch("cozempic.guard.subprocess.Popen"),
+            patch("winnow.legacy.guard._cleanup_legacy_pid"),
+            patch("winnow.legacy.guard._reload_sentinel_active", return_value=False),
+            patch("winnow.legacy.guard.find_current_session", return_value=None),
+            patch("winnow.legacy.guard._is_guard_running_for_session", return_value=None),
+            patch("winnow.legacy.guard._guard_tmp_root", return_value=Path(self._tmpdir)),
+            patch("winnow.legacy.spawn_lock.DaemonSpawnClaim"),
+            patch("winnow.legacy.guard.subprocess.Popen"),
         ):
             with _assert_raises_like(ConfigError, "finite"):
                 start_guard_daemon(
@@ -386,16 +386,16 @@ class TestStartGuardNanInfValidation:
 
         All I/O primitives mocked — see test_start_guard_daemon_threshold_mb_nan for details.
         """
-        from cozempic.guard import start_guard_daemon
-        from cozempic._validation import ConfigError
+        from winnow.legacy.guard import start_guard_daemon
+        from winnow.legacy._validation import ConfigError
         with (
-            patch("cozempic.guard._cleanup_legacy_pid"),
-            patch("cozempic.guard._reload_sentinel_active", return_value=False),
-            patch("cozempic.guard.find_current_session", return_value=None),
-            patch("cozempic.guard._is_guard_running_for_session", return_value=None),
-            patch("cozempic.guard._guard_tmp_root", return_value=Path(self._tmpdir)),
-            patch("cozempic.spawn_lock.DaemonSpawnClaim"),
-            patch("cozempic.guard.subprocess.Popen"),
+            patch("winnow.legacy.guard._cleanup_legacy_pid"),
+            patch("winnow.legacy.guard._reload_sentinel_active", return_value=False),
+            patch("winnow.legacy.guard.find_current_session", return_value=None),
+            patch("winnow.legacy.guard._is_guard_running_for_session", return_value=None),
+            patch("winnow.legacy.guard._guard_tmp_root", return_value=Path(self._tmpdir)),
+            patch("winnow.legacy.spawn_lock.DaemonSpawnClaim"),
+            patch("winnow.legacy.guard.subprocess.Popen"),
         ):
             with _assert_raises_like(ConfigError, "finite"):
                 start_guard_daemon(
@@ -438,13 +438,13 @@ class TestReloadSelfDaemonNanInfValidation:
         @contextlib.contextmanager
         def ctx():
             with (
-                patch("cozempic.guard._is_guard_running_for_session", return_value=99999),
-                patch("cozempic.guard._is_cozempic_guard_process", return_value=True),
-                patch("cozempic.guard.os.kill") as mock_kill,
-                patch("cozempic.guard._wait_for_exit", return_value=True),
-                patch("cozempic.guard._pid_file_points_to", return_value=False),
-                patch("cozempic.guard._pid_file_for_session", return_value=MagicMock()),
-                patch("cozempic.guard.start_guard_daemon",
+                patch("winnow.legacy.guard._is_guard_running_for_session", return_value=99999),
+                patch("winnow.legacy.guard._is_cozempic_guard_process", return_value=True),
+                patch("winnow.legacy.guard.os.kill") as mock_kill,
+                patch("winnow.legacy.guard._wait_for_exit", return_value=True),
+                patch("winnow.legacy.guard._pid_file_points_to", return_value=False),
+                patch("winnow.legacy.guard._pid_file_for_session", return_value=MagicMock()),
+                patch("winnow.legacy.guard.start_guard_daemon",
                       return_value={"started": True, "pid": 88888, "log_file": "/tmp/x.log"}),
             ):
                 yield mock_kill
@@ -456,8 +456,8 @@ class TestReloadSelfDaemonNanInfValidation:
 
         Regression guard: _validate_finite_thresholds() fires at entry, ConfigError
         is raised before os.kill — the live daemon (99999) is never orphaned."""
-        from cozempic.guard import reload_self_daemon
-        from cozempic._validation import ConfigError
+        from winnow.legacy.guard import reload_self_daemon
+        from winnow.legacy._validation import ConfigError
         with self._make_mocks() as mock_kill:
             with _assert_raises_like(ConfigError, "finite"):
                 reload_self_daemon(
@@ -473,8 +473,8 @@ class TestReloadSelfDaemonNanInfValidation:
 
         Regression guard: same orphan-daemon scenario with inf — ConfigError
         fires before os.kill, daemon survives."""
-        from cozempic.guard import reload_self_daemon
-        from cozempic._validation import ConfigError
+        from winnow.legacy.guard import reload_self_daemon
+        from winnow.legacy._validation import ConfigError
         with self._make_mocks() as mock_kill:
             with _assert_raises_like(ConfigError, "finite"):
                 reload_self_daemon(
@@ -521,7 +521,7 @@ class TestReloadSessionFlag:
 
 
 # ---------------------------------------------------------------------------
-# F15: ValueError dispatch in main() — cozempic.cli lines 1708-1719
+# F15: ValueError dispatch in main() — winnow.legacy.cli lines 1708-1719
 # ---------------------------------------------------------------------------
 
 def _run_main_with_argv(argv):
@@ -533,13 +533,13 @@ def _run_main_with_argv(argv):
     stderr_buf = io.StringIO()
 
     with patch("sys.argv", ["cozempic"] + argv), \
-         patch("cozempic.cli._maybe_global_init"), \
-         patch("cozempic.cli._maybe_auto_init"), \
-         patch("cozempic.updater.ping_install_if_new"), \
-         patch("cozempic.updater.maybe_auto_update"), \
+         patch("winnow.legacy.cli._maybe_global_init"), \
+         patch("winnow.legacy.cli._maybe_auto_init"), \
+         patch("winnow.legacy.updater.ping_install_if_new"), \
+         patch("winnow.legacy.updater.maybe_auto_update"), \
          patch("sys.stdout", stdout_buf), \
          patch("sys.stderr", stderr_buf):
-        from cozempic.cli import main
+        from winnow.legacy.cli import main
         main()
 
     return stdout_buf.getvalue(), stderr_buf.getvalue()
@@ -553,7 +553,7 @@ class TestValueErrorDispatch:
 
     def test_guard_valueerror_exits_2_with_error_stderr(self):
         """guard command raising ValueError → SystemExit(2) + 'Error:' on stderr."""
-        with patch("cozempic.cli.cmd_guard", side_effect=ValueError("bad session id")):
+        with patch("winnow.legacy.cli.cmd_guard", side_effect=ValueError("bad session id")):
             try:
                 _run_main_with_argv(["guard"])
                 assert False, "expected SystemExit"
@@ -563,14 +563,14 @@ class TestValueErrorDispatch:
     def test_guard_valueerror_error_on_stderr(self):
         """guard ValueError message must appear on stderr prefixed with 'Error:'."""
         stderr_buf = io.StringIO()
-        with patch("cozempic.cli.cmd_guard", side_effect=ValueError("bad session id")), \
+        with patch("winnow.legacy.cli.cmd_guard", side_effect=ValueError("bad session id")), \
              patch("sys.argv", ["cozempic", "guard"]), \
-             patch("cozempic.cli._maybe_global_init"), \
-             patch("cozempic.cli._maybe_auto_init"), \
-             patch("cozempic.updater.ping_install_if_new"), \
-             patch("cozempic.updater.maybe_auto_update"), \
+             patch("winnow.legacy.cli._maybe_global_init"), \
+             patch("winnow.legacy.cli._maybe_auto_init"), \
+             patch("winnow.legacy.updater.ping_install_if_new"), \
+             patch("winnow.legacy.updater.maybe_auto_update"), \
              patch("sys.stderr", stderr_buf):
-            from cozempic.cli import main
+            from winnow.legacy.cli import main
             try:
                 main()
             except SystemExit:
@@ -581,7 +581,7 @@ class TestValueErrorDispatch:
 
     def test_reload_valueerror_exits_2_with_error_stderr(self):
         """reload command raising ValueError → SystemExit(2)."""
-        with patch("cozempic.cli.cmd_reload", side_effect=ValueError("malformed")):
+        with patch("winnow.legacy.cli.cmd_reload", side_effect=ValueError("malformed")):
             try:
                 _run_main_with_argv(["reload"])
                 assert False, "expected SystemExit"
@@ -590,7 +590,7 @@ class TestValueErrorDispatch:
 
     def test_non_guard_valueerror_propagates(self):
         """diagnose raising ValueError must propagate (not become exit 2)."""
-        with patch("cozempic.cli.cmd_diagnose", side_effect=ValueError("unexpected")):
+        with patch("winnow.legacy.cli.cmd_diagnose", side_effect=ValueError("unexpected")):
             try:
                 _run_main_with_argv(["diagnose", "current"])
                 assert False, "expected ValueError or SystemExit"
@@ -604,14 +604,14 @@ class TestValueErrorDispatch:
     def test_error_message_text_appears_in_stderr(self):
         """The ValueError message text must appear in stderr output."""
         stderr_buf = io.StringIO()
-        with patch("cozempic.cli.cmd_guard", side_effect=ValueError("session_id malformed: @@")), \
+        with patch("winnow.legacy.cli.cmd_guard", side_effect=ValueError("session_id malformed: @@")), \
              patch("sys.argv", ["cozempic", "guard"]), \
-             patch("cozempic.cli._maybe_global_init"), \
-             patch("cozempic.cli._maybe_auto_init"), \
-             patch("cozempic.updater.ping_install_if_new"), \
-             patch("cozempic.updater.maybe_auto_update"), \
+             patch("winnow.legacy.cli._maybe_global_init"), \
+             patch("winnow.legacy.cli._maybe_auto_init"), \
+             patch("winnow.legacy.updater.ping_install_if_new"), \
+             patch("winnow.legacy.updater.maybe_auto_update"), \
              patch("sys.stderr", stderr_buf):
-            from cozempic.cli import main
+            from winnow.legacy.cli import main
             try:
                 main()
             except SystemExit:
@@ -643,8 +643,8 @@ class TestDigestSessionResolution:
         """UUID string → resolve_session called, returned path is a Path object."""
         fake_path = Path("/fake/abc123.jsonl")
         # _digest_session does `from .session import ..., resolve_session` locally,
-        # so patch the source module (cozempic.session) not the cli top-level binding.
-        with patch("cozempic.session.resolve_session", return_value=fake_path) as mock_rs:
+        # so patch the source module (winnow.legacy.session) not the cli top-level binding.
+        with patch("winnow.legacy.session.resolve_session", return_value=fake_path) as mock_rs:
             path, session_id, cwd = _digest_session(self._make_args(session="abc123"))
         mock_rs.assert_called_once_with("abc123")
         assert path == fake_path
@@ -652,14 +652,14 @@ class TestDigestSessionResolution:
     def test_uuid_arg_session_id_from_stem(self):
         """session_id must be derived from path.stem (the UUID)."""
         fake_path = Path("/fake/abc123.jsonl")
-        with patch("cozempic.session.resolve_session", return_value=fake_path):
+        with patch("winnow.legacy.session.resolve_session", return_value=fake_path):
             path, session_id, cwd = _digest_session(self._make_args(session="abc123"))
         assert session_id == "abc123", f"expected 'abc123', got {session_id!r}"
 
     def test_path_arg_resolves_correctly(self):
         """Explicit file path → resolve_session returns it, stem extracted."""
         fake_path = Path("/real/path/uuid-val.jsonl")
-        with patch("cozempic.session.resolve_session", return_value=fake_path):
+        with patch("winnow.legacy.session.resolve_session", return_value=fake_path):
             path, session_id, cwd = _digest_session(
                 self._make_args(session="/real/path/uuid-val.jsonl")
             )
@@ -670,15 +670,15 @@ class TestDigestSessionResolution:
         """args.session=None → find_current_session called; returns its path + id."""
         fake_sess = {"path": Path("/x/sess.jsonl"), "session_id": "sess"}
         # _digest_session does a local `from .session import find_current_session`,
-        # so patch the source module (cozempic.session) not the cli binding.
-        with patch("cozempic.session.find_current_session", return_value=fake_sess):
+        # so patch the source module (winnow.legacy.session) not the cli binding.
+        with patch("winnow.legacy.session.find_current_session", return_value=fake_sess):
             path, session_id, cwd = _digest_session(self._make_args(session=None))
         assert path == Path("/x/sess.jsonl")
         assert session_id == "sess"
 
     def test_no_session_arg_no_current_exits_1(self):
         """args.session=None + no current session → SystemExit(1)."""
-        with patch("cozempic.session.find_current_session", return_value=None):
+        with patch("winnow.legacy.session.find_current_session", return_value=None):
             try:
                 _digest_session(self._make_args(session=None))
                 assert False, "expected SystemExit(1)"
@@ -690,8 +690,8 @@ class TestDigestSessionResolution:
         no-session path), NOT resolve_session('current') which uses process-detection.
         C3: keeps both paths consistent."""
         fake_sess = {"path": Path("/y/curr.jsonl"), "session_id": "curr"}
-        with patch("cozempic.session.find_current_session", return_value=fake_sess) as mock_fc, \
-             patch("cozempic.session.resolve_session") as mock_rs:
+        with patch("winnow.legacy.session.find_current_session", return_value=fake_sess) as mock_fc, \
+             patch("winnow.legacy.session.resolve_session") as mock_rs:
             path, session_id, cwd = _digest_session(self._make_args(session="current"))
         # Must use find_current_session (cwd-based), NOT resolve_session
         mock_fc.assert_called_once()
@@ -710,7 +710,7 @@ class TestDigestSessionResolution:
         Spy asserts keyword `strict=True` is passed; no behavior gap if omitted.
         """
         fake_sess = {"path": Path("/z/strict.jsonl"), "session_id": "strict-sess"}
-        with patch("cozempic.session.find_current_session", return_value=fake_sess) as mock_fc:
+        with patch("winnow.legacy.session.find_current_session", return_value=fake_sess) as mock_fc:
             _digest_session(self._make_args(session=None))
 
         mock_fc.assert_called_once()

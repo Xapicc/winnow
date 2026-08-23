@@ -24,8 +24,8 @@ from unittest.mock import patch
 
 import pytest
 
-from cozempic.session import find_sessions, save_messages, load_messages
-from cozempic.helpers import atomic_write_text
+from winnow.legacy.session import find_sessions, save_messages, load_messages
+from winnow.legacy.helpers import atomic_write_text
 
 
 # ---------------------------------------------------------------------------
@@ -91,7 +91,7 @@ class TestFindSessionsSkipsDotfileOrphans:
             "orphan must match glob (confirms the raw bug exists)"
         )
 
-        with patch("cozempic.session.get_projects_dir", return_value=tmp_path / "projects"):
+        with patch("winnow.legacy.session.get_projects_dir", return_value=tmp_path / "projects"):
             sessions = find_sessions()
 
         session_ids = {s["session_id"] for s in sessions}
@@ -112,7 +112,7 @@ class TestFindSessionsSkipsDotfileOrphans:
         real_paths = [_write_real_session(proj_dir) for _ in range(3)]
         orphans = [_drop_old_style_orphan(proj_dir) for _ in range(2)]
 
-        with patch("cozempic.session.get_projects_dir", return_value=tmp_path / "projects"):
+        with patch("winnow.legacy.session.get_projects_dir", return_value=tmp_path / "projects"):
             sessions = find_sessions()
 
         assert len(sessions) == 3, (
@@ -133,7 +133,7 @@ class TestFindSessionsSkipsDotfileOrphans:
         hidden = proj_dir / ".hidden_something.jsonl"
         hidden.write_text(_real_session_content(1), encoding="utf-8")
 
-        with patch("cozempic.session.get_projects_dir", return_value=tmp_path / "projects"):
+        with patch("winnow.legacy.session.get_projects_dir", return_value=tmp_path / "projects"):
             sessions = find_sessions()
 
         session_ids = {s["session_id"] for s in sessions}
@@ -162,7 +162,7 @@ class TestAtomicWriteTmpNotJsonl:
         target = tmp_path / "session.jsonl"
         captured_tmp: list[str] = []
 
-        import cozempic.helpers as helpers_mod
+        import winnow.legacy.helpers as helpers_mod
         real_mkstemp = helpers_mod._tempfile.mkstemp
 
         def capturing_mkstemp(**kwargs):
@@ -225,7 +225,7 @@ class TestAtomicWriteTmpNotJsonl:
         RED at base: temp ends in .jsonl → orphan IS found by glob.
         GREEN after P-A: temp ends in .partial → NOT found by glob.
         """
-        import cozempic.helpers as helpers_mod
+        import winnow.legacy.helpers as helpers_mod
 
         target = tmp_path / "session.jsonl"
         target.write_text("{}\n", encoding="utf-8")
@@ -309,7 +309,7 @@ class TestAtomicNoOrphanJsonl:
 
     def test_no_orphan_jsonl_after_conflict(self, tmp_path):
         """After a PruneConflictError, no extra *.jsonl orphan is left."""
-        from cozempic.session import PruneConflictError, snapshot_session
+        from winnow.legacy.session import PruneConflictError, snapshot_session
 
         jsonl = tmp_path / "sess.jsonl"
         lines = [json.dumps({"message": {"role": "user", "content": f"m{i}"}}) for i in range(3)]
@@ -333,7 +333,7 @@ class TestAtomicNoOrphanJsonl:
 
     def test_no_orphan_jsonl_after_held_open_replace(self, tmp_path, monkeypatch):
         """After a PermissionError on os.replace, no extra *.jsonl file remains."""
-        from cozempic.session import PruneConflictError
+        from winnow.legacy.session import PruneConflictError
 
         jsonl = tmp_path / "sess.jsonl"
         original = (
@@ -374,7 +374,7 @@ class TestAtomicNoOrphanJsonl:
         real_path = _write_real_session(proj_dir)
         orphan_path = _drop_old_style_orphan(proj_dir)
 
-        with patch("cozempic.session.get_projects_dir", return_value=tmp_path / "projects"):
+        with patch("winnow.legacy.session.get_projects_dir", return_value=tmp_path / "projects"):
             sessions = find_sessions()
 
         orphan_stems = {orphan_path.stem}

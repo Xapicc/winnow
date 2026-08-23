@@ -1,4 +1,4 @@
-"""Tests for src/cozempic/recap.py — RED suite for B4 / B2 / B1 / B3 / A1."""
+"""Tests for src/winnow/legacy/recap.py — RED suite for B4 / B2 / B1 / B3 / A1."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from cozempic.recap import (
+from winnow.legacy.recap import (
     _extract_themes,
     _truncate,
     generate_recap,
@@ -111,7 +111,7 @@ class TestSaveRecapAtomic(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             dest = Path(tmp) / "recap.txt"
             msgs = [_user_msg("hello topic")]
-            with patch("cozempic.recap.atomic_write_text") as mock_aw:
+            with patch("winnow.legacy.recap.atomic_write_text") as mock_aw:
                 mock_aw.side_effect = lambda p, d: Path(p).write_text(d)
                 save_recap(msgs, dest)
                 mock_aw.assert_called_once()
@@ -233,7 +233,7 @@ class TestRecapInjectionSanitization(unittest.TestCase):
         """N-1: a <system-reminder> whose close-tag lies past char 8000 must
         still be stripped (named tags must run on the full text before the cap).
         """
-        from cozempic.recap import _clean_user_text
+        from winnow.legacy.recap import _clean_user_text
 
         # Open tag in first 72 chars; close tag past position 8000
         payload = (
@@ -345,7 +345,7 @@ class TestCleanUserTextInputCap(unittest.TestCase):
 
     def test_output_capped_at_8000_chars(self) -> None:
         """Input longer than 8000 chars must be capped before regex processing."""
-        from cozempic.recap import _clean_user_text
+        from winnow.legacy.recap import _clean_user_text
 
         result = _clean_user_text("a" * 9000)
         self.assertLessEqual(len(result), 8000)
@@ -353,7 +353,7 @@ class TestCleanUserTextInputCap(unittest.TestCase):
     def test_git_conflict_markers_complete_under_500ms(self) -> None:
         """3000 git-conflict lines must not block the reload path for seconds."""
         import time
-        from cozempic.recap import _clean_user_text
+        from winnow.legacy.recap import _clean_user_text
 
         t0 = time.perf_counter()
         _clean_user_text("<<<<<<< HEAD\n" * 3000)
@@ -371,7 +371,7 @@ class TestCleanUserTextInputCap(unittest.TestCase):
         and took >20s. The cap must bound this to well under the reload budget.
         """
         import time
-        from cozempic.recap import _clean_user_text
+        from winnow.legacy.recap import _clean_user_text
 
         t0 = time.perf_counter()
         result = _clean_user_text("<system-reminder>" * 50000)
@@ -387,7 +387,7 @@ class TestCleanUserTextInputCap(unittest.TestCase):
         within the 32KB input cap) is still fully removed — the reason the named
         regexes run pre-generic-cap. Guards against the input cap being lowered
         below the generic cap."""
-        from cozempic.recap import _clean_user_text
+        from winnow.legacy.recap import _clean_user_text
 
         payload = "<system-reminder>" + ("x" * 9000) + "</system-reminder>safe"
         result = _clean_user_text(payload)

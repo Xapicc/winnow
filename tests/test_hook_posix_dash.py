@@ -20,7 +20,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SHIPPED_HOOKS = [
-    ROOT / "src" / "cozempic" / "data" / "hooks.json",
+    ROOT / "src" / "winnow" / "legacy" / "data" / "hooks.json",
     ROOT / "plugin" / "hooks" / "hooks.json",
 ]
 

@@ -35,8 +35,8 @@ class TestReadOnlyLiveGuard(unittest.TestCase):
     def _run_mocked(self, read_only_live):
         """guard_prune_cycle with a mocked prune that DOES save bytes, so any
         skipped write is attributable to the flag, not to an empty prune."""
-        from cozempic.team import TeamState
-        from cozempic.guard import guard_prune_cycle
+        from winnow.legacy.team import TeamState
+        from winnow.legacy.guard import guard_prune_cycle
 
         team = MagicMock(spec=TeamState)
         team.is_empty.return_value = True
@@ -46,15 +46,15 @@ class TestReadOnlyLiveGuard(unittest.TestCase):
         pruned = [(0, {"type": "user"}, 40_000)]  # 60% saving — well past futile floor
         save_calls = []
 
-        with patch("cozempic.guard.load_messages", return_value=orig), \
-             patch("cozempic.guard.prune_with_team_protect",
+        with patch("winnow.legacy.guard.load_messages", return_value=orig), \
+             patch("winnow.legacy.guard.prune_with_team_protect",
                    return_value=(pruned, {}, team)), \
-             patch("cozempic.guard.save_messages",
+             patch("winnow.legacy.guard.save_messages",
                    side_effect=lambda *a, **k: save_calls.append(True)), \
-             patch("cozempic.guard.snapshot_session", return_value=MagicMock()), \
-             patch("cozempic.tokens.estimate_session_tokens",
+             patch("winnow.legacy.guard.snapshot_session", return_value=MagicMock()), \
+             patch("winnow.legacy.tokens.estimate_session_tokens",
                    return_value=MagicMock(total=50000)), \
-             patch("cozempic.tokens.calibrate_ratio", return_value=0.5):
+             patch("winnow.legacy.tokens.calibrate_ratio", return_value=0.5):
             result = guard_prune_cycle(
                 session_path=self.session_path,
                 rx_name="gentle",
@@ -94,8 +94,8 @@ class TestReadOnlyLiveGuard(unittest.TestCase):
         """Like _run_mocked but also counts record_savings calls and lets the
         caller choose whether to invoke the deferred writer (simulate persisted
         vs futile/never-written)."""
-        from cozempic.team import TeamState
-        from cozempic.guard import guard_prune_cycle
+        from winnow.legacy.team import TeamState
+        from winnow.legacy.guard import guard_prune_cycle
 
         team = MagicMock(spec=TeamState)
         team.is_empty.return_value = True
@@ -115,16 +115,16 @@ class TestReadOnlyLiveGuard(unittest.TestCase):
             except StopIteration:
                 return MagicMock(total=40_000)
 
-        with patch("cozempic.guard.load_messages", return_value=orig), \
-             patch("cozempic.guard.prune_with_team_protect",
+        with patch("winnow.legacy.guard.load_messages", return_value=orig), \
+             patch("winnow.legacy.guard.prune_with_team_protect",
                    return_value=(pruned, {}, team)), \
-             patch("cozempic.guard.save_messages",
+             patch("winnow.legacy.guard.save_messages",
                    side_effect=lambda *a, **k: save_calls.append(True)), \
-             patch("cozempic.guard.snapshot_session", return_value=MagicMock()), \
-             patch("cozempic.helpers.record_savings",
+             patch("winnow.legacy.guard.snapshot_session", return_value=MagicMock()), \
+             patch("winnow.legacy.helpers.record_savings",
                    side_effect=lambda *a, **k: savings_calls.append(a)), \
-             patch("cozempic.tokens.estimate_session_tokens", side_effect=_est), \
-             patch("cozempic.tokens.calibrate_ratio", return_value=0.5):
+             patch("winnow.legacy.tokens.estimate_session_tokens", side_effect=_est), \
+             patch("winnow.legacy.tokens.calibrate_ratio", return_value=0.5):
             result = guard_prune_cycle(
                 session_path=self.session_path,
                 rx_name="gentle",
@@ -162,8 +162,8 @@ class TestReadOnlyLiveGuard(unittest.TestCase):
         cycle — and assert the guard REFUSES to mutate the live file: same inode
         (no os.replace / inode-swap out from under the harness), sentinel intact,
         no backup. This is the measurable single-writer boundary he asked for."""
-        from cozempic.guard import guard_prune_cycle
-        from cozempic.team import TeamState
+        from winnow.legacy.guard import guard_prune_cycle
+        from winnow.legacy.team import TeamState
 
         base = [json.dumps({"type": "user", "uuid": f"u{i}", "message": {"content": "x" * 150}})
                 for i in range(3)]
@@ -181,10 +181,10 @@ class TestReadOnlyLiveGuard(unittest.TestCase):
             live_fd.write(json.dumps({"type": "user", "uuid": "SENTINEL",
                                       "message": {"content": "live append"}}) + "\n")
             live_fd.flush()
-            with patch("cozempic.guard.prune_with_team_protect",
+            with patch("winnow.legacy.guard.prune_with_team_protect",
                        return_value=(pruned_subset, {}, team)), \
-                 patch("cozempic.tokens.estimate_session_tokens", return_value=MagicMock(total=9999)), \
-                 patch("cozempic.tokens.calibrate_ratio", return_value=3.0):
+                 patch("winnow.legacy.tokens.estimate_session_tokens", return_value=MagicMock(total=9999)), \
+                 patch("winnow.legacy.tokens.calibrate_ratio", return_value=3.0):
                 result = guard_prune_cycle(
                     session_path=self.session_path, rx_name="gentle",
                     auto_reload=False, read_only_live=True,
@@ -203,7 +203,7 @@ class TestReadOnlyLiveGuard(unittest.TestCase):
     def test_real_file_bytes_unchanged_in_read_only(self):
         """End-to-end on a real file (no mocks): the read-only cycle must not
         modify the bytes and must not leave a .bak — proving no os.replace."""
-        from cozempic.guard import guard_prune_cycle
+        from winnow.legacy.guard import guard_prune_cycle
 
         before = self.session_path.read_bytes()
         result = guard_prune_cycle(
@@ -224,7 +224,7 @@ class TestTerminateFirstWriteGating(unittest.TestCase):
     Claude is dead — never while it may still hold the file open."""
 
     def _run_plain(self, alive_sequence):
-        from cozempic import guard
+        from winnow.legacy import guard
         wrote = []
         with patch.object(guard, "_detect_terminal_env", return_value="plain"), \
              patch.object(guard, "_detect_claude_flags", return_value=""), \
@@ -256,7 +256,7 @@ class TestTerminateFirstWriteGating(unittest.TestCase):
         # Anti-resurrection entry gate: if Claude already exited (user closed it
         # mid-prune), _terminate_and_resume returns before killing/writing — the
         # closed session's file is left intact and is NOT resurrected.
-        from cozempic import guard
+        from winnow.legacy import guard
         wrote = []
         with patch.object(guard, "_detect_terminal_env", return_value="plain"), \
              patch.object(guard, "_detect_claude_flags", return_value=""), \
@@ -281,8 +281,8 @@ class TestDeferredWriteAppendPreservation(unittest.TestCase):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def test_late_append_preserved_by_deferred_write(self):
-        from cozempic.guard import guard_prune_cycle
-        from cozempic.team import TeamState
+        from winnow.legacy.guard import guard_prune_cycle
+        from winnow.legacy.team import TeamState
 
         # Real 3-line session.
         lines = [json.dumps({"type": "user", "uuid": f"u{i}", "message": {"content": "x" * 200}})
@@ -297,9 +297,9 @@ class TestDeferredWriteAppendPreservation(unittest.TestCase):
         kept = [(0, json.loads(lines[0]), len(lines[0])),
                 (2, json.loads(lines[2]), len(lines[2]))]
 
-        with patch("cozempic.guard.prune_with_team_protect", return_value=(kept, {}, team)), \
-             patch("cozempic.tokens.estimate_session_tokens", return_value=MagicMock(total=9999)), \
-             patch("cozempic.tokens.calibrate_ratio", return_value=3.0):
+        with patch("winnow.legacy.guard.prune_with_team_protect", return_value=(kept, {}, team)), \
+             patch("winnow.legacy.tokens.estimate_session_tokens", return_value=MagicMock(total=9999)), \
+             patch("winnow.legacy.tokens.calibrate_ratio", return_value=3.0):
             result = guard_prune_cycle(
                 session_path=self.session_path, rx_name="gentle",
                 auto_reload=False,  # overflow-style: returns a deferred writer

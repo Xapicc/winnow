@@ -49,10 +49,10 @@ class TestWatcherWritesStatusOnNoNewClaude(unittest.TestCase):
     def test_watcher_writes_status_on_no_new_claude(self):
         """No new claude process → status file with 'failed' first line written."""
         try:
-            from cozempic.guard import RELOAD_WATCHER_POLL_TIMEOUT_SECONDS
+            from winnow.legacy.guard import RELOAD_WATCHER_POLL_TIMEOUT_SECONDS
         except ImportError:
             self.fail(
-                "RELOAD_WATCHER_POLL_TIMEOUT_SECONDS missing from cozempic.guard — "
+                "RELOAD_WATCHER_POLL_TIMEOUT_SECONDS missing from winnow.legacy.guard — "
                 "Phase B not yet applied. Expected RED."
             )
 
@@ -99,10 +99,10 @@ class TestWatcherWritesStatusOnNoNewClaude(unittest.TestCase):
                 return MagicMock(pid=99999)
             return MagicMock(pid=99999)
 
-        with patch("cozempic.guard.subprocess.Popen", side_effect=_fake_popen), \
-             patch("cozempic.guard.platform.system", return_value="Darwin"), \
-             patch("cozempic.guard.is_ssh_session", return_value=False):
-            from cozempic.guard import _spawn_reload_watcher
+        with patch("winnow.legacy.guard.subprocess.Popen", side_effect=_fake_popen), \
+             patch("winnow.legacy.guard.platform.system", return_value="Darwin"), \
+             patch("winnow.legacy.guard.is_ssh_session", return_value=False):
+            from winnow.legacy.guard import _spawn_reload_watcher
             _spawn_reload_watcher(
                 claude_pid=89113,
                 project_dir="/tmp/fake_project",
@@ -147,7 +147,7 @@ class TestWatcherLogsSuccessWhenNewClaudeAppears(unittest.TestCase):
         self.addCleanup(self.status_path.unlink, missing_ok=True)
         # E: register cleanup for guard_log so the file doesn't leak on macOS
         # (gettempdir() resolves to /var/folders/…, not /tmp).
-        from cozempic.guard import _guard_tmp_root
+        from winnow.legacy.guard import _guard_tmp_root
         guard_log = _guard_tmp_root() / "cozempic_guard.log"
         self.guard_log = guard_log
         self.addCleanup(guard_log.unlink, missing_ok=True)
@@ -155,7 +155,7 @@ class TestWatcherLogsSuccessWhenNewClaudeAppears(unittest.TestCase):
     def test_watcher_logs_success_when_new_claude_appears(self):
         """New claude detected → success logged, no status file."""
         try:
-            from cozempic.guard import RELOAD_WATCHER_POLL_TIMEOUT_SECONDS
+            from winnow.legacy.guard import RELOAD_WATCHER_POLL_TIMEOUT_SECONDS
         except ImportError:
             self.fail(
                 "RELOAD_WATCHER_POLL_TIMEOUT_SECONDS missing — Phase B not applied. Expected RED."
@@ -198,10 +198,10 @@ class TestWatcherLogsSuccessWhenNewClaudeAppears(unittest.TestCase):
                 return MagicMock(pid=99999)
             return MagicMock(pid=99999)
 
-        with patch("cozempic.guard.subprocess.Popen", side_effect=_fake_popen), \
-             patch("cozempic.guard.platform.system", return_value="Darwin"), \
-             patch("cozempic.guard.is_ssh_session", return_value=False):
-            from cozempic.guard import _spawn_reload_watcher
+        with patch("winnow.legacy.guard.subprocess.Popen", side_effect=_fake_popen), \
+             patch("winnow.legacy.guard.platform.system", return_value="Darwin"), \
+             patch("winnow.legacy.guard.is_ssh_session", return_value=False):
+            from winnow.legacy.guard import _spawn_reload_watcher
             _spawn_reload_watcher(
                 claude_pid=89113,
                 project_dir="/tmp/fake_project",
@@ -243,7 +243,7 @@ class TestWatcherHandlesResumeCmdNonzeroExit(unittest.TestCase):
     def test_watcher_handles_resume_cmd_nonzero_exit(self):
         """osascript exit=1 → watcher polls (no claude found) → status file with exit=1."""
         try:
-            from cozempic.guard import RELOAD_WATCHER_POLL_TIMEOUT_SECONDS
+            from winnow.legacy.guard import RELOAD_WATCHER_POLL_TIMEOUT_SECONDS
         except ImportError:
             self.fail(
                 "RELOAD_WATCHER_POLL_TIMEOUT_SECONDS missing — Phase B not applied. Expected RED."
@@ -277,10 +277,10 @@ class TestWatcherHandlesResumeCmdNonzeroExit(unittest.TestCase):
                 return MagicMock(pid=99999)
             return MagicMock(pid=99999)
 
-        with patch("cozempic.guard.subprocess.Popen", side_effect=_fake_popen), \
-             patch("cozempic.guard.platform.system", return_value="Darwin"), \
-             patch("cozempic.guard.is_ssh_session", return_value=False):
-            from cozempic.guard import _spawn_reload_watcher
+        with patch("winnow.legacy.guard.subprocess.Popen", side_effect=_fake_popen), \
+             patch("winnow.legacy.guard.platform.system", return_value="Darwin"), \
+             patch("winnow.legacy.guard.is_ssh_session", return_value=False):
+            from winnow.legacy.guard import _spawn_reload_watcher
             _spawn_reload_watcher(
                 claude_pid=89113,
                 project_dir="/tmp/fake_project",
@@ -326,7 +326,7 @@ class TestSessionStartHookSurfacesPriorStatus(unittest.TestCase):
 
     def _load_session_start_command(self) -> str:
         import json as _json
-        hooks_path = SRC / "cozempic" / "data" / "hooks.json"
+        hooks_path = SRC / "winnow" / "legacy" / "data" / "hooks.json"
         hooks = _json.loads(hooks_path.read_text(encoding="utf-8"))
         return hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"]
 
@@ -335,7 +335,7 @@ class TestSessionStartHookSurfacesPriorStatus(unittest.TestCase):
         import json as _json
         cmd = self._load_session_start_command()
         # Status file surface requires v10+ hook schema
-        from cozempic.init import HOOK_SCHEMA_MARKER
+        from winnow.legacy.init import HOOK_SCHEMA_MARKER
         self.assertIn(
             HOOK_SCHEMA_MARKER,
             cmd,
@@ -391,7 +391,7 @@ class TestStatusFilePerSessionIsolation(unittest.TestCase):
     def test_status_file_per_session_isolation(self):
         """Two concurrent failures produce two separate status files."""
         try:
-            from cozempic.guard import RELOAD_WATCHER_POLL_TIMEOUT_SECONDS
+            from winnow.legacy.guard import RELOAD_WATCHER_POLL_TIMEOUT_SECONDS
         except ImportError:
             self.fail("RELOAD_WATCHER_POLL_TIMEOUT_SECONDS missing — Phase B not applied.")
 
@@ -431,7 +431,7 @@ class TestPollPatternDoesNotMatchUnrelatedClaude(unittest.TestCase):
     def test_poll_pattern_does_not_match_unrelated_claude(self):
         """pgrep -f 'claude.*<sid12>' does not match 'claude -r other-session'."""
         try:
-            from cozempic.guard import RELOAD_WATCHER_POLL_TIMEOUT_SECONDS
+            from winnow.legacy.guard import RELOAD_WATCHER_POLL_TIMEOUT_SECONDS
         except ImportError:
             self.fail("RELOAD_WATCHER_POLL_TIMEOUT_SECONDS missing — Phase B not applied.")
 
@@ -504,11 +504,11 @@ class TestReloadWatcherPlatformDispatch(unittest.TestCase):
             captured["argv"] = args
             captured["kwargs"] = k
             return MagicMock(pid=4321)
-        with patch("cozempic.guard.subprocess.Popen", side_effect=_fake_popen), \
-             patch("cozempic.guard.platform.system", return_value=system), \
-             patch("cozempic.guard.is_ssh_session", return_value=False), \
-             patch("cozempic.guard._detect_claude_flags", return_value=""):
-            from cozempic.guard import _spawn_reload_watcher
+        with patch("winnow.legacy.guard.subprocess.Popen", side_effect=_fake_popen), \
+             patch("winnow.legacy.guard.platform.system", return_value=system), \
+             patch("winnow.legacy.guard.is_ssh_session", return_value=False), \
+             patch("winnow.legacy.guard._detect_claude_flags", return_value=""):
+            from winnow.legacy.guard import _spawn_reload_watcher
             _spawn_reload_watcher(claude_pid=4321,
                                   project_dir=r"C:\Users\me\proj" if system == "Windows" else "/tmp/proj",
                                   session_id="abcdef12-0000-0000-0000-000000000000")

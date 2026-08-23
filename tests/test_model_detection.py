@@ -6,8 +6,8 @@ import os
 import unittest
 from unittest.mock import patch
 
-from cozempic.helpers import msg_bytes
-from cozempic.tokens import (
+from winnow.legacy.helpers import msg_bytes
+from winnow.legacy.tokens import (
     DEFAULT_CONTEXT_WINDOW,
     MODEL_CONTEXT_WINDOWS,
     detect_context_window,
@@ -283,19 +283,19 @@ class TestDefaultTokenThresholds1M(unittest.TestCase):
     """Test that token thresholds scale correctly with context window size."""
 
     def test_200k_thresholds(self):
-        from cozempic.tokens import default_token_thresholds
+        from winnow.legacy.tokens import default_token_thresholds
         hard, soft = default_token_thresholds(200_000)
         self.assertEqual(hard, 110_000)   # 55% of 200K (hard1)
         self.assertEqual(soft, 50_000)    # 25% of 200K
 
     def test_1m_thresholds(self):
-        from cozempic.tokens import default_token_thresholds
+        from winnow.legacy.tokens import default_token_thresholds
         hard, soft = default_token_thresholds(1_000_000)
         self.assertEqual(hard, 550_000)   # 55% of 1M (hard1)
         self.assertEqual(soft, 250_000)   # 25% of 1M
 
     def test_4tier_thresholds(self):
-        from cozempic.tokens import default_token_thresholds_4tier
+        from winnow.legacy.tokens import default_token_thresholds_4tier
         soft, hard1, hard2 = default_token_thresholds_4tier(1_000_000)
         self.assertEqual(soft, 250_000)    # 25% of 1M
         self.assertEqual(hard1, 550_000)   # 55% of 1M

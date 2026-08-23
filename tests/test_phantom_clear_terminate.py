@@ -55,9 +55,9 @@ import pathlib
 import tempfile
 import unittest
 
-from cozempic.guard import detect_in_flight, safe_to_reload
-from cozempic.team import extract_team_state
-from cozempic.session import load_messages
+from winnow.legacy.guard import detect_in_flight, safe_to_reload
+from winnow.legacy.team import extract_team_state
+from winnow.legacy.session import load_messages
 
 
 # ─────────────────────────── helpers ─────────────────────────────────────────

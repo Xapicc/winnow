@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from cozempic.strategies._config import (
+from winnow.legacy.strategies._config import (
     coerce_choice,
     coerce_non_negative_int,
     coerce_ordered_pair,
@@ -124,8 +124,8 @@ class TestStrategyConfigIntegration(unittest.TestCase):
     _SINGLE_USER_MSG = [(0, {"type": "user", "message": {"content": "hi"}}, 100)]
 
     def _run(self, strategy_name: str, config: dict):
-        from cozempic.registry import STRATEGIES
-        import cozempic.strategies  # noqa: F401 — ensure registry populated
+        from winnow.legacy.registry import STRATEGIES
+        import winnow.legacy.strategies  # noqa: F401 — ensure registry populated
         return STRATEGIES[strategy_name].func(self._SINGLE_USER_MSG, config)
 
     # tool-output-trim

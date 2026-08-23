@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from cozempic.session import find_current_session
+from winnow.legacy.session import find_current_session
 
 
 def _write_session(proj_dir: Path, session_id: str, content: str = "") -> Path:
@@ -30,9 +30,9 @@ def _isolated_session_home(projects_dir: Path, process_session_id: str | None = 
     - find_claude_pid   → None (isolates Strategy 1: lookup_active_transcript)
     """
     with (
-        patch("cozempic.session.get_projects_dir", return_value=projects_dir),
-        patch("cozempic.session._session_id_from_process", return_value=process_session_id),
-        patch("cozempic.session.find_claude_pid", return_value=None),
+        patch("winnow.legacy.session.get_projects_dir", return_value=projects_dir),
+        patch("winnow.legacy.session._session_id_from_process", return_value=process_session_id),
+        patch("winnow.legacy.session.find_claude_pid", return_value=None),
     ):
         yield
 
@@ -186,7 +186,7 @@ class TestStrategy4ExactMatch:
 
     def test_strategy3_no_prefix_collision(self, tmp_path):
         """Slug '-Users-x-foo' must NOT match project '-Users-x-foobar'."""
-        from cozempic.session import cwd_to_project_slug
+        from winnow.legacy.session import cwd_to_project_slug
         cwd_foo = "/Users/x/foo"
         slug_foo = cwd_to_project_slug(cwd_foo)    # "-Users-x-foo"
 
@@ -223,7 +223,7 @@ class TestStrategy4ExactMatch:
 
 class TestSlugRoundTrip:
     def test_simple_path_round_trips(self):
-        from cozempic.session import cwd_to_project_slug, project_slug_to_path
+        from winnow.legacy.session import cwd_to_project_slug, project_slug_to_path
         path = "/Users/foo/myproject"
         slug = cwd_to_project_slug(path)
         assert project_slug_to_path(slug) == path
@@ -235,7 +235,7 @@ class TestSlugRoundTrip:
         slug.  This is intentionally not fixed in project_slug_to_path() —
         callers that need an exact path must use get_session_cwd() (sidecar).
         """
-        from cozempic.session import cwd_to_project_slug, project_slug_to_path
+        from winnow.legacy.session import cwd_to_project_slug, project_slug_to_path
         slug_a = cwd_to_project_slug("/Users/foo/my-project")
         slug_b = cwd_to_project_slug("/Users/foo/my/project")
         # The ambiguity: both slugs are identical
@@ -247,46 +247,46 @@ class TestSlugRoundTrip:
 class TestSidecarStore:
     def test_record_and_retrieve(self, tmp_path):
         """record_session persists cwd; get_session_cwd retrieves it."""
-        from cozempic.session import get_session_cwd, record_session
+        from winnow.legacy.session import get_session_cwd, record_session
         sid = "aaaa1111-0000-0000-0000-000000000000"
-        with patch("cozempic.session.get_sidecar_path", return_value=tmp_path / "sidecar.json"):
+        with patch("winnow.legacy.session.get_sidecar_path", return_value=tmp_path / "sidecar.json"):
             record_session(sid, "/Users/foo/my-project", context_window=200_000)
             assert get_session_cwd(sid) == "/Users/foo/my-project"
 
     def test_hyphenated_path_survives_round_trip(self, tmp_path):
         """Sidecar stores exact cwd — hyphenated paths are not mangled."""
-        from cozempic.session import get_session_cwd, record_session
+        from winnow.legacy.session import get_session_cwd, record_session
         sid = "bbbb2222-0000-0000-0000-000000000000"
         path = "/Users/foo/my-hyphenated-project"
-        with patch("cozempic.session.get_sidecar_path", return_value=tmp_path / "sidecar.json"):
+        with patch("winnow.legacy.session.get_sidecar_path", return_value=tmp_path / "sidecar.json"):
             record_session(sid, path)
             assert get_session_cwd(sid) == path
 
     def test_context_window_persisted(self, tmp_path):
-        from cozempic.session import get_session_context_window, record_session
+        from winnow.legacy.session import get_session_context_window, record_session
         sid = "cccc3333-0000-0000-0000-000000000000"
-        with patch("cozempic.session.get_sidecar_path", return_value=tmp_path / "sidecar.json"):
+        with patch("winnow.legacy.session.get_sidecar_path", return_value=tmp_path / "sidecar.json"):
             record_session(sid, "/some/path", context_window=1_000_000)
             assert get_session_context_window(sid) == 1_000_000
 
     def test_context_window_preserved_on_refresh(self, tmp_path):
         """Refreshing last_seen_at without a context_window keeps the old value."""
-        from cozempic.session import get_session_context_window, record_session
+        from winnow.legacy.session import get_session_context_window, record_session
         sid = "dddd4444-0000-0000-0000-000000000000"
-        with patch("cozempic.session.get_sidecar_path", return_value=tmp_path / "sidecar.json"):
+        with patch("winnow.legacy.session.get_sidecar_path", return_value=tmp_path / "sidecar.json"):
             record_session(sid, "/some/path", context_window=200_000)
             record_session(sid, "/some/path")  # refresh without context_window
             assert get_session_context_window(sid) == 200_000
 
     def test_unknown_session_returns_none(self, tmp_path):
-        from cozempic.session import get_session_cwd
-        with patch("cozempic.session.get_sidecar_path", return_value=tmp_path / "sidecar.json"):
+        from winnow.legacy.session import get_session_cwd
+        with patch("winnow.legacy.session.get_sidecar_path", return_value=tmp_path / "sidecar.json"):
             assert get_session_cwd("no-such-session") is None
 
     def test_evicts_oldest_when_full(self, tmp_path):
         """Sidecar is capped at _SIDECAR_MAX_ENTRIES; oldest entry is evicted."""
         from datetime import datetime as real_datetime
-        from cozempic.session import _SIDECAR_MAX_ENTRIES, get_session_cwd, record_session
+        from winnow.legacy.session import _SIDECAR_MAX_ENTRIES, get_session_cwd, record_session
 
         sidecar = tmp_path / "sidecar.json"
         call_count = [0]
@@ -297,8 +297,8 @@ class TestSidecarStore:
             return real_datetime(2026, 1, 1, n // 3600, (n % 3600) // 60, n % 60)
 
         with (
-            patch("cozempic.session.get_sidecar_path", return_value=sidecar),
-            patch("cozempic.session.datetime") as mock_dt,
+            patch("winnow.legacy.session.get_sidecar_path", return_value=sidecar),
+            patch("winnow.legacy.session.datetime") as mock_dt,
         ):
             mock_dt.now.side_effect = mock_now
             # First entry gets the smallest timestamp (oldest)
@@ -311,13 +311,13 @@ class TestSidecarStore:
             assert get_session_cwd(first_id) is None
 
     def test_missing_sidecar_returns_none(self, tmp_path):
-        from cozempic.session import get_session_cwd
-        with patch("cozempic.session.get_sidecar_path", return_value=tmp_path / "nonexistent.json"):
+        from winnow.legacy.session import get_session_cwd
+        with patch("winnow.legacy.session.get_sidecar_path", return_value=tmp_path / "nonexistent.json"):
             assert get_session_cwd("any-session") is None
 
     def test_corrupt_sidecar_returns_none(self, tmp_path):
-        from cozempic.session import get_session_cwd
+        from winnow.legacy.session import get_session_cwd
         sidecar = tmp_path / "sidecar.json"
         sidecar.write_text("not valid json", encoding="utf-8")
-        with patch("cozempic.session.get_sidecar_path", return_value=sidecar):
+        with patch("winnow.legacy.session.get_sidecar_path", return_value=sidecar):
             assert get_session_cwd("any-session") is None

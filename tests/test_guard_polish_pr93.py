@@ -49,7 +49,7 @@ class TestPolishPR93_SpawnLocksDictRemoved(unittest.TestCase):
     """
 
     def test_spawn_locks_dict_attribute_gone(self):
-        from cozempic import guard
+        from winnow.legacy import guard
         self.assertFalse(
             hasattr(guard, "_spawn_locks"),
             "`_spawn_locks` dict must be removed (dead code — no producer "
@@ -58,7 +58,7 @@ class TestPolishPR93_SpawnLocksDictRemoved(unittest.TestCase):
         )
 
     def test_spawn_locks_mu_attribute_gone(self):
-        from cozempic import guard
+        from winnow.legacy import guard
         self.assertFalse(
             hasattr(guard, "_spawn_locks_mu"),
             "`_spawn_locks_mu` must be removed alongside `_spawn_locks` — "
@@ -75,7 +75,7 @@ class TestPolishPR93_PlaceholderPidIsUnlinked(unittest.TestCase):
     SESSION_ID = "pr93pl00-0000-0000-0000-000000000093"
 
     def setUp(self):
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
         self.pid_path = _pid_file_for_session(self.SESSION_ID)
         self.pid_path.unlink(missing_ok=True)
 
@@ -83,14 +83,14 @@ class TestPolishPR93_PlaceholderPidIsUnlinked(unittest.TestCase):
         self.pid_path.unlink(missing_ok=True)
 
     def test_zero_pid_resolves_to_none_and_unlinks(self):
-        from cozempic.guard import _is_guard_running_for_session
+        from winnow.legacy.guard import _is_guard_running_for_session
         self.pid_path.write_text("0\n")
         result = _is_guard_running_for_session(self.SESSION_ID)
         self.assertIsNone(result, "placeholder pid 0 must resolve to None")
         self.assertFalse(self.pid_path.exists(), "placeholder pidfile must be unlinked")
 
     def test_negative_pid_resolves_to_none_and_unlinks(self):
-        from cozempic.guard import _is_guard_running_for_session
+        from winnow.legacy.guard import _is_guard_running_for_session
         self.pid_path.write_text("-1\n")
         result = _is_guard_running_for_session(self.SESSION_ID)
         self.assertIsNone(result, "negative pid must resolve to None")
@@ -112,7 +112,7 @@ class TestPolishPR93_SafeUnlinkHelper(unittest.TestCase):
     SESSION_ID = "pr93un00-0000-0000-0000-000000000093"
 
     def setUp(self):
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
         self.pid_path = _pid_file_for_session(self.SESSION_ID)
         self.pid_path.unlink(missing_ok=True)
 
@@ -120,14 +120,14 @@ class TestPolishPR93_SafeUnlinkHelper(unittest.TestCase):
         self.pid_path.unlink(missing_ok=True)
 
     def test_helper_exists(self):
-        from cozempic import guard
+        from winnow.legacy import guard
         self.assertTrue(
             hasattr(guard, "_safe_unlink_session_pidfile"),
             "guard._safe_unlink_session_pidfile helper must exist",
         )
 
     def test_helper_unlinks_when_pid_matches(self):
-        from cozempic.guard import _safe_unlink_session_pidfile
+        from winnow.legacy.guard import _safe_unlink_session_pidfile
         # Write our own PID — CAS gate should pass.
         self.pid_path.write_text(f"{os.getpid()}\n")
         _safe_unlink_session_pidfile(self.SESSION_ID)
@@ -136,7 +136,7 @@ class TestPolishPR93_SafeUnlinkHelper(unittest.TestCase):
     def test_helper_skips_when_pid_mismatch(self):
         """CAS gate: if pidfile contains another PID (peer's fresh claim),
         we must NOT unlink — that would destroy the peer's claim."""
-        from cozempic.guard import _safe_unlink_session_pidfile
+        from winnow.legacy.guard import _safe_unlink_session_pidfile
         # Write a foreign PID (not ours) — CAS gate should skip the unlink.
         foreign_pid = os.getpid() + 12345
         self.pid_path.write_text(f"{foreign_pid}\n")
@@ -148,7 +148,7 @@ class TestPolishPR93_SafeUnlinkHelper(unittest.TestCase):
         )
 
     def test_helper_swallows_invalid_session_id(self):
-        from cozempic.guard import _safe_unlink_session_pidfile
+        from winnow.legacy.guard import _safe_unlink_session_pidfile
         # Must not raise on malformed session_id (shutdown path — worst
         # possible time for an exception).
         try:
@@ -157,13 +157,13 @@ class TestPolishPR93_SafeUnlinkHelper(unittest.TestCase):
             self.fail(f"helper must swallow invalid session_id, raised {exc!r}")
 
     def test_helper_swallows_none_and_empty(self):
-        from cozempic.guard import _safe_unlink_session_pidfile
+        from winnow.legacy.guard import _safe_unlink_session_pidfile
         # Falsy inputs must no-op.
         _safe_unlink_session_pidfile(None)
         _safe_unlink_session_pidfile("")
 
     def test_helper_handles_missing_pidfile(self):
-        from cozempic.guard import _safe_unlink_session_pidfile
+        from winnow.legacy.guard import _safe_unlink_session_pidfile
         # Pidfile already gone → must not raise.
         self.pid_path.unlink(missing_ok=True)
         _safe_unlink_session_pidfile(self.SESSION_ID)
@@ -176,7 +176,7 @@ class TestPolishPR93_PidfileUnlinkedOnExit(unittest.TestCase):
     SESSION_ID = "pr93ex00-0000-0000-0000-000000000093"
 
     def setUp(self):
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
         self.pid_path = _pid_file_for_session(self.SESSION_ID)
         self.pid_path.unlink(missing_ok=True)
         # Write OUR pid so the CAS gate in the helper accepts it.
@@ -194,7 +194,7 @@ class TestPolishPR93_PidfileUnlinkedOnExit(unittest.TestCase):
     def _drive_start_guard_until_exit(self, prune_returns_zero=True, agents_active=False):
         """Helper: drive start_guard and trigger K=10 exit. Returns whether
         SystemExit was raised."""
-        from cozempic import guard as guard_mod
+        from winnow.legacy import guard as guard_mod
 
         class _FakeState:
             def __init__(self, has_agents):
@@ -239,12 +239,12 @@ class TestPolishPR93_PidfileUnlinkedOnExit(unittest.TestCase):
             patch.object(guard_mod, "guard_prune_cycle", side_effect=fake_prune_cycle),
             patch.object(guard_mod, "quick_token_estimate", return_value=600_000),
             patch.object(guard_mod, "load_messages", return_value=[]),
-            patch("cozempic.session.record_session"),
+            patch("winnow.legacy.session.record_session"),
             patch.object(guard_mod, "_cleanup_stale_watchers"),
             patch.object(guard_mod, "ping_install_if_new"),
             patch.object(guard_mod, "maybe_auto_update"),
             patch.object(guard_mod, "cleanup_old_backups"),
-            patch("cozempic.tokens.detect_context_window", return_value=1_000_000),
+            patch("winnow.legacy.tokens.detect_context_window", return_value=1_000_000),
         ):
             try:
                 guard_mod.start_guard(
@@ -289,7 +289,7 @@ class TestPolishPR93_K10DeferWhenAgentsActive(unittest.TestCase):
     SESSION_ID = "pr93k10a-0000-0000-0000-000000000093"
 
     def setUp(self):
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
         self.pid_path = _pid_file_for_session(self.SESSION_ID)
         self.pid_path.unlink(missing_ok=True)
         self.pid_path.write_text(f"{os.getpid()}\n")
@@ -304,7 +304,7 @@ class TestPolishPR93_K10DeferWhenAgentsActive(unittest.TestCase):
         self.pid_path.unlink(missing_ok=True)
 
     def test_hard_exit_threshold_constant_exists(self):
-        from cozempic import guard
+        from winnow.legacy import guard
         self.assertTrue(
             hasattr(guard, "HARD_LOOP_HARD_EXIT_THRESHOLD"),
             "guard.HARD_LOOP_HARD_EXIT_THRESHOLD constant must exist "
@@ -321,7 +321,7 @@ class TestPolishPR93_K10DeferWhenAgentsActive(unittest.TestCase):
         string and EMPTY subagents list, so the test exercises the teammate
         path exclusively.
         """
-        from cozempic import guard as guard_mod
+        from winnow.legacy import guard as guard_mod
 
         class _FakeState:
             def __init__(self, has_agents, tm_status):
@@ -369,12 +369,12 @@ class TestPolishPR93_K10DeferWhenAgentsActive(unittest.TestCase):
             patch.object(guard_mod, "guard_prune_cycle", side_effect=fake_prune_cycle),
             patch.object(guard_mod, "quick_token_estimate", return_value=600_000),
             patch.object(guard_mod, "load_messages", return_value=[]),
-            patch("cozempic.session.record_session"),
+            patch("winnow.legacy.session.record_session"),
             patch.object(guard_mod, "_cleanup_stale_watchers"),
             patch.object(guard_mod, "ping_install_if_new"),
             patch.object(guard_mod, "maybe_auto_update"),
             patch.object(guard_mod, "cleanup_old_backups"),
-            patch("cozempic.tokens.detect_context_window", return_value=1_000_000),
+            patch("winnow.legacy.tokens.detect_context_window", return_value=1_000_000),
         ):
             try:
                 guard_mod.start_guard(
@@ -440,7 +440,7 @@ class TestPolishPR93_K10DeferWhenAgentsActive(unittest.TestCase):
         """Even with agents perma-running, the hard cap must fire eventually.
         Patch the constant directly rather than env-var-reloading the module
         so we don't pollute other tests with a leftover overridden value."""
-        import cozempic.guard as guard_mod
+        import winnow.legacy.guard as guard_mod
         with patch.object(guard_mod, "HARD_LOOP_HARD_EXIT_THRESHOLD", 15):
             self.assertEqual(guard_mod.HARD_LOOP_HARD_EXIT_THRESHOLD, 15)
             exited, n = self._run_loop(agents_active=True, max_cycles=40)
@@ -456,12 +456,12 @@ class TestPolishPR93_K10DeferWhenAgentsActive(unittest.TestCase):
         """Module-import env var COZEMPIC_GUARD_HARD_EXIT_K is read by
         _read_hard_exit_threshold and clamped. Test the helper directly
         (not via importlib.reload which is hard to clean up reliably)."""
-        import cozempic.guard as guard_mod
+        import winnow.legacy.guard as guard_mod
         with patch.dict(os.environ, {"COZEMPIC_GUARD_HARD_EXIT_K": "25"}):
             self.assertEqual(guard_mod._read_hard_exit_threshold(), 25)
 
     def test_env_var_invalid_falls_back_to_default(self):
-        import cozempic.guard as guard_mod
+        import winnow.legacy.guard as guard_mod
         for bad in ("not-a-number", "0", "-5", "10", "9", "10000"):
             with self.subTest(value=bad):
                 with patch.dict(os.environ, {"COZEMPIC_GUARD_HARD_EXIT_K": bad}):
@@ -482,7 +482,7 @@ class TestPolishPR93_SpawnClaimMetadataParity(unittest.TestCase):
     SESSION_ID = "pr93md00-0000-0000-0000-000000000093"
 
     def setUp(self):
-        from cozempic.guard import _pid_file_for_session
+        from winnow.legacy.guard import _pid_file_for_session
         self.pid_path = _pid_file_for_session(self.SESSION_ID)
         self.pid_path.unlink(missing_ok=True)
 
@@ -491,7 +491,7 @@ class TestPolishPR93_SpawnClaimMetadataParity(unittest.TestCase):
         self.pid_path.with_suffix(".pid.tmp").unlink(missing_ok=True)
 
     def test_init_constants_exist(self):
-        from cozempic import spawn_lock
+        from winnow.legacy import spawn_lock
         self.assertTrue(
             hasattr(spawn_lock, "INIT_SPAWN_PARENT"),
             "spawn_lock.INIT_SPAWN_PARENT constant must exist",
@@ -505,7 +505,7 @@ class TestPolishPR93_SpawnClaimMetadataParity(unittest.TestCase):
 
     def test_spawn_claim_writes_3_line_payload(self):
         """DaemonSpawnClaim writes pid + timestamp + 'spawn-claim-parent'."""
-        from cozempic.spawn_lock import DaemonSpawnClaim, INIT_SPAWN_PARENT
+        from winnow.legacy.spawn_lock import DaemonSpawnClaim, INIT_SPAWN_PARENT
 
         claim = DaemonSpawnClaim(self.SESSION_ID, self.pid_path)
         try:
@@ -527,27 +527,27 @@ class TestPolishPR93_SpawnClaimMetadataParity(unittest.TestCase):
             claim.__exit__(None, None, None)
 
     def test_parse_pidfile_handles_legacy_single_line(self):
-        from cozempic.spawn_lock import _parse_pidfile_pid
+        from winnow.legacy.spawn_lock import _parse_pidfile_pid
         self.pid_path.write_text("12345\n")
         self.assertEqual(_parse_pidfile_pid(self.pid_path), 12345)
 
     def test_parse_pidfile_handles_new_3_line(self):
-        from cozempic.spawn_lock import _parse_pidfile_pid
+        from winnow.legacy.spawn_lock import _parse_pidfile_pid
         self.pid_path.write_text("12345\n2026-05-19T10:00:00\nspawn-claim-parent\n")
         self.assertEqual(_parse_pidfile_pid(self.pid_path), 12345)
 
     def test_parse_pidfile_handles_garbage(self):
-        from cozempic.spawn_lock import _parse_pidfile_pid
+        from winnow.legacy.spawn_lock import _parse_pidfile_pid
         self.pid_path.write_text("not-a-number\nfoo\n")
         self.assertEqual(_parse_pidfile_pid(self.pid_path), 0)
 
     def test_parse_pidfile_handles_empty(self):
-        from cozempic.spawn_lock import _parse_pidfile_pid
+        from winnow.legacy.spawn_lock import _parse_pidfile_pid
         self.pid_path.write_text("")
         self.assertEqual(_parse_pidfile_pid(self.pid_path), 0)
 
     def test_parse_pidfile_handles_missing(self):
-        from cozempic.spawn_lock import _parse_pidfile_pid
+        from winnow.legacy.spawn_lock import _parse_pidfile_pid
         self.pid_path.unlink(missing_ok=True)
         self.assertEqual(_parse_pidfile_pid(self.pid_path), 0)
 
@@ -561,7 +561,7 @@ class TestPolishPR93_SpawnClaimMetadataParity(unittest.TestCase):
         raises ValueError → result is None → assertion fails. Under the
         NEW `_parse_pidfile_pid`, line 1 is extracted as PID → result is
         the live PID."""
-        from cozempic.guard import _is_guard_running_for_session
+        from winnow.legacy.guard import _is_guard_running_for_session
         my_pid = os.getpid()
         self.pid_path.write_text(
             f"{my_pid}\n2026-05-19T10:00:00\nspawn-claim-parent\n"
@@ -569,7 +569,7 @@ class TestPolishPR93_SpawnClaimMetadataParity(unittest.TestCase):
         # Force the guard-identity gate to True so we exercise the parse
         # path through to a positive return rather than the fresh-window
         # fallback at line 1314.
-        with patch("cozempic.guard._is_cozempic_guard_process", return_value=True):
+        with patch("winnow.legacy.guard._is_cozempic_guard_process", return_value=True):
             result = _is_guard_running_for_session(self.SESSION_ID)
         self.assertEqual(
             result, my_pid,
@@ -585,7 +585,7 @@ class TestPolishPR93_HookSchemaV9(unittest.TestCase):
     `head -1` which is POSIX and extracts only line 1 (the PID)."""
 
     def test_hook_schema_version_v9(self):
-        from cozempic.init import HOOK_SCHEMA_VERSION
+        from winnow.legacy.init import HOOK_SCHEMA_VERSION
         # Durable floor check (was a hardcoded allow-list that broke on every bump).
         self.assertEqual(HOOK_SCHEMA_VERSION[0], "v"[0])
         self.assertGreaterEqual(
@@ -599,7 +599,7 @@ class TestPolishPR93_HookSchemaV9(unittest.TestCase):
         whitespace-separated tokens to `kill -0`, which is undefined."""
         for hooks_rel in (
             "plugin/hooks/hooks.json",
-            "src/cozempic/data/hooks.json",
+            "src/winnow/legacy/data/hooks.json",
         ):
             hooks_path = Path(__file__).parent.parent / hooks_rel
             with self.subTest(path=hooks_rel):
@@ -623,12 +623,12 @@ class TestPolishPR93_HookSchemaV9(unittest.TestCase):
     def test_hooks_json_marker_v9(self):
         for hooks_rel in (
             "plugin/hooks/hooks.json",
-            "src/cozempic/data/hooks.json",
+            "src/winnow/legacy/data/hooks.json",
         ):
             hooks_path = Path(__file__).parent.parent / hooks_rel
             with self.subTest(path=hooks_rel):
                 body = hooks_path.read_text()
-                from cozempic.init import HOOK_SCHEMA_MARKER
+                from winnow.legacy.init import HOOK_SCHEMA_MARKER
                 # Track the current marker (was a hardcoded version list).
                 self.assertIn(
                     HOOK_SCHEMA_MARKER, body,
@@ -651,7 +651,7 @@ class TestPolishPR93_FreshWindowDocstring(unittest.TestCase):
     """
 
     def test_docstring_mentions_import_time(self):
-        from cozempic.spawn_lock import _read_fresh_window_seconds
+        from winnow.legacy.spawn_lock import _read_fresh_window_seconds
         doc = _read_fresh_window_seconds.__doc__ or ""
         self.assertTrue(
             "import" in doc.lower() or "restart" in doc.lower(),
@@ -666,7 +666,7 @@ class TestPolishPR93_PidfileFsync(unittest.TestCase):
 
     def test_start_guard_daemon_fsyncs_parent_after_rename(self):
         import inspect
-        from cozempic.guard import start_guard_daemon
+        from winnow.legacy.guard import start_guard_daemon
         src = inspect.getsource(start_guard_daemon)
         # The hand-off block uses os.rename(tmp_path, pid_path). After
         # that rename we must fsync the parent dir (or the .pid fd) to
@@ -685,7 +685,7 @@ class TestPolishPR93_PidfileEACCES(unittest.TestCase):
     False would let us treat it as stale and re-claim, racing the peer."""
 
     def test_is_pidfile_fresh_returns_true_on_permission_error(self):
-        from cozempic.spawn_lock import DaemonSpawnClaim
+        from winnow.legacy.spawn_lock import DaemonSpawnClaim
         from unittest.mock import MagicMock, patch as _patch
 
         claim = DaemonSpawnClaim("any-session-12345", Path("/tmp/x.pid"))

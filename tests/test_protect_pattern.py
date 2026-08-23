@@ -14,13 +14,13 @@ import unittest
 from contextlib import redirect_stderr
 from unittest import mock
 
-from cozempic.helpers import (
+from winnow.legacy.helpers import (
     compile_protect_patterns, tag_pattern_matches, strip_pattern_tags, is_protected,
     _msg_text_matches_any, _PATTERN_PROTECTED_KEY,
     _MAX_PROTECT_PATTERN_LEN,
 )
-from cozempic.registry import STRATEGIES
-import cozempic.strategies  # noqa: F401  (register strategies)
+from winnow.legacy.registry import STRATEGIES
+import winnow.legacy.strategies  # noqa: F401  (register strategies)
 
 
 def _txt(t):
@@ -118,7 +118,7 @@ class TestHardening1828(unittest.TestCase):
         # must be REFUSED up front (fail closed), not run unbounded. Emulate "no
         # SIGALRM" by patching _have_sigalrm (real Windows e2e needs a Windows box).
         import os, time
-        from cozempic import helpers
+        from winnow.legacy import helpers
         with mock.patch.object(helpers, "_have_sigalrm", return_value=False), \
              mock.patch.dict(os.environ, {"COZEMPIC_PROTECT_MATCH_SECONDS": "2.0"}):
             evil = compile_protect_patterns([r"(a+)+$"])
@@ -135,7 +135,7 @@ class TestHardening1828(unittest.TestCase):
 
     def test_safe_pattern_still_works_when_no_sigalrm(self):
         # A non-redos pattern must still match normally on the no-SIGALRM path.
-        from cozempic import helpers
+        from winnow.legacy import helpers
         with mock.patch.object(helpers, "_have_sigalrm", return_value=False):
             pats = compile_protect_patterns([r"GATE CONTRACT R\d+"])
             msgs = [(0, _txt("GATE CONTRACT R1 standing rule"), 10)]
@@ -143,7 +143,7 @@ class TestHardening1828(unittest.TestCase):
             self.assertIn(_PATTERN_PROTECTED_KEY, msgs[0][1])
 
     def test_redos_shape_detector(self):
-        from cozempic.helpers import _pattern_is_redos_risky as risky
+        from winnow.legacy.helpers import _pattern_is_redos_risky as risky
         # Every catastrophic FORM must be flagged — including the R4-added
         # UNGROUPED adjacent quantifiers (.*.*.*.*c / a*a*) the prior group-only
         # detector MISSED and which froze the Windows daemon under the 512 cap.

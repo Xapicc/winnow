@@ -5,7 +5,7 @@ from __future__ import annotations
 
 def bash_completion() -> str:
     """Generate bash completion script."""
-    import cozempic.strategies  # noqa: F401 — ensure strategies registered
+    import winnow.legacy.strategies  # noqa: F401 — ensure strategies registered
     from .registry import PRESCRIPTIONS, STRATEGIES
 
     subcommands = (
@@ -40,7 +40,7 @@ complete -F _cozempic cozempic
 
 def zsh_completion() -> str:
     """Generate zsh completion script."""
-    import cozempic.strategies  # noqa: F401
+    import winnow.legacy.strategies  # noqa: F401
     from .registry import PRESCRIPTIONS, STRATEGIES
 
     subcommands = (

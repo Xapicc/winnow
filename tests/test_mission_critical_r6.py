@@ -19,8 +19,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from cozempic.session import load_messages, load_messages_and_snapshot, save_messages
-from cozempic.executor import run_prescription
+from winnow.legacy.session import load_messages, load_messages_and_snapshot, save_messages
+from winnow.legacy.executor import run_prescription
 
 
 class TestLoneSurrogateSaveNoCrashP0(unittest.TestCase):
@@ -97,8 +97,8 @@ class TestUnhashableFieldSweep(unittest.TestCase):
             self.assertTrue(any(m.get("_parse_error") is True for _, m, _ in msgs))
 
     def test_no_path_crashes_on_max_poison(self):
-        from cozempic.guard import prune_with_team_protect, detect_in_flight, safe_to_reload
-        from cozempic.team import extract_team_state
+        from winnow.legacy.guard import prune_with_team_protect, detect_in_flight, safe_to_reload
+        from winnow.legacy.team import extract_team_state
         with tempfile.TemporaryDirectory() as d:
             p = self._write(d)
             msgs = load_messages(p)

@@ -34,7 +34,7 @@ class TestPersistedTokensSaved(unittest.TestCase):
     """
 
     def _call(self, pre: int, post: int) -> int:
-        from cozempic.guard import _persisted_tokens_saved
+        from winnow.legacy.guard import _persisted_tokens_saved
         return _persisted_tokens_saved(pre, post)
 
     def test_maximal_prune_to_zero_returns_pre(self):
@@ -105,8 +105,8 @@ class TestPersistedTokensSavedCallSite(unittest.TestCase):
         RED at base: record_savings NOT called (tokens_saved=0 due to `and post`).
         GREEN after fix: record_savings called once with total_tokens=100_000.
         """
-        from cozempic.guard import guard_prune_cycle
-        from cozempic.team import TeamState
+        from winnow.legacy.guard import guard_prune_cycle
+        from winnow.legacy.team import TeamState
 
         pruned_msgs = [(0, {"type": "user"}, 0)]  # post-prune: 0 tokens
         # pre=100_000, post=0 — maximal prune; the BUG drops savings to 0
@@ -119,15 +119,15 @@ class TestPersistedTokensSavedCallSite(unittest.TestCase):
                 return MagicMock(total=0)
 
         with (
-            patch("cozempic.guard._guard_tmp_root", return_value=self.scratch),
-            patch("cozempic.guard.load_messages_and_snapshot",
+            patch("winnow.legacy.guard._guard_tmp_root", return_value=self.scratch),
+            patch("winnow.legacy.guard.load_messages_and_snapshot",
                   return_value=([(0, {"type": "user"}, 100_000)], MagicMock())),
-            patch("cozempic.guard.load_messages",
+            patch("winnow.legacy.guard.load_messages",
                   return_value=[(0, {"type": "user"}, 100_000)]),
-            patch("cozempic.guard.prune_with_team_protect",
+            patch("winnow.legacy.guard.prune_with_team_protect",
                   return_value=(pruned_msgs, {}, TeamState())),
-            patch("cozempic.tokens.estimate_session_tokens", side_effect=_est),
-            patch("cozempic.tokens.calibrate_ratio", return_value=0.5),
+            patch("winnow.legacy.tokens.estimate_session_tokens", side_effect=_est),
+            patch("winnow.legacy.tokens.calibrate_ratio", return_value=0.5),
         ):
             result = guard_prune_cycle(
                 session_path=self.session_path,
@@ -148,10 +148,10 @@ class TestPersistedTokensSavedCallSite(unittest.TestCase):
         #   record_savings (lazy-imported inside _record_persisted_savings from .helpers)
         mock_record = MagicMock()
         with (
-            patch("cozempic.guard._PruneLock"),
-            patch("cozempic.guard.save_messages", return_value=None),
-            patch("cozempic.guard.cleanup_old_backups"),
-            patch("cozempic.helpers.record_savings", mock_record),
+            patch("winnow.legacy.guard._PruneLock"),
+            patch("winnow.legacy.guard.save_messages", return_value=None),
+            patch("winnow.legacy.guard.cleanup_old_backups"),
+            patch("winnow.legacy.helpers.record_savings", mock_record),
         ):
             deferred_writer()
 
@@ -182,8 +182,8 @@ class TestExtractTeamStateNonStrText(unittest.TestCase):
         return p
 
     def _load_and_extract(self, session_path: Path):
-        from cozempic.session import load_messages
-        from cozempic.team import extract_team_state
+        from winnow.legacy.session import load_messages
+        from winnow.legacy.team import extract_team_state
         msgs = load_messages(session_path)
         return extract_team_state(msgs)
 
@@ -338,7 +338,7 @@ class TestOverflowSafePointFailClosed(unittest.TestCase):
     """
 
     def _make_recovery(self, tmp: str, session_path: Path):
-        from cozempic.overflow import CircuitBreaker, OverflowRecovery
+        from winnow.legacy.overflow import CircuitBreaker, OverflowRecovery
         breaker = CircuitBreaker(
             session_id="test-fc",
             max_recoveries=5,
@@ -386,12 +386,12 @@ class TestOverflowSafePointFailClosed(unittest.TestCase):
             mock_checkpoint = MagicMock()
 
             with (
-                patch("cozempic.guard.guard_prune_cycle",
+                patch("winnow.legacy.guard.guard_prune_cycle",
                       return_value=prune_result),
-                patch("cozempic.team.extract_team_state",
+                patch("winnow.legacy.team.extract_team_state",
                       side_effect=RuntimeError("boom")),
-                patch("cozempic.guard._terminate_and_resume", mock_terminate),
-                patch("cozempic.guard.checkpoint_team", mock_checkpoint),
+                patch("winnow.legacy.guard._terminate_and_resume", mock_terminate),
+                patch("winnow.legacy.guard.checkpoint_team", mock_checkpoint),
             ):
                 rec._do_recover()
 
@@ -414,12 +414,12 @@ class TestOverflowSafePointFailClosed(unittest.TestCase):
             mock_checkpoint = MagicMock()
 
             with (
-                patch("cozempic.guard.guard_prune_cycle",
+                patch("winnow.legacy.guard.guard_prune_cycle",
                       return_value=prune_result),
-                patch("cozempic.guard.safe_to_reload",
+                patch("winnow.legacy.guard.safe_to_reload",
                       side_effect=OSError("disk gone")),
-                patch("cozempic.guard._terminate_and_resume", mock_terminate),
-                patch("cozempic.guard.checkpoint_team", mock_checkpoint),
+                patch("winnow.legacy.guard._terminate_and_resume", mock_terminate),
+                patch("winnow.legacy.guard.checkpoint_team", mock_checkpoint),
             ):
                 rec._do_recover()
 
@@ -440,16 +440,16 @@ class TestOverflowSafePointFailClosed(unittest.TestCase):
             mock_terminate = MagicMock()
 
             with (
-                patch("cozempic.guard.guard_prune_cycle",
+                patch("winnow.legacy.guard.guard_prune_cycle",
                       return_value=prune_result),
-                patch("cozempic.guard.safe_to_reload",
+                patch("winnow.legacy.guard.safe_to_reload",
                       return_value=(True, "")),
-                patch("cozempic.guard._terminate_and_resume", mock_terminate),
+                patch("winnow.legacy.guard._terminate_and_resume", mock_terminate),
                 # _ReloadLock imported lazily from .reload_lock inside _do_recover.
                 # find_claude_pid NOT patched: _make_recovery sets claude_pid=9999,
                 # so _do_recover uses self.claude_pid directly and never falls back
                 # to find_claude_pid. Patching it would be a dead/misleading patch.
-                patch("cozempic.reload_lock._ReloadLock") as mock_lock,
+                patch("winnow.legacy.reload_lock._ReloadLock") as mock_lock,
             ):
                 mock_lock.return_value.__enter__ = MagicMock(return_value=None)
                 mock_lock.return_value.__exit__ = MagicMock(return_value=False)

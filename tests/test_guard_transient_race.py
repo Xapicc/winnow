@@ -57,7 +57,7 @@ class TestReloadWritesInFlightSentinel(unittest.TestCase):
         """sentinel written before watcher spawned — order enforced."""
         # write_reload_sentinel must exist in reload_lock after Phase B
         try:
-            from cozempic.reload_lock import write_reload_sentinel, SENTINEL_TTL_SECONDS
+            from winnow.legacy.reload_lock import write_reload_sentinel, SENTINEL_TTL_SECONDS
         except ImportError as exc:
             self.fail(
                 f"Phase B symbols missing: {exc}. "
@@ -74,12 +74,12 @@ class TestReloadWritesInFlightSentinel(unittest.TestCase):
         # actually terminating a live Claude and resuming it. _terminate_and_resume
         # has an anti-resurrection entry gate (skips everything, incl. the
         # sentinel write, if claude_pid is no longer a Claude process).
-        with patch("cozempic.guard._spawn_reload_watcher", side_effect=_fake_watcher), \
-             patch("cozempic.guard._is_claude_process", return_value=True), \
-             patch("cozempic.guard._wait_for_exit", return_value=True), \
-             patch("cozempic.guard.os.kill"), \
-             patch("cozempic.guard.time.sleep"):
-            from cozempic.guard import _terminate_and_resume
+        with patch("winnow.legacy.guard._spawn_reload_watcher", side_effect=_fake_watcher), \
+             patch("winnow.legacy.guard._is_claude_process", return_value=True), \
+             patch("winnow.legacy.guard._wait_for_exit", return_value=True), \
+             patch("winnow.legacy.guard.os.kill"), \
+             patch("winnow.legacy.guard.time.sleep"):
+            from winnow.legacy.guard import _terminate_and_resume
             _terminate_and_resume(
                 claude_pid=self.old_claude_pid,
                 project_dir="/tmp/fake_project",
@@ -133,11 +133,11 @@ class TestNoResurrectionWhenClaudeAlreadyDead(unittest.TestCase):
         sid = "ddddddddeeee1111222233334444dddd"
         # Simulate a dead PID at the bare-liveness probe: os.kill(pid, 0) raises
         # ProcessLookupError. The gate must return before any sentinel/watcher.
-        with patch("cozempic.guard._spawn_reload_watcher") as mock_watcher, \
-             patch("cozempic.guard.write_reload_sentinel") as mock_sentinel, \
-             patch("cozempic.guard._detect_terminal_env", return_value="plain"), \
-             patch("cozempic.guard.os.kill", side_effect=ProcessLookupError):
-            from cozempic.guard import _terminate_and_resume
+        with patch("winnow.legacy.guard._spawn_reload_watcher") as mock_watcher, \
+             patch("winnow.legacy.guard.write_reload_sentinel") as mock_sentinel, \
+             patch("winnow.legacy.guard._detect_terminal_env", return_value="plain"), \
+             patch("winnow.legacy.guard.os.kill", side_effect=ProcessLookupError):
+            from winnow.legacy.guard import _terminate_and_resume
             _terminate_and_resume(
                 claude_pid=99999,
                 project_dir="/tmp/fake_project",
@@ -170,15 +170,15 @@ class TestNoResurrectionDespiteFreshJSONLMtime(unittest.TestCase):
             sentinel.unlink(missing_ok=True)
             self.addCleanup(sentinel.unlink, missing_ok=True)
 
-            from cozempic.guard import _terminate_and_resume, _is_claude_process
+            from winnow.legacy.guard import _terminate_and_resume, _is_claude_process
             # Precondition: the mtime fallback WOULD misreport this dead PID as a
             # live Claude — proving the gate cannot rely on _is_claude_process.
             self.assertTrue(
                 _is_claude_process(dead_pid, session_path=jsonl),
                 "precondition: mtime fallback should report the dead PID alive",
             )
-            with patch("cozempic.guard._spawn_reload_watcher") as mock_watcher, \
-                 patch("cozempic.guard._detect_terminal_env", return_value="plain"):
+            with patch("winnow.legacy.guard._spawn_reload_watcher") as mock_watcher, \
+                 patch("winnow.legacy.guard._detect_terminal_env", return_value="plain"):
                 _terminate_and_resume(dead_pid, td, session_id=sid, session_path=jsonl)
             mock_watcher.assert_not_called()  # bare-liveness gate beat the mtime fallback
             self.assertFalse(sentinel.exists())
@@ -220,7 +220,7 @@ class TestSessionStartHookSkipsSpawnDuringSentinel(unittest.TestCase):
         self.stub_dir = stub_dir
 
     def _load_session_start_command(self) -> str:
-        hooks_path = SRC / "cozempic" / "data" / "hooks.json"
+        hooks_path = SRC / "winnow" / "legacy" / "data" / "hooks.json"
         hooks = json.loads(hooks_path.read_text(encoding="utf-8"))
         return hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"]
 
@@ -228,7 +228,7 @@ class TestSessionStartHookSkipsSpawnDuringSentinel(unittest.TestCase):
         """Hook must skip guard --daemon when sentinel is present (v10 behavior)."""
         cmd = self._load_session_start_command()
         # Sentinel check requires v10+ hook schema — if not present, this RED is expected
-        from cozempic.init import HOOK_SCHEMA_MARKER
+        from winnow.legacy.init import HOOK_SCHEMA_MARKER
         self.assertIn(
             HOOK_SCHEMA_MARKER,
             cmd,
@@ -286,7 +286,7 @@ class TestWatcherUnlinksSentinelAfterOsascript(unittest.TestCase):
 
         # This will RED until Phase B adds the sentinel unlink to the watcher script.
         try:
-            from cozempic.reload_lock import SENTINEL_TTL_SECONDS
+            from winnow.legacy.reload_lock import SENTINEL_TTL_SECONDS
         except ImportError:
             self.fail(
                 "SENTINEL_TTL_SECONDS missing from reload_lock — Phase B not yet applied."
@@ -335,10 +335,10 @@ class TestWatcherUnlinksSentinelAfterOsascript(unittest.TestCase):
                 return MagicMock(pid=99999)
             return MagicMock(pid=99999)
 
-        with patch("cozempic.guard.subprocess.Popen", side_effect=_fake_popen), \
-             patch("cozempic.guard.platform.system", return_value="Darwin"), \
-             patch("cozempic.guard.is_ssh_session", return_value=False):
-            from cozempic.guard import _spawn_reload_watcher
+        with patch("winnow.legacy.guard.subprocess.Popen", side_effect=_fake_popen), \
+             patch("winnow.legacy.guard.platform.system", return_value="Darwin"), \
+             patch("winnow.legacy.guard.is_ssh_session", return_value=False):
+            from winnow.legacy.guard import _spawn_reload_watcher
             _spawn_reload_watcher(
                 claude_pid=fake_old_pid,
                 project_dir="/tmp/fake_project",
@@ -373,7 +373,7 @@ class TestSentinelMtimeGCAfterStaleWindow(unittest.TestCase):
     def test_sentinel_mtime_gc_after_stale_window(self):
         """Stale sentinel (age > SENTINEL_TTL_SECONDS) is ignored; spawn proceeds."""
         try:
-            from cozempic.reload_lock import SENTINEL_TTL_SECONDS, write_reload_sentinel
+            from winnow.legacy.reload_lock import SENTINEL_TTL_SECONDS, write_reload_sentinel
         except ImportError:
             self.fail(
                 "SENTINEL_TTL_SECONDS / write_reload_sentinel missing from reload_lock. "
@@ -390,7 +390,7 @@ class TestSentinelMtimeGCAfterStaleWindow(unittest.TestCase):
         # After Phase B, start_guard_daemon will have a sentinel check that
         # reads the file age and returns immediately if fresh, otherwise
         # treats as stale and allows spawn.
-        from cozempic.guard import start_guard_daemon
+        from winnow.legacy.guard import start_guard_daemon
 
         spawn_calls = []
 
@@ -398,14 +398,14 @@ class TestSentinelMtimeGCAfterStaleWindow(unittest.TestCase):
             spawn_calls.append(cmd_parts)
             return MagicMock(pid=99001)
 
-        with patch("cozempic.guard.subprocess.Popen", side_effect=_fake_popen), \
-             patch("cozempic.guard.find_claude_pid", return_value=94466), \
-             patch("cozempic.guard.find_current_session", return_value={
+        with patch("winnow.legacy.guard.subprocess.Popen", side_effect=_fake_popen), \
+             patch("winnow.legacy.guard.find_claude_pid", return_value=94466), \
+             patch("winnow.legacy.guard.find_current_session", return_value={
                  "session_id": self.sid,
                  "path": Path("/tmp/fake.jsonl"),
              }), \
-             patch("cozempic.guard._cleanup_legacy_pid"), \
-             patch("cozempic.guard.maybe_auto_update", return_value=False):
+             patch("winnow.legacy.guard._cleanup_legacy_pid"), \
+             patch("winnow.legacy.guard.maybe_auto_update", return_value=False):
 
             # Stale sentinel should NOT suppress spawn
             result = start_guard_daemon(session_id=self.sid, claude_pid=94466)
@@ -443,9 +443,9 @@ class TestPidfileUnlinkedImmediatelyOnWatchedClaudeDeath(unittest.TestCase):
         # call precedes checkpoint_team in the not-claude_alive branch.
         import inspect
         try:
-            from cozempic.guard import start_guard
+            from winnow.legacy.guard import start_guard
         except ImportError:
-            self.fail("Cannot import start_guard from cozempic.guard")
+            self.fail("Cannot import start_guard from winnow.legacy.guard")
 
         source = inspect.getsource(start_guard)
 
@@ -521,7 +521,7 @@ class TestReproducer86cb258bNoTransientUnprotectedState(unittest.TestCase):
 
         Returns the transient daemon's mock PID.
         """
-        from cozempic.spawn_lock import DaemonSpawnClaim, INIT_SPAWN_DAEMON
+        from winnow.legacy.spawn_lock import DaemonSpawnClaim, INIT_SPAWN_DAEMON
         from datetime import datetime
 
         # Transient daemon claims the pidfile slot (as would happen via
@@ -554,7 +554,7 @@ class TestReproducer86cb258bNoTransientUnprotectedState(unittest.TestCase):
         GREEN = fix verified (Phase B sentinel check active).
         """
         try:
-            from cozempic.reload_lock import write_reload_sentinel
+            from winnow.legacy.reload_lock import write_reload_sentinel
         except ImportError:
             self.fail(
                 "write_reload_sentinel missing from reload_lock — Phase B not applied. "
@@ -575,7 +575,7 @@ class TestReproducer86cb258bNoTransientUnprotectedState(unittest.TestCase):
         # Step 3: NEW Claude's SessionStart calls start_guard_daemon
         # Expect: sentinel detected → returns {reason: 'reload in flight'},
         # NOT {already_running: True} which would mean NEW Claude is UNPROTECTED.
-        from cozempic.guard import start_guard_daemon
+        from winnow.legacy.guard import start_guard_daemon
 
         spawn_calls = []
 
@@ -583,15 +583,15 @@ class TestReproducer86cb258bNoTransientUnprotectedState(unittest.TestCase):
             spawn_calls.append(cmd_parts)
             return MagicMock(pid=self.new_claude_pid)
 
-        with patch("cozempic.guard.subprocess.Popen", side_effect=_fake_popen), \
-             patch("cozempic.guard.find_claude_pid", return_value=self.new_claude_pid), \
-             patch("cozempic.guard.find_current_session", return_value={
+        with patch("winnow.legacy.guard.subprocess.Popen", side_effect=_fake_popen), \
+             patch("winnow.legacy.guard.find_claude_pid", return_value=self.new_claude_pid), \
+             patch("winnow.legacy.guard.find_current_session", return_value={
                  "session_id": self.sid,
                  "path": Path("/tmp/fake_86cb258b.jsonl"),
              }), \
-             patch("cozempic.guard._cleanup_legacy_pid"), \
-             patch("cozempic.guard.maybe_auto_update", return_value=False), \
-             patch("cozempic.spawn_lock._is_process_alive", return_value=True):
+             patch("winnow.legacy.guard._cleanup_legacy_pid"), \
+             patch("winnow.legacy.guard.maybe_auto_update", return_value=False), \
+             patch("winnow.legacy.spawn_lock._is_process_alive", return_value=True):
 
             result = start_guard_daemon(
                 session_id=self.sid,
@@ -658,7 +658,7 @@ class TestRaceUnderContention(unittest.TestCase):
                     self.sentinel_path.write_text(
                         f"89113\n{__import__('datetime').datetime.now().isoformat()}\n"
                     )
-            from cozempic.guard import start_guard_daemon
+            from winnow.legacy.guard import start_guard_daemon
             result = start_guard_daemon(session_id=self.sid, claude_pid=94466)
             results.append({"idx": idx, "with_sentinel": with_sentinel, "result": result})
         except Exception as exc:
@@ -673,7 +673,7 @@ class TestRaceUnderContention(unittest.TestCase):
         # First: assert the Phase B symbol is present — otherwise the sentinel check
         # cannot exist. This is the correct RED failure surface for this test.
         try:
-            from cozempic.guard import start_guard_daemon
+            from winnow.legacy.guard import start_guard_daemon
             import inspect
             source = inspect.getsource(start_guard_daemon)
         except ImportError:
@@ -717,14 +717,14 @@ class TestRaceUnderContention(unittest.TestCase):
         def _fake_popen(cmd_parts, **kwargs):
             return MagicMock(pid=90001)
 
-        with patch("cozempic.guard.subprocess.Popen", side_effect=_fake_popen), \
-             patch("cozempic.guard.find_claude_pid", return_value=94466), \
-             patch("cozempic.guard.find_current_session", return_value={
+        with patch("winnow.legacy.guard.subprocess.Popen", side_effect=_fake_popen), \
+             patch("winnow.legacy.guard.find_claude_pid", return_value=94466), \
+             patch("winnow.legacy.guard.find_current_session", return_value={
                  "session_id": self.sid,
                  "path": Path("/tmp/fake.jsonl"),
              }), \
-             patch("cozempic.guard._cleanup_legacy_pid"), \
-             patch("cozempic.guard.maybe_auto_update", return_value=False):
+             patch("winnow.legacy.guard._cleanup_legacy_pid"), \
+             patch("winnow.legacy.guard.maybe_auto_update", return_value=False):
 
             for i in range(5):
                 t = threading.Thread(target=_worker, args=(True, i), daemon=True)
@@ -784,9 +784,9 @@ class TestSentinelNotWrittenOnEarlyReturns(unittest.TestCase):
 
     def test_ssh_path_does_not_write_sentinel(self):
         """SSH (manual-resume-only) path must NOT write the sentinel."""
-        with patch("cozempic.guard._detect_terminal_env", return_value="ssh"), \
-             patch("cozempic.guard._spawn_reload_watcher"):
-            from cozempic.guard import _terminate_and_resume
+        with patch("winnow.legacy.guard._detect_terminal_env", return_value="ssh"), \
+             patch("winnow.legacy.guard._spawn_reload_watcher"):
+            from winnow.legacy.guard import _terminate_and_resume
             _terminate_and_resume(
                 claude_pid=89113,
                 project_dir="/tmp/fake_project",
@@ -800,10 +800,10 @@ class TestSentinelNotWrittenOnEarlyReturns(unittest.TestCase):
 
     def test_tmux_pid_reuse_fail_does_not_leak_sentinel(self):
         """tmux + _is_claude_process=False early return must NOT leak sentinel."""
-        with patch("cozempic.guard._detect_terminal_env", return_value="tmux"), \
-             patch("cozempic.guard._is_claude_process", return_value=False), \
-             patch("cozempic.guard._spawn_reload_watcher"):
-            from cozempic.guard import _terminate_and_resume
+        with patch("winnow.legacy.guard._detect_terminal_env", return_value="tmux"), \
+             patch("winnow.legacy.guard._is_claude_process", return_value=False), \
+             patch("winnow.legacy.guard._spawn_reload_watcher"):
+            from winnow.legacy.guard import _terminate_and_resume
             _terminate_and_resume(
                 claude_pid=89113,
                 project_dir="/tmp/fake_project",
@@ -817,10 +817,10 @@ class TestSentinelNotWrittenOnEarlyReturns(unittest.TestCase):
 
     def test_screen_pid_reuse_fail_does_not_leak_sentinel(self):
         """screen + _is_claude_process=False early return must NOT leak sentinel."""
-        with patch("cozempic.guard._detect_terminal_env", return_value="screen"), \
-             patch("cozempic.guard._is_claude_process", return_value=False), \
-             patch("cozempic.guard._spawn_reload_watcher"):
-            from cozempic.guard import _terminate_and_resume
+        with patch("winnow.legacy.guard._detect_terminal_env", return_value="screen"), \
+             patch("winnow.legacy.guard._is_claude_process", return_value=False), \
+             patch("winnow.legacy.guard._spawn_reload_watcher"):
+            from winnow.legacy.guard import _terminate_and_resume
             _terminate_and_resume(
                 claude_pid=89113,
                 project_dir="/tmp/fake_project",
@@ -834,9 +834,9 @@ class TestSentinelNotWrittenOnEarlyReturns(unittest.TestCase):
 
     def test_spawn_reload_watcher_ssh_does_not_leak_sentinel(self):
         """_spawn_reload_watcher second-chance SSH check (MED-3) must NOT leak."""
-        with patch("cozempic.guard.is_ssh_session", return_value=True), \
-             patch("cozempic.guard.subprocess.Popen"):
-            from cozempic.guard import _spawn_reload_watcher
+        with patch("winnow.legacy.guard.is_ssh_session", return_value=True), \
+             patch("winnow.legacy.guard.subprocess.Popen"):
+            from winnow.legacy.guard import _spawn_reload_watcher
             _spawn_reload_watcher(
                 claude_pid=89113,
                 project_dir="/tmp/fake_project",

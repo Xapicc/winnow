@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import unittest
 
-from cozempic.metrics import (
+from winnow.legacy.metrics import (
     SCHEMA_VERSION,
     ClaudeMetricsAdapter,
     MetricsAdapter,
@@ -19,7 +19,7 @@ from cozempic.metrics import (
     utc_now_iso,
     validate_receipt,
 )
-from cozempic.types import PruneAction, PrescriptionResult, StrategyResult
+from winnow.legacy.types import PruneAction, PrescriptionResult, StrategyResult
 
 
 def _sample_result() -> PrescriptionResult:
@@ -174,7 +174,7 @@ class _StubCodexAdapter:
         return "0.139.0"
 
     def count_tokens(self, entries):
-        from cozempic.metrics import TokenCount
+        from winnow.legacy.metrics import TokenCount
 
         return TokenCount(0, "heuristic", "medium")
 

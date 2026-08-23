@@ -1,4 +1,4 @@
-"""Tests for cozempic._validation — generic helpers used by strategies, CLI,
+"""Tests for winnow.legacy._validation — generic helpers used by strategies, CLI,
 and env-var parsing."""
 
 from __future__ import annotations
@@ -7,7 +7,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from cozempic._validation import (
+from winnow.legacy._validation import (
     ConfigError,
     coerce_choice,
     coerce_non_negative_int,
@@ -260,15 +260,15 @@ class TestBackwardsCompatReExport(unittest.TestCase):
     must continue to resolve after the refactor."""
 
     def test_reexport_coerce_non_negative_int(self):
-        from cozempic.strategies._config import coerce_non_negative_int as reexported
+        from winnow.legacy.strategies._config import coerce_non_negative_int as reexported
         self.assertIs(reexported, coerce_non_negative_int)
 
     def test_reexport_coerce_choice(self):
-        from cozempic.strategies._config import coerce_choice as reexported
+        from winnow.legacy.strategies._config import coerce_choice as reexported
         self.assertIs(reexported, coerce_choice)
 
     def test_reexport_ConfigError(self):
-        from cozempic.strategies._config import ConfigError as reexported
+        from winnow.legacy.strategies._config import ConfigError as reexported
         self.assertIs(reexported, ConfigError)
 
 
@@ -286,7 +286,7 @@ class TestParseEnvBool(unittest.TestCase):
     def setUp(self):
         # Import here so the test fails with ImportError (not AttributeError)
         # until the helper is implemented — correct RED failure mode.
-        from cozempic._validation import parse_env_bool
+        from winnow.legacy._validation import parse_env_bool
         self.parse_env_bool = parse_env_bool
 
     def _call(self, raw=None, default=False, warn=True):

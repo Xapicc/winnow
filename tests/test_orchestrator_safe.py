@@ -463,7 +463,11 @@ class TestPluginDirectory(unittest.TestCase):
         )
         self.assertEqual(unaccounted, [])
 
-    def test_it_is_renamed_but_keeps_upstreams_licence_and_author(self):
+    def test_the_manifest_is_winnows_own_and_carries_nothing_of_upstreams(self):
+        # UsageFoundry shows `name` and `description` out of this file
+        # (plugins.ts:107-114), so a copied manifest presents the directory as
+        # cozempic's, under cozempic's version, describing a feature this mode
+        # does not have.
         with _temp_dir() as tmp:
             safe.materialise_plugin_dir(PLUGIN_DIR, tmp / "plugin")
             plugin = json.loads(
@@ -471,9 +475,56 @@ class TestPluginDirectory(unittest.TestCase):
                     encoding="utf-8"
                 )
             )
-            self.assertEqual(plugin["name"], "cozempic-orchestrator-safe")
-            self.assertEqual(plugin["license"], "MIT")
-            self.assertEqual(plugin["author"]["name"], "Ruya AI")
+        self.assertEqual(plugin["name"], "winnow")
+        self.assertEqual(sorted(plugin), ["description", "name"])
+        self.assertNotIn("version", plugin)
+        for event in ("PreCompact", "PostCompact"):
+            self.assertIn(event, plugin["description"])
+        for absent in ("cozempic", "prune", "weight-loss", "1.8.39"):
+            self.assertNotIn(absent, plugin["description"], absent)
+
+    def test_the_provenance_is_recorded_next_to_what_was_dropped(self):
+        with _temp_dir() as tmp:
+            report = safe.materialise_plugin_dir(PLUGIN_DIR, tmp / "plugin")
+            written = json.loads(
+                (tmp / "plugin" / "winnow-safe-manifest.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+        for manifest in (report, written):
+            self.assertEqual(manifest["derived_from"]["name"], "cozempic")
+            self.assertEqual(
+                manifest["derived_from"]["version"],
+                safe.VENDORED_COZEMPIC_VERSION,
+            )
+            self.assertEqual(manifest["derived_from"]["license"], "MIT")
+            self.assertIn("Ruya AI", manifest["derived_from"]["copyright"])
+
+    def test_the_recorded_notice_matches_the_licence_it_points_at(self):
+        # The attribution has to stay true of the file it names, so this reads
+        # the repository's LICENSE rather than trusting the string.
+        provenance = safe.upstream_provenance({"license": "MIT"})
+        licence = (REPO_ROOT / "LICENSE").read_text(encoding="utf-8")
+        self.assertIn(provenance["copyright"], licence)
+        self.assertIn("MIT License", licence)
+
+    def test_the_upstream_version_is_read_not_hardcoded(self):
+        # A vendored tree moved to another release should say so here without
+        # an edit to winnow.
+        with _temp_dir() as tmp:
+            source = tmp / "source"
+            (source / ".claude-plugin").mkdir(parents=True)
+            (source / "hooks").mkdir()
+            (source / "hooks" / "hooks.json").write_text(
+                json.dumps({"hooks": {"SessionStart": []}}), encoding="utf-8"
+            )
+            (source / ".claude-plugin" / "plugin.json").write_text(
+                json.dumps({"name": "cozempic", "version": "9.9.9",
+                            "license": "MIT"}),
+                encoding="utf-8",
+            )
+            report = safe.materialise_plugin_dir(source, tmp / "out")
+        self.assertEqual(report["derived_from"]["version"], "9.9.9")
 
     def test_the_output_is_deterministic(self):
         # SPEC §10. Also what makes the directory reviewable: a diff between two

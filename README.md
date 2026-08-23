@@ -78,7 +78,7 @@ switch:
 ```sh
 export WINNOW_ORCHESTRATOR=1
 python -m winnow safe check                       # what would be refused, and why
-python -m winnow safe plugin-dir ./out            # a --plugin-dir with SessionStart removed
+python -m winnow safe plugin-dir --out ./out      # a --plugin-dir with SessionStart removed
 python -m winnow safe run -- list                 # a vendored command, through the gate
 ```
 
@@ -137,6 +137,13 @@ nobody has run.
 ## Running the tests
 
 Two suites: Cozempic's, and winnow's own tests for the mode.
+
+> [!WARNING]
+> **Cozempic's suite writes into your home directory.** Running it added cozempic's seven hooks to
+> `~/.claude/settings.json`, wrote `~/.cozempic_global_initialized`, and left fixture content in
+> `~/.cozempic/behavioral-digest.md`. It leaves a `settings.<timestamp>.bak` beside the file it
+> edited, which is how it was caught. `WINNOW_ORCHESTRATOR=1 python -m winnow safe check` before and
+> after will tell you. Evidence and the exact diff: [docs/USAGEFOUNDRY.md](docs/USAGEFOUNDRY.md) §7.
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -q pytest

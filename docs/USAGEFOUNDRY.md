@@ -539,6 +539,37 @@ the shared-`/tmp` suspicion and it rules out anything about the change: neither 
 
 The run left 23 `cozempic_*` files in the shared `/tmp` and they were removed.
 
+### Running the suite installs the tool
+
+This is the part of §7 that was wrong, and it was wrong in the direction that matters. **The vendored
+suite writes into the real `$HOME` and into the bind-mounted `~/.claude/settings.json`.** Not the
+mode: the suite, run by the recipe above.
+
+Observed rather than inferred. `/home/node/.claude/settings.20260823_135444.bak` is cozempic's own
+backup naming, written at 13:54:44, and the live file next to it differed from that backup by
+**exactly one key**: `hooks`, holding all seven of cozempic's hook entries across `SessionStart`,
+`PostToolUse`, `Stop`, `PreCompact` and `PostCompact`. Also written: `~/.cozempic_global_initialized`
+at the same second, and `~/.cozempic/behavioral-digest.md` a minute later containing
+`Project: /test`, five `noise 0`-style pending rules and one active rule reading "Do not add
+Co-Authored-By to commits" — fixture content, in the file a real digest would be read back from.
+
+So §1.7's install path fires from the test suite, and the state it leaves outlives the container's
+session: the `SessionStart` hook it installed is the one that upgrades from PyPI and spawns the guard
+daemon, and it fired on the next compaction of the session that ran the suite. `cozempic` was not on
+`PATH` and not importable outside the tree, so both fallbacks were no-ops and no daemon started —
+which is luck, not isolation.
+
+The `hooks` key was removed and the three `$HOME` paths deleted, restoring the file to the backup's
+content byte for byte. `winnow safe check` reports clean afterwards, and it is what found this: its
+`global-hooks` and `home-state` findings both fired, which is the first time either has been
+observed doing something other than passing.
+
+**Anyone running §7's recipe on a host they care about should expect their `~/.claude/settings.json`
+to gain cozempic's hooks**, and should check for `settings.<timestamp>.bak` beside it afterwards. A
+test suite that installs the software it is testing into the developer's home directory is an
+upstream defect, not a local one; the fix belongs there. Meanwhile `winnow safe check` before and
+after the suite is the cheap detection.
+
 ---
 
 ## 8. The mode, as implemented
@@ -628,7 +659,10 @@ what was dropped and why.
 ### 8.6 The state the environment overlay could not reach
 
 Found while snapshotting the filesystem for §8.8, not by reading: this container already held
-`~/.cozempic_installed`, `~/.cozempic_update_check` and `~/.cozempic/behavioral-digest.md`.
+`~/.cozempic_installed`, `~/.cozempic_update_check` and `~/.cozempic/behavioral-digest.md`. §7's
+"Running the suite installs the tool" is where they came from and it is worth reading first — the
+point here is only that they existed, and that no environment variable would have stopped the first
+of them.
 
 `cozempic.cli.main` calls `ping_install_if_new()` before it parses argv (`cli.py:2398`), and that
 function writes `~/.cozempic_installed` at `updater.py:186` and consults `COZEMPIC_NO_TELEMETRY` at
@@ -684,7 +718,10 @@ eleven refusals exited 3 with a reason naming the section; `list`, `doctor`, `di
 live Claude process (pid 6977) was above it; the mode off, everything that acts exited 3.
 
 Between the two snapshots, **nothing under `/home/node` changed at all** — not `~/.claude`, not
-`~/.cozempic*`. Everything that changed was winnow's own data directory, the scratch directory holding
+`~/.cozempic*`. That is a claim about the mode's actions and not about the container: running the
+vendored *test suite* does change both, which is §7's "Running the suite installs the tool" and is
+the reason the end-to-end pass is bracketed by its own snapshots rather than compared against the
+state at the start of the day. Everything that changed was winnow's own data directory, the scratch directory holding
 the snapshots, and `/tmp/claude-1000/.../tasks/*.output`, which is Claude Code's own scratch. A
 control pair of snapshots with winnow doing nothing changes the same task-output file and the session
 transcript, which is how those two were attributed rather than assumed. The process table differed

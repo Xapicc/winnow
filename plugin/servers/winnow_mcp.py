@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cozempic MCP Server — exposes session diagnostics and treatment as Claude Code tools."""
+"""winnow MCP server — exposes session diagnostics and treatment as Claude Code tools."""
 
 from __future__ import annotations
 
@@ -8,7 +8,13 @@ from fastmcp import FastMCP
 # Ensure all strategies are registered
 import winnow.legacy.strategies  # noqa: F401
 
-mcp = FastMCP("Cozempic")
+mcp = FastMCP("winnow")
+
+# Nothing runs at import beyond registering the five tools. Upstream started a
+# daemon thread here that pinged an install counter and self-updated from PyPI
+# with force=True, reasoning that an MCP server has no TTY to gate on; both calls
+# went with updater.py in phase 2 (docs/FORK.md §7). Do not reintroduce either:
+# a server that reaches the network at spawn is what USAGEFOUNDRY §1.8 objects to.
 
 
 @mcp.tool()
@@ -27,7 +33,7 @@ def diagnose_current() -> str:
 
     sess = find_current_session()
     if not sess:
-        return "Could not detect current session. Make sure cozempic is installed and you're in a Claude Code project."
+        return "Could not detect current session. Make sure winnow is installed and you're in a Claude Code project."
 
     messages = load_messages(sess["path"])
     diag = diagnose_session(messages)

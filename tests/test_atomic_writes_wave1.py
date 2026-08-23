@@ -555,9 +555,9 @@ class TestMcpTreatSessionPruneLock(unittest.TestCase):
                 def deco(fn): return fn
                 return deco
         fake.FastMCP = _FakeMCP
-        plugin_path = Path(__file__).parent.parent / "plugin" / "servers" / "cozempic_mcp.py"
+        plugin_path = Path(__file__).parent.parent / "plugin" / "servers" / "winnow_mcp.py"
         with mock.patch.dict(sys.modules, {"fastmcp": fake}):
-            spec = importlib.util.spec_from_file_location("cozempic_mcp_behav", plugin_path)
+            spec = importlib.util.spec_from_file_location("winnow_mcp_behav", plugin_path)
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)
 
@@ -608,7 +608,7 @@ class TestMcpTreatSessionPruneLock(unittest.TestCase):
     def test_mcp_treat_session_uses_prune_lock_and_snapshot(self):
         import inspect
         # The plugin lives outside the src/ tree; load it via path
-        plugin_path = Path(__file__).parent.parent / "plugin" / "servers" / "cozempic_mcp.py"
+        plugin_path = Path(__file__).parent.parent / "plugin" / "servers" / "winnow_mcp.py"
         src = plugin_path.read_text()
         # The treat_session function must contain _PruneLock + snapshot_session
         # + the abort messages for both error paths

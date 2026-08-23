@@ -1,13 +1,13 @@
 ---
-name: cozempic-doctor
-description: Run health checks on Claude Code configuration and sessions. Use when troubleshooting Claude Code issues. (cozempic — does not shadow Claude Code's built-in /doctor)
-allowed-tools: Bash(cozempic *)
+name: winnow-doctor
+description: Run health checks on Claude Code configuration and sessions. Use when troubleshooting Claude Code issues. (winnow — does not shadow Claude Code's built-in /doctor)
+allowed-tools: Bash(winnow *)
 ---
 
-Run cozempic health checks:
+Run winnow health checks:
 
 ```bash
-cozempic doctor
+winnow doctor
 ```
 
 Checks for:
@@ -24,5 +24,5 @@ Checks for:
 
 To auto-fix detected issues:
 ```bash
-cozempic doctor --fix
+winnow doctor --fix
 ```

@@ -1,13 +1,13 @@
 ---
 name: diagnose
 description: Analyze Claude Code session bloat — shows token count, context usage %, and bloat breakdown. Use when the user asks about session size, context usage, or when you notice the context window is getting full.
-allowed-tools: Bash(cozempic *)
+allowed-tools: Bash(winnow *)
 ---
 
 Run a diagnosis on the current session:
 
 ```bash
-cozempic current --diagnose
+winnow current --diagnose
 ```
 
 The output includes:
@@ -19,7 +19,7 @@ The output includes:
 - **Top 10 largest messages**: biggest bloat contributors
 - **Estimated savings by prescription**: what gentle/standard/aggressive would save
 
-Always surface the token count and context % to the user. If context is above 60%, suggest running `/cozempic:treat` with a prescription recommendation:
+Always surface the token count and context % to the user. If context is above 60%, suggest running `/winnow:treat` with a prescription recommendation:
 - Under 5MB: `gentle`
 - 5-20MB: `standard`
 - Over 20MB: `aggressive`

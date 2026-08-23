@@ -7,15 +7,15 @@ description: >
   "prevent compaction", "session management", or is running agent teams that
   need continuous context protection.
 disable-model-invocation: true
-allowed-tools: Bash(cozempic *)
+allowed-tools: Bash(winnow *)
 ---
 
-Start the cozempic guard daemon for continuous session protection.
+Start the winnow guard daemon for continuous session protection.
 
 ## Default (recommended)
 
 ```bash
-cozempic guard --daemon --threshold 50 -rx standard --interval 30
+winnow guard --daemon --threshold 50 -rx standard --interval 30
 ```
 
 This runs in the background and:
@@ -38,9 +38,9 @@ Guard mode is **essential** for sessions running agent teams. Without it, auto-c
 
 ## Check status and stop
 
-The daemon writes to `/tmp/cozempic_guard_*.log`. Check with:
+The daemon writes to `/tmp/winnow_guard_*.log`. Check with:
 ```bash
-ls /tmp/cozempic_guard_*.pid 2>/dev/null        # is it running?
-tail -20 /tmp/cozempic_guard_*.log 2>/dev/null   # recent activity
-kill "$(cat /tmp/cozempic_guard_*.pid)"           # stop it
+ls /tmp/winnow_guard_*.pid 2>/dev/null        # is it running?
+tail -20 /tmp/winnow_guard_*.log 2>/dev/null   # recent activity
+kill "$(cat /tmp/winnow_guard_*.pid)"           # stop it
 ```

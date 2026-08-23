@@ -3,7 +3,7 @@ name: treat
 description: Prune bloated session with a prescription. Removes progress ticks, stale reads, duplicate content, and more.
 argument-hint: "[gentle|standard|aggressive]"
 disable-model-invocation: true
-allowed-tools: Bash(cozempic *), AskUserQuestion
+allowed-tools: Bash(winnow *), AskUserQuestion
 ---
 
 Apply a pruning prescription to the current session. Default is `standard` if no argument given.
@@ -14,16 +14,16 @@ Apply a pruning prescription to the current session. Default is `standard` if no
 
 1. **Diagnose first** — show the user what they're working with:
    ```bash
-   cozempic current --diagnose
+   winnow current --diagnose
    ```
 
 2. **Dry-run the treatment** — show savings without applying:
    ```bash
-   cozempic treat current -rx $ARGUMENTS
+   winnow treat current -rx $ARGUMENTS
    ```
    If no argument was provided, use `standard`:
    ```bash
-   cozempic treat current -rx standard
+   winnow treat current -rx standard
    ```
 
 3. **Show results** — present the dry-run output including token savings (the `Tokens:` line). Always surface both byte and token savings.
@@ -32,7 +32,7 @@ Apply a pruning prescription to the current session. Default is `standard` if no
 
 5. **Apply on confirmation**:
    ```bash
-   cozempic treat current -rx $ARGUMENTS --execute
+   winnow treat current -rx $ARGUMENTS --execute
    ```
 
 6. **Tell the user**: "Treatment applied. A backup was created automatically. To resume with the pruned session, exit and run `claude --resume`. (Tip: next time, the `reload` skill does this in one step — `/exit` and a fresh terminal opens automatically.)"

@@ -1,5 +1,10 @@
 # Contributors
 
+> **This file lists the contributors to Cozempic**, the tool vendored in
+> `src/cozempic/`, and it arrived with that tree. It is not a list of winnow's
+> contributors. It stays because the attribution obligation is real: see
+> [docs/DECISIONS.md](docs/DECISIONS.md) §0.
+
 Cozempic is built and maintained by [Ruya AI](https://github.com/Ruya-AI), with
 deep thanks to the community members whose code, reports, and ideas have shaped
 the tool.

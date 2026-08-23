@@ -159,16 +159,63 @@ class TestNoResurrectionOnRecycledPid(unittest.TestCase):
         mock_sentinel.assert_not_called()
         mock_kill.assert_not_called()
 
+    def test_no_signal_when_psutil_is_missing_and_proc_is_unreadable(self):
+        """A missing library must not be able to license the kill.
+
+        The scenario is a container with no readable /proc, no `ps`, and no
+        psutil: every start-time backend returns None, so the daemon cannot tell
+        whether this PID is the Claude it recorded or something the OS handed the
+        number to afterwards. Before the fail-closed change, _pid_identity_match
+        answered True on that unknown and _terminate_and_resume went on to
+        SIGTERM it. _is_claude_process is forced True so the identity gate is the
+        only thing under test.
+        """
+        import sys
+
+        import winnow.legacy.guard as g
+
+        session_id = "cccc9999dddd8888eeee7777ffff6666"
+        fake_pid = 89113
+        g._CLAUDE_IDENTITY[session_id] = (fake_pid, 1716220000.0)
+
+        with tempfile.TemporaryDirectory() as td:
+            jsonl = Path(td) / "session.jsonl"
+            jsonl.write_text("{}\n")
+
+            # sys.modules["psutil"] = None makes `import psutil` raise
+            # ImportError, which is what the psutil backend actually catches.
+            with patch.dict(sys.modules, {"psutil": None}), \
+                 patch("winnow.legacy.guard._get_pid_start_time_linux", return_value=None), \
+                 patch("winnow.legacy.guard._get_pid_start_time_macos", return_value=None), \
+                 patch("winnow.legacy.guard._pid_is_alive", return_value=True), \
+                 patch("winnow.legacy.guard._is_claude_process", return_value=True), \
+                 patch("winnow.legacy.guard._spawn_reload_watcher") as mock_watcher, \
+                 patch("winnow.legacy.guard.write_reload_sentinel") as mock_sentinel, \
+                 patch("winnow.legacy.guard.os.kill") as mock_kill, \
+                 patch("winnow.legacy.guard._detect_terminal_env", return_value="plain"):
+                g._terminate_and_resume(
+                    claude_pid=fake_pid,
+                    project_dir=td,
+                    session_id=session_id,
+                    session_path=jsonl,
+                )
+
+        mock_kill.assert_not_called()
+        mock_sentinel.assert_not_called()
+        mock_watcher.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
-# Test 3 — _pid_identity_match degrades gracefully when psutil unavailable
+# Test 3 — _pid_identity_match fails CLOSED when no backend can read a start time
 # ---------------------------------------------------------------------------
-class TestPidIdentityMatchDegrades(unittest.TestCase):
-    """Unit test: psutil unavailable → _pid_identity_match returns True (fail-OPEN).
+class TestPidIdentityMatchFailsClosed(unittest.TestCase):
+    """Unit test: no readable start time → _pid_identity_match returns False.
 
-    Fail-OPEN rationale: without psutil we can't check start_time; we fall through
-    to the existing _pid_is_alive + _is_claude_process layers (same risk as v1.8.16).
-    Fail-CLOSED would break non-Claude-Code installs and CI without psutil.
+    This inverts the inherited behaviour. Upstream returned True here on the
+    grounds that fail-CLOSED "would break installs without psutil"; winnow
+    declares psutil (pyproject.toml), so a missing psutil is a broken install
+    rather than a supported one, and a broken install must not be able to
+    license a SIGKILL of a PID the daemon cannot identify. docs/FORK.md §9.
     """
 
     def setUp(self):
@@ -179,7 +226,7 @@ class TestPidIdentityMatchDegrades(unittest.TestCase):
         import winnow.legacy.guard as g
         g._CLAUDE_IDENTITY.clear()
 
-    def test_psutil_unavailable_returns_true(self):
+    def test_unreadable_start_time_returns_false(self):
         import winnow.legacy.guard as g
 
         pid = os.getpid()
@@ -187,13 +234,13 @@ class TestPidIdentityMatchDegrades(unittest.TestCase):
         # Record an identity so the session_id IS in _CLAUDE_IDENTITY.
         g._CLAUDE_IDENTITY[session_id] = (pid, 1716220000.0)
 
-        # _get_pid_start_time returns None when psutil raises ImportError.
+        # _get_pid_start_time returns None when every backend fails.
         with patch("winnow.legacy.guard._get_pid_start_time", return_value=None):
             result = g._pid_identity_match(pid, session_id)
 
-        self.assertTrue(
+        self.assertFalse(
             result,
-            "psutil unavailable (None start_time) must return True (fail-OPEN)",
+            "an unreadable start time is an unknown identity, not a match",
         )
 
     def test_no_session_id_returns_true(self):
@@ -389,7 +436,7 @@ class TestMacosStdlibStartTime(unittest.TestCase):
 # ---------------------------------------------------------------------------
 class TestStdlibFallthrough(unittest.TestCase):
     """Cross-platform: when all three backends return None, _get_pid_start_time
-    returns None and _pid_identity_match fails-OPEN (returns True).
+    returns None and _pid_identity_match fails CLOSED (returns False).
     """
 
     def setUp(self):
@@ -410,7 +457,7 @@ class TestStdlibFallthrough(unittest.TestCase):
 
         self.assertIsNone(result, "all backends failing must return None")
 
-    def test_all_backends_fail_pid_match_fails_open(self):
+    def test_all_backends_fail_pid_match_fails_closed(self):
         import winnow.legacy.guard as g
 
         pid = os.getpid()
@@ -423,7 +470,7 @@ class TestStdlibFallthrough(unittest.TestCase):
              patch("winnow.legacy.guard._get_pid_start_time_psutil", return_value=None):
             result = g._pid_identity_match(pid, session_id)
 
-        self.assertTrue(result, "all backends failing must return True (fail-OPEN)")
+        self.assertFalse(result, "all backends failing must return False (fail-CLOSED)")
 
     def test_linux_backend_tried_first_on_linux(self):
         """On Linux, the Linux backend is tried before macOS and psutil."""

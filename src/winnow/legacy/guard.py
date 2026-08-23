@@ -2256,7 +2256,9 @@ def _terminate_and_resume(
     # after Claude died, the start_time recorded at startup will differ. This
     # closes the residual resurrection vector left by the mtime fallback even
     # after Junaid's mtime-immune liveness gate (06f91c3) — a recycled PID IS
-    # alive but is NOT the same Claude. Fails-OPEN when psutil is absent.
+    # alive but is NOT the same Claude. Fails CLOSED when no backend can read a
+    # start time: skipping a legitimate reload costs a cycle, killing a recycled
+    # PID costs whatever that process was doing.
     if not _pid_identity_match(claude_pid, session_id):
         print(f"  PID {claude_pid} start-time mismatch — PID was recycled, skipping terminate+resume.")
         return
@@ -3941,7 +3943,7 @@ def _get_pid_start_time(pid: int) -> float | None:
 
     Falls through to psutil if the platform-native backend fails (e.g.,
     restricted /proc on containerised Linux, ps absent, permission error).
-    Returns None only when all backends fail → _pid_identity_match fails-OPEN.
+    Returns None only when all backends fail → _pid_identity_match fails CLOSED.
     """
     _sys = platform.system()
     if _sys == "Linux":
@@ -3971,13 +3973,22 @@ def _record_claude_identity(session_id: str, pid: int) -> None:
 def _pid_identity_match(pid: int, session_id: str | None) -> bool:
     """True if pid matches the recorded identity (same PID + same start_time).
 
-    Returns True conservatively when:
+    Returns True when there is nothing to compare against, which is not the same
+    thing as a comparison that succeeded:
     - session_id is None (no session context — backward compat)
     - no identity has been recorded for this session_id (daemon restarted)
-    - all start-time backends fail (can't get start_time — degrade gracefully)
 
-    Fail-OPEN rationale: in all these cases we fall through to the existing
-    _pid_is_alive + _is_claude_process layers. No regression vs v1.8.16.
+    In those two the caller falls through to _pid_is_alive + _is_claude_process,
+    which is the behaviour that predates this gate.
+
+    Returns False when a baseline *was* recorded and the comparison could not be
+    made — every start-time backend returned None, which on a platform with no
+    readable /proc and no `ps` means psutil is missing. That case fails CLOSED:
+    the answer to "is this the same process I recorded?" is unknown, and this
+    function's result licenses a SIGTERM/SIGKILL. An unknown that reads as yes
+    lets a recycled PID be killed, so a missing library must not be able to
+    license the kill. psutil is a declared dependency (pyproject.toml) precisely
+    so the closed path stays the abnormal one. docs/FORK.md §9.
     """
     if not session_id:
         return True
@@ -3989,7 +4000,7 @@ def _pid_identity_match(pid: int, session_id: str | None) -> bool:
         return False
     current_start_time = _get_pid_start_time(pid)
     if current_start_time is None:
-        return True  # all backends failed — degrade gracefully (fail-OPEN)
+        return False  # every backend failed — cannot confirm identity (fail-CLOSED)
     # 0.1s tolerance absorbs float-precision noise across psutil's kernel-clock
     # conversion; real PID-recycle gaps are seconds-to-hours, never sub-second.
     return abs(current_start_time - recorded_start_time) < 0.1

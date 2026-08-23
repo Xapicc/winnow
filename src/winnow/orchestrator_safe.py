@@ -1,0 +1,874 @@
+"""Orchestrator-safe mode — what this repository may do when the process that
+owns the Claude Code session is an unattended harness rather than a person.
+
+One switch turns the whole mode on: ``WINNOW_ORCHESTRATOR=1`` in the
+environment. There is no second mechanism and no per-feature flag, because the
+features this constrains fail silently and independently, and a mode assembled
+from seven switches is a mode nobody can confirm is on. `check()` answers that
+question in one call.
+
+The mode holds six invariants. Each one is here because of something read in
+the harness's own source; the citations are `docs/USAGEFOUNDRY.md`, which
+carries the evidence tables.
+
+1. **It never terminates the session it is running inside.** The guard daemon
+   is never started (its ``SessionStart`` hook is not in the plugin directory
+   this module materialises) and ``cozempic guard`` / ``cozempic reload`` are
+   refused. There is no environment variable that turns the daemon off
+   (USAGEFOUNDRY §4), so the mechanism has to be non-installation rather than
+   restraint, and the harness's own ``--disallowedTools`` cannot help: the kill
+   is an ``os.kill`` inside a detached daemon, not a tool call (§1.2).
+2. **It never resumes a session.** Session identity and ``--resume`` belong to
+   the harness, which adopts the id off the stream, persists it and re-passes it
+   (§1.3). ``cozempic reload`` spawns a watcher that runs ``claude --resume``;
+   it is refused for that reason as much as for the kill.
+3. **No auto-update and no PyPI check while a run is in flight.** Both paths
+   off, not overridable-off (§1.8).
+4. **Nothing is written into ``~/.claude``.** That directory is a bind mount
+   onto the operator's machine (§1.7), and the harness deliberately never writes
+   there. Team checkpoints go to winnow's own data directory instead.
+5. **It does not compete with the harness's context and cost controls.** The
+   harness's ``--autocompact`` is authoritative: the tool may not act to prevent
+   compaction, may not act because of it, and may not act while a session is
+   live (USAGEFOUNDRY §2). A prune is refused while a Claude ancestor process
+   exists.
+6. **Nothing is written into the model's memory to be recalled later.**
+   ``cozempic digest inject`` writes into ``~/.claude/projects/<slug>/memory/``
+   and edits that directory's ``MEMORY.md``, which is loaded into every
+   session's context (§1.7). It is refused. Retrieval is by lookup, not recall
+   (SPEC §7).
+
+Nothing in ``src/cozempic/`` is edited to achieve any of this — it is vendored
+prior art at a pinned version (DECISIONS §0). Where the vendored tree offers no
+switch, this module supplies the mechanism from outside: an argv gate, an
+in-process prescription exclusion, and a filtered plugin directory.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+# ── The one switch ────────────────────────────────────────────────────────────
+
+ENV_SWITCH = "WINNOW_ORCHESTRATOR"
+
+_TRUTHY = frozenset({"1", "true", "yes", "on"})
+_FALSEY = frozenset({"", "0", "false", "no", "off"})
+
+
+def is_enabled(env: dict[str, str] | None = None) -> bool:
+    """Is orchestrator-safe mode on?
+
+    Raises on an unrecognised value rather than reading it as off. This switch
+    decides whether a daemon that can ``SIGKILL`` the session may be started, so
+    a typo must stop the invocation, not silently disarm the mode.
+    """
+    raw = (os.environ if env is None else env).get(ENV_SWITCH, "")
+    value = raw.strip().lower()
+    if value in _TRUTHY:
+        return True
+    if value in _FALSEY:
+        return False
+    accepted = sorted((_TRUTHY | _FALSEY) - {""})
+    raise ValueError(
+        f"{ENV_SWITCH}={raw!r} is not a boolean. Expected one of "
+        f"{accepted}, or unset."
+    )
+
+
+# ── The environment the mode runs the vendored tree under ────────────────────
+
+# The version in pyproject.toml, which is the version of the tree in src/. The
+# pin names it so that a self-update cannot move the measured artefact even if
+# the no-update switch is somehow missed (USAGEFOUNDRY §1.8).
+VENDORED_COZEMPIC_VERSION = "1.8.39"
+
+_SAFE_ENV_SPEC: tuple[tuple[str, str, str], ...] = (
+    (
+        "COZEMPIC_NO_GLOBAL_INIT",
+        "1",
+        "cli.py:2076 — without it a single invocation writes hooks into the "
+        "bind-mounted ~/.claude/settings.json, and headless skips the "
+        "confirmation that would have stopped it. USAGEFOUNDRY §1.7",
+    ),
+    (
+        "COZEMPIC_NO_AUTO_INIT",
+        "1",
+        "cli.py:2269 — keeps a settings.json out of the agent's worktree. "
+        "USAGEFOUNDRY §4",
+    ),
+    (
+        "COZEMPIC_NO_AUTO_UPDATE",
+        "1",
+        "updater.py:239 — a session that mutates its own runtime cannot have "
+        "its result attributed to a version. USAGEFOUNDRY §1.8",
+    ),
+    (
+        "COZEMPIC_PIN",
+        VENDORED_COZEMPIC_VERSION,
+        "updater.py:217 — names the vendored tree, so the second update path "
+        "(the SessionStart hook's own guard) is closed too. USAGEFOUNDRY §1.8",
+    ),
+    (
+        "COZEMPIC_NO_TELEMETRY",
+        "1",
+        "helpers.py:236 — three outbound requests per prune to a third "
+        "party's worker. SPEC §10 says no network. USAGEFOUNDRY §4",
+    ),
+    (
+        "COZEMPIC_NO_RECEIPTS",
+        "1",
+        "receipts.py:34 — container-local, so hygiene rather than a "
+        "collision. USAGEFOUNDRY §4",
+    ),
+    (
+        "COZEMPIC_NUDGE_OFF",
+        "1",
+        "cli.py:1429 — the Stop-hook nudge writes "
+        "~/.claude/cozempic-metrics/nudge-state.json. USAGEFOUNDRY §1.7",
+    ),
+    (
+        "COZEMPIC_INTERACTIVE",
+        "on",
+        "guard.py:1410 — narrows, and does not close, the kill path of a "
+        "daemon started by something other than this mode: an interactive "
+        "guard defers mid-turn instead of reloading. Auto-detection returns "
+        "headless under `claude -p`, so the deferral only fires if it is "
+        "forced. USAGEFOUNDRY §1.1",
+    ),
+    (
+        "COZEMPIC_FORCE_RELOAD_PCT",
+        "0",
+        "guard.py:1479 — 0 disables the mid-turn force line that overrides "
+        "the deferral above. Same narrowing, same caveat: the closure is that "
+        "the daemon is never started",
+    ),
+)
+
+SAFE_ENV: dict[str, str] = {name: value for name, value, _ in _SAFE_ENV_SPEC}
+SAFE_ENV_REASONS: dict[str, str] = {name: why for name, _, why in _SAFE_ENV_SPEC}
+
+
+def safe_environment(env: dict[str, str] | None = None) -> dict[str, str]:
+    """`env` with the overlay applied. The overlay wins; nothing is removed."""
+    base = dict(os.environ if env is None else env)
+    base.update(SAFE_ENV)
+    return base
+
+
+def apply_safe_environment() -> dict[str, str]:
+    """Put the overlay into this process's environment. Returns what it set."""
+    os.environ.update(SAFE_ENV)
+    return dict(SAFE_ENV)
+
+
+# ── Winnow's own data directory ──────────────────────────────────────────────
+
+DATA_DIR_ENV = "WINNOW_DATA_DIR"
+
+
+def claude_config_dir(env: dict[str, str] | None = None) -> Path:
+    """Where the bind mount is. Mirrors cozempic's session.get_claude_dir()."""
+    environ = os.environ if env is None else env
+    configured = environ.get("CLAUDE_CONFIG_DIR")
+    if configured:
+        return Path(configured)
+    return Path.home() / ".claude"
+
+
+def data_dir(env: dict[str, str] | None = None) -> Path:
+    """Winnow's own state directory. Never inside the Claude config directory.
+
+    Container-local by default: only /home/node/.claude, /home/node/go and
+    /home/node/.local/share/gh are bind mounts (USAGEFOUNDRY §1.7), so a
+    sibling of ~/.cozempic crosses nothing.
+    """
+    environ = os.environ if env is None else env
+    configured = environ.get(DATA_DIR_ENV)
+    path = Path(configured).expanduser() if configured else Path.home() / ".winnow"
+    resolved = path.resolve()
+    claude = claude_config_dir(env).resolve()
+    if resolved == claude or claude in resolved.parents:
+        raise ValueError(
+            f"{DATA_DIR_ENV}={path} is inside the Claude config directory "
+            f"({claude}), which is a bind mount onto the operator's machine. "
+            "Invariant 4 forbids writing there."
+        )
+    return resolved
+
+
+# ── The argv gate ────────────────────────────────────────────────────────────
+
+# A frozen mirror of cozempic.cli._SUBCOMMANDS. Frozen rather than imported so
+# that the policy does not depend on importing the CLI to make a decision, and
+# so that an upstream tree with a new subcommand fails a test here instead of
+# silently defaulting that subcommand to allowed.
+COZEMPIC_SUBCOMMANDS = frozenset({
+    "list", "current", "diagnose", "treat", "strategy", "reload",
+    "checkpoint", "post-compact", "guard", "init", "doctor", "formulary",
+    "completions", "digest", "self-update", "remind", "guard-watchdog",
+    "dashboard", "uninstall",
+})
+
+# Refused whatever the arguments, keyed by subcommand.
+_REFUSED_SUBCOMMANDS: dict[str, str] = {
+    "guard": (
+        "the daemon SIGTERMs then SIGKILLs the Claude process holding this "
+        "session (guard.py:2377-2400), the harness records that as "
+        "'exited with code -1' with nothing pointing at the guard, and in this "
+        "container the resume is best-effort and does not fire. "
+        "USAGEFOUNDRY §1.1-§1.3"
+    ),
+    "reload": (
+        "prunes, then spawns a watcher that runs `claude --resume` "
+        "(cli.py:927-931). Session identity and --resume belong to the "
+        "harness, which persists the id and re-passes it. USAGEFOUNDRY §1.3"
+    ),
+    "self-update": (
+        "installs from PyPI mid-run. The measured artefact must not move. "
+        "USAGEFOUNDRY §1.8"
+    ),
+    "init": (
+        "writes hooks into a settings.json — ~/.claude/settings.json with "
+        "--global, the worktree's without. USAGEFOUNDRY §1.7"
+    ),
+    "uninstall": (
+        "mutates a settings.json this mode does not own, in the same "
+        "bind-mounted directory. USAGEFOUNDRY §1.7"
+    ),
+    "checkpoint": (
+        "writes team-checkpoint.md into ~/.claude/projects/<slug>/ "
+        "(guard.py:389-390). Use `winnow safe checkpoint`, which writes the "
+        "same file into winnow's data directory. USAGEFOUNDRY §1.7"
+    ),
+}
+
+# Refused only in a particular shape: (subcommand, token that must be present).
+_REFUSED_ARGV: tuple[tuple[str, str, str], ...] = (
+    (
+        "guard-watchdog",
+        "--fix",
+        "sends SIGTERM to a running daemon (cli.py:1129). Report-only without "
+        "--fix, which is allowed",
+    ),
+    (
+        "digest",
+        "inject",
+        "writes cozempic_digest.md into ~/.claude/projects/<slug>/memory/ and "
+        "edits that directory's MEMORY.md, which is loaded into every "
+        "session's context (digest.py:954-996). USAGEFOUNDRY §1.7"
+    ),
+)
+
+# Refused only while a session is live, because they rewrite a transcript.
+_MUTATING_ARGV: tuple[tuple[str, str], ...] = (
+    ("treat", "--execute"),
+    ("strategy", "--execute"),
+    ("digest", "update"),
+    ("digest", "clear"),
+    ("digest", "flush"),
+    ("digest", "recover"),
+)
+
+_LIVE_SESSION_REASON = (
+    "a live Claude process (pid {pid}) holds a session in this process tree, "
+    "and the harness's autocompaction is authoritative: the tool may not act "
+    "to prevent compaction, may not act because of it, and may not act while "
+    "a session is live. Prune between cycles. USAGEFOUNDRY §2"
+)
+
+
+def subcommand_of(argv: list[str]) -> str | None:
+    """The cozempic subcommand in `argv`, by the same rule cozempic uses.
+
+    cli.py:1945 takes the first token that is a known subcommand, so a value
+    that happens to read like one (`--protect-pattern init`) is only mistaken
+    for the subcommand if it precedes the real one, which argparse would reject
+    anyway.
+    """
+    for token in argv:
+        if token in COZEMPIC_SUBCOMMANDS:
+            return token
+    return None
+
+
+def live_claude_pid() -> int | None:
+    """The pid of a Claude Code process above this one, or None.
+
+    Delegates to the vendored walk (session.py:300), which matches `comm`
+    against "node" and "claude" for ten generations. In this container the tree
+    is tini → next-server (v → claude → bash, and "next-server (v" matches
+    neither string, so the walk stops at the session's own process
+    (USAGEFOUNDRY §1.2).
+    """
+    from cozempic.session import find_claude_pid
+
+    return find_claude_pid()
+
+
+def refusal_for(argv: list[str], *, live_pid: int | None) -> str | None:
+    """Why this mode will not run `argv`, or None if it will.
+
+    `live_pid` is the caller's answer to "is a Claude session live in this
+    process tree" — passed in rather than probed here so the gate is testable
+    without a process tree to arrange.
+    """
+    subcommand = subcommand_of(argv)
+    if subcommand is None:
+        return None
+
+    refused = _REFUSED_SUBCOMMANDS.get(subcommand)
+    if refused:
+        return f"`cozempic {subcommand}` is refused under orchestrator-safe mode: {refused}."
+
+    for name, token, why in _REFUSED_ARGV:
+        if subcommand == name and token in argv:
+            return (
+                f"`cozempic {name} {token}` is refused under orchestrator-safe "
+                f"mode: {why}."
+            )
+
+    if live_pid is None:
+        return None
+    for name, token in _MUTATING_ARGV:
+        if subcommand == name and token in argv:
+            return (
+                f"`cozempic {name} {token}` is refused right now: "
+                + _LIVE_SESSION_REASON.format(pid=live_pid)
+                + "."
+            )
+    return None
+
+
+# ── The prescription exclusion ───────────────────────────────────────────────
+
+EXCLUDED_STRATEGIES = ("metadata-strip",)
+
+EXCLUSION_REASON = (
+    "metadata-strip deletes `usage`, `costUSD`, `duration` and `apiDuration` "
+    "(strategies/gentle.py:237-241). The harness bills every run by scanning "
+    "those fields and drops a record that has none without a warning "
+    "(transcripts.ts:335-336); a killed cycle then reconciles to zero, and "
+    "because the remaining budget is the ceiling minus observed spend, "
+    "under-observed spend raises the ceiling handed to the next cycle. "
+    "USAGEFOUNDRY §1.4"
+)
+
+
+def prescriptions_without(
+    prescriptions: dict[str, list[str]],
+    excluded: tuple[str, ...] = EXCLUDED_STRATEGIES,
+) -> dict[str, list[str]]:
+    """A copy of `prescriptions` with `excluded` strategies removed."""
+    return {
+        name: [s for s in strategies if s not in excluded]
+        for name, strategies in prescriptions.items()
+    }
+
+
+def apply_strategy_exclusions(
+    prescriptions: dict[str, list[str]] | None = None,
+    excluded: tuple[str, ...] = EXCLUDED_STRATEGIES,
+) -> dict[str, list[str]]:
+    """Remove `excluded` from the vendored prescriptions. Returns what it took.
+
+    Mutates the lists in place: cli.py:24 and guard.py:203 bind
+    `registry.PRESCRIPTIONS` at import time, so rebinding the module attribute
+    would leave both holding the original dict and the exclusion would apply to
+    nothing.
+    """
+    if prescriptions is None:
+        from cozempic.registry import PRESCRIPTIONS
+
+        prescriptions = PRESCRIPTIONS
+
+    removed: dict[str, list[str]] = {}
+    for name, strategies in prescriptions.items():
+        taken = [s for s in strategies if s in excluded]
+        if not taken:
+            continue
+        strategies[:] = [s for s in strategies if s not in excluded]
+        removed[name] = taken
+    return removed
+
+
+# ── The plugin directory ─────────────────────────────────────────────────────
+
+# `--plugin-dir` is the whole of the integration path: the harness passes it on
+# every spawn and never writes into ~/.claude (USAGEFOUNDRY §3). What it does
+# not do is make the plugin's contents safe, which is what this section is for.
+
+DROPPED_HOOK_EVENTS: dict[str, str] = {
+    "SessionStart": (
+        "upgrades cozempic from PyPI and then spawns the guard daemon. Both "
+        "are invariants 1 and 3, and the daemon has no off switch other than "
+        "this one. USAGEFOUNDRY §1.8, §4"
+    ),
+    "PostToolUse": (
+        "`cozempic checkpoint` writes into ~/.claude/projects/<slug>/ and "
+        "`cozempic remind` reinforces digest rules. Invariants 4 and 6"
+    ),
+    "Stop": (
+        "checkpoint, `digest flush` and `nudge` — the first writes into "
+        "~/.claude, the last writes ~/.claude/cozempic-metrics/. Invariant 4"
+    ),
+}
+
+KEPT_HOOK_EVENTS = ("PreCompact", "PostCompact")
+
+KEPT_HOOK_REASON = (
+    "PreCompact writes a checkpoint before the summariser runs, which is "
+    "reversible-loss insurance against an irreversible operation, and "
+    "PostCompact reads it back. Neither changes the transcript the model is "
+    "holding, so both are compatible with the harness owning compaction "
+    "(USAGEFOUNDRY §2). The commands are winnow's, not cozempic's, because "
+    "cozempic's write the checkpoint into ~/.claude"
+)
+
+DROPPED_PLUGIN_PATHS: dict[str, str] = {
+    ".mcp.json": (
+        "starts the MCP server with `uv run --with cozempic`, which fetches "
+        "cozempic from PyPI — so the plugin would run a downloaded copy rather "
+        "than the vendored tree, and needs `uv` and network at spawn. "
+        "USAGEFOUNDRY §1.9"
+    ),
+    "servers": "only reachable from the .mcp.json above",
+    "skills": (
+        "every skill declares `allowed-tools: Bash(cozempic *)` and calls the "
+        "binary directly, which bypasses this mode's gate and its environment "
+        "overlay. Two of them (guard, reload) instruct the agent to run "
+        "exactly the refused commands"
+    ),
+    "README.md": "describes the plugin that was not materialised here",
+}
+
+_SAFE_PLUGIN_NAME = "cozempic-orchestrator-safe"
+
+
+def safe_hooks_manifest(winnow_command: str) -> dict:
+    """The hooks.json for the materialised directory.
+
+    `winnow_command` is the prefix that runs this package — the plugin
+    directory is not a Python package and nothing here is pip-installed, so the
+    interpreter and the import path are baked in, as cozempic's own installer
+    bakes its path (init.py:413).
+
+    The switch is baked in rather than inherited: this directory only exists
+    because the mode materialised it, so a hook inside it is running under the
+    mode by construction, and a hook that silently did nothing because compose
+    forgot a variable is the failure the harness names at
+    orchestrator.ts:5051-5057.
+
+    `|| true` for the reason the vendored hooks have it: a non-zero exit from a
+    hook is fed back to the model, and a checkpoint that found no team state is
+    not something to tell the model about.
+    """
+    prefix = f"{ENV_SWITCH}=1 {winnow_command}"
+    return {
+        "hooks": {
+            "PreCompact": [
+                {
+                    "matcher": "",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": f"{prefix} safe checkpoint || true",
+                        }
+                    ],
+                }
+            ],
+            "PostCompact": [
+                {
+                    "matcher": "",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": f"{prefix} safe post-compact || true",
+                        }
+                    ],
+                }
+            ],
+        }
+    }
+
+
+def winnow_command(python: str | None = None, source_root: Path | None = None) -> str:
+    """The shell prefix that runs this package from an uninstalled checkout."""
+    interpreter = python or sys.executable or "python3"
+    root = source_root or Path(__file__).resolve().parent.parent
+    return f"PYTHONPATH={root} {interpreter} -m winnow"
+
+
+def dropped_hook_events(manifest: dict) -> list[str]:
+    """Which of a plugin manifest's hook events this mode does not carry over.
+
+    Every event is dropped except `KEPT_HOOK_EVENTS`, and those two are
+    re-declared with winnow's own commands rather than copied, so an unclassified
+    event upstream adds is dropped rather than run.
+    """
+    events = manifest.get("hooks", {})
+    if not isinstance(events, dict):
+        raise ValueError(f"hooks manifest has no 'hooks' object: {manifest!r}")
+    return [name for name in events if name not in KEPT_HOOK_EVENTS]
+
+
+def materialise_plugin_dir(
+    source: Path,
+    dest: Path,
+    *,
+    command: str | None = None,
+) -> dict:
+    """Write an orchestrator-safe copy of `source` to `dest`. Returns a report.
+
+    `dest` is replaced if it exists. The output is deterministic: same source
+    and same command in, byte-identical directory out (SPEC §10).
+    """
+    source = Path(source)
+    dest = Path(dest)
+    manifest_path = source / "hooks" / "hooks.json"
+    if not manifest_path.is_file():
+        raise FileNotFoundError(f"no hooks manifest at {manifest_path}")
+    source_hooks = json.loads(manifest_path.read_text(encoding="utf-8"))
+    dropped_events = dropped_hook_events(source_hooks)
+
+    plugin_json_path = source / ".claude-plugin" / "plugin.json"
+    if not plugin_json_path.is_file():
+        raise FileNotFoundError(f"no plugin manifest at {plugin_json_path}")
+    plugin = json.loads(plugin_json_path.read_text(encoding="utf-8"))
+    # Renamed because it is not the plugin upstream ships: the hooks are
+    # winnow's. author/license/repository stay as they are — MIT requires the
+    # notice be retained and the attribution is correct.
+    plugin["name"] = _SAFE_PLUGIN_NAME
+    plugin["description"] = (
+        "cozempic's PreCompact/PostCompact checkpoint, with every hook that "
+        "writes to ~/.claude, updates from PyPI or starts the guard daemon "
+        "removed. Generated by winnow; see docs/USAGEFOUNDRY.md."
+    )
+
+    if dest.exists():
+        shutil.rmtree(dest)
+    (dest / ".claude-plugin").mkdir(parents=True)
+    (dest / "hooks").mkdir()
+
+    _write_json(dest / ".claude-plugin" / "plugin.json", plugin)
+    _write_json(
+        dest / "hooks" / "hooks.json",
+        safe_hooks_manifest(command or winnow_command()),
+    )
+
+    dropped_paths = sorted(
+        name for name in DROPPED_PLUGIN_PATHS if (source / name).exists()
+    )
+    report = {
+        "source": str(source),
+        "dest": str(dest),
+        "plugin_name": _SAFE_PLUGIN_NAME,
+        "kept_hook_events": list(KEPT_HOOK_EVENTS),
+        "dropped_hook_events": dropped_events,
+        "dropped_paths": dropped_paths,
+        "reasons": {
+            **{name: DROPPED_HOOK_EVENTS.get(name, "not classified by this mode")
+               for name in dropped_events},
+            **{name: DROPPED_PLUGIN_PATHS[name] for name in dropped_paths},
+        },
+    }
+    # `dest` is left out of the written copy: a file that records its own
+    # location is both redundant and the one field that would make two
+    # directories generated from the same source differ byte for byte.
+    _write_json(
+        dest / "winnow-safe-manifest.json",
+        {name: value for name, value in report.items() if name != "dest"},
+    )
+    return report
+
+
+def _write_json(path: Path, payload: dict) -> None:
+    """Sorted keys and a trailing newline, so the output is byte-stable."""
+    path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+
+
+# ── The redirected team checkpoint ───────────────────────────────────────────
+
+
+def write_checkpoint(session_path: Path, target_dir: Path) -> Path | None:
+    """Write the team checkpoint for `session_path` into `target_dir`.
+
+    The vendored writer takes a directory (team.py:1334) but the vendored
+    caller always hands it `session_path.parent`, which is inside the bind
+    mount (guard.py:389-390). This composes the same three vendored steps with
+    a directory that is not.
+
+    Returns the path written, or None when there is no team state to write.
+    """
+    from cozempic.session import load_messages_incremental
+    from cozempic.team import extract_team_state, write_team_checkpoint
+
+    # Created first and checked, not assumed: write_team_checkpoint falls back
+    # to get_claude_dir()/team-checkpoint.md when the directory it is given does
+    # not exist, and that fallback is the bind-mount write this exists to avoid.
+    target_dir.mkdir(parents=True, exist_ok=True)
+    if not target_dir.is_dir():
+        raise NotADirectoryError(f"checkpoint target is not a directory: {target_dir}")
+
+    state = extract_team_state(load_messages_incremental(Path(session_path)))
+    if state.is_empty():
+        return None
+
+    written = write_team_checkpoint(state, target_dir)
+    if target_dir.resolve() not in Path(written).resolve().parents:
+        raise RuntimeError(
+            f"checkpoint went to {written}, outside {target_dir}. Refusing to "
+            "continue: invariant 4 forbids a write outside winnow's own data "
+            "directory."
+        )
+    return written
+
+
+def read_checkpoint(target_dir: Path) -> str | None:
+    """Read back what write_checkpoint wrote, or None.
+
+    include_global=False: the ~/.claude/team-checkpoint.md fallback holds the
+    last-written checkpoint of any project, which cli.py:1014 calls a
+    cross-project read vector, and it is in the bind mount besides.
+    """
+    from cozempic.team import read_team_checkpoint
+
+    return read_team_checkpoint(Path(target_dir), include_global=False)
+
+
+# ── The report ───────────────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class Finding:
+    """One thing `check` looked at."""
+
+    name: str
+    ok: bool
+    detail: str
+
+
+def check(env: dict[str, str] | None = None) -> list[Finding]:
+    """Everything about the mode that can be established by reading.
+
+    Writes nothing and probes no process it does not own. A False `ok` is a
+    statement that an invariant does not hold here, not a suggestion.
+    """
+    environ = dict(os.environ if env is None else env)
+    findings: list[Finding] = []
+
+    try:
+        enabled = is_enabled(environ)
+    except ValueError as exc:
+        return [Finding("mode", False, str(exc))]
+    findings.append(
+        Finding(
+            "mode",
+            enabled,
+            f"{ENV_SWITCH}={environ.get(ENV_SWITCH, '<unset>')!r}"
+            + ("" if enabled else " — orchestrator-safe mode is off"),
+        )
+    )
+
+    for name, expected in SAFE_ENV.items():
+        actual = environ.get(name)
+        findings.append(
+            Finding(
+                f"env:{name}",
+                actual == expected,
+                f"{actual!r}, expected {expected!r}"
+                if actual != expected
+                else f"{actual!r}",
+            )
+        )
+
+    findings.append(_check_guard_daemons())
+    findings.append(_check_global_hooks(environ))
+    findings.append(_check_digest_memories(environ))
+    findings.append(_check_strategy_exclusion())
+    findings.append(_check_live_session())
+    return findings
+
+
+def _check_guard_daemons() -> Finding:
+    """Is a guard daemon running for any session in this container?
+
+    The pidfile path is hardcoded to /tmp and cannot be redirected
+    (guard.py:2636-2650), and /tmp is shared with every other agent here, so
+    this sees any of them.
+    """
+    live: list[str] = []
+    stale: list[str] = []
+    for pidfile in sorted(Path("/tmp").glob("cozempic_guard_*.pid")):
+        try:
+            pid = int(pidfile.read_text(encoding="utf-8").splitlines()[0].strip())
+        except (OSError, ValueError, IndexError):
+            stale.append(pidfile.name)
+            continue
+        try:
+            os.kill(pid, 0)
+        except OSError:
+            stale.append(pidfile.name)
+        else:
+            live.append(f"{pidfile.name} (pid {pid})")
+    if live:
+        return Finding(
+            "guard-daemon",
+            False,
+            "a guard daemon is running and can SIGKILL the session it watches: "
+            + ", ".join(live),
+        )
+    detail = "no live guard daemon pidfile in /tmp"
+    if stale:
+        detail += f"; {len(stale)} stale pidfile(s) ignored"
+    return Finding("guard-daemon", True, detail)
+
+
+def _check_global_hooks(env: dict[str, str] | None) -> Finding:
+    """Is anything already wired into the bind-mounted settings.json?"""
+    settings = claude_config_dir(env) / "settings.json"
+    if not settings.is_file():
+        return Finding("global-hooks", True, f"{settings} does not exist")
+    try:
+        text = settings.read_text(encoding="utf-8")
+    except OSError as exc:
+        return Finding("global-hooks", False, f"cannot read {settings}: {exc}")
+    if "cozempic" in text:
+        return Finding(
+            "global-hooks",
+            False,
+            f"{settings} names cozempic — hooks are wired into the bind mount, "
+            "so they run whatever this mode does. `cozempic init "
+            "--uninstall-global` on the host removes them",
+        )
+    return Finding("global-hooks", True, f"{settings} does not name cozempic")
+
+
+def _check_digest_memories(env: dict[str, str] | None) -> Finding:
+    """Has a digest been written into a project's memory directory?"""
+    projects = claude_config_dir(env) / "projects"
+    found = sorted(str(p) for p in projects.glob("*/memory/cozempic_digest.md"))
+    if found:
+        return Finding(
+            "digest-memory",
+            False,
+            "a digest is in the operator's memory index, where it is loaded "
+            "into every session's context: " + ", ".join(found),
+        )
+    return Finding("digest-memory", True, f"no cozempic_digest.md under {projects}")
+
+
+def _check_strategy_exclusion() -> Finding:
+    """What `winnow safe run` will take out of the vendored prescriptions.
+
+    Not a violation either way: the vendored tree ships metadata-strip in every
+    prescription and is not edited, so the finding is a statement of what the
+    exclusion will do when the pruner is next run through this mode.
+    """
+    try:
+        from cozempic.registry import PRESCRIPTIONS
+    except ImportError as exc:
+        return Finding(
+            "strategy-exclusion", False, f"cannot import the vendored tree: {exc}"
+        )
+    carrying = sorted(
+        name
+        for name, strategies in PRESCRIPTIONS.items()
+        if any(s in EXCLUDED_STRATEGIES for s in strategies)
+    )
+    excluded = ", ".join(EXCLUDED_STRATEGIES)
+    if carrying:
+        return Finding(
+            "strategy-exclusion",
+            True,
+            f"{excluded} will be removed from {', '.join(carrying)} on every "
+            "`winnow safe run`; nothing else may run the pruner under this mode",
+        )
+    return Finding(
+        "strategy-exclusion", True, f"no prescription carries {excluded}"
+    )
+
+
+def _check_live_session() -> Finding:
+    """Is a prune allowed at this moment?"""
+    try:
+        pid = live_claude_pid()
+    except Exception as exc:  # the walk shells out to `ps`; a missing ps is not fatal
+        return Finding("live-session", False, f"cannot read the process tree: {exc}")
+    if pid is None:
+        return Finding(
+            "live-session", True, "no Claude ancestor process; a prune is between cycles"
+        )
+    return Finding(
+        "live-session",
+        True,
+        f"a Claude process (pid {pid}) is above this one, so a prune is "
+        "refused until it is not. USAGEFOUNDRY §2",
+    )
+
+
+def hook_payload(stdin: str) -> dict:
+    """Parse a Claude Code hook payload, or {} if there is not one.
+
+    Hooks are handed JSON on stdin. An empty or unparseable stdin means this was
+    run by hand, which is not an error — the caller falls back to detecting the
+    session from the working directory.
+    """
+    text = stdin.strip()
+    if not text:
+        return {}
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def resolve_session_path(payload: dict, cwd: str | None = None) -> Path | None:
+    """The transcript this invocation is about: the hook's, or the current one."""
+    transcript = payload.get("transcript_path")
+    if isinstance(transcript, str) and transcript:
+        return Path(transcript)
+
+    from cozempic.session import find_current_session
+
+    # strict=True refuses the global most-recent fallback, which would checkpoint
+    # another project's session (guard.py:367-371 makes the same argument).
+    session = find_current_session(cwd or os.getcwd(), strict=True)
+    return Path(session["path"]) if session else None
+
+
+def run_cozempic(argv: list[str]) -> int:
+    """Run the vendored CLI in this process, under the mode.
+
+    In-process because the exclusion in `apply_strategy_exclusions` is an
+    in-memory edit to a module-level dict — a subprocess would import a fresh,
+    unexcluded copy. The environment overlay is applied before `main()` because
+    `_maybe_global_init` reads os.environ at call time (cli.py:2076).
+    """
+    apply_safe_environment()
+    apply_strategy_exclusions()
+
+    from cozempic.cli import main as cozempic_main
+
+    saved = sys.argv
+    sys.argv = ["cozempic", *argv]
+    try:
+        cozempic_main()
+    except SystemExit as exc:
+        if exc.code is None:
+            return 0
+        if isinstance(exc.code, int):
+            return exc.code
+        print(exc.code, file=sys.stderr)
+        return 1
+    finally:
+        sys.argv = saved
+    return 0

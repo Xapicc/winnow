@@ -21,7 +21,9 @@ distribution published on PyPI.
 
 Derived code, by directory, as of the fork decision:
 
-  src/cozempic/    the whole of it, moving to src/winnow/legacy/ (docs/FORK.md)
+  src/winnow/legacy/
+                   the whole of the imported tree, moved here by docs/FORK.md
+                   phase 1 and renamed; it was src/cozempic/
   plugin/          hooks, skills and the MCP server
   npm/             scheduled for deletion, docs/FORK.md phase 2
   packaging/       scheduled for deletion, docs/FORK.md phase 2
@@ -29,8 +31,8 @@ Derived code, by directory, as of the fork decision:
   docs/behavioral-digest-design.md, docs/qa-fleet.md
                    Cozempic's own design notes, arrived with the merge
 
-Written by this project and not derived: src/winnow/ (cli.py,
-orchestrator_safe.py and their tests), docs/SPEC.md, docs/DECISIONS.md,
+Written by this project and not derived: src/winnow/cli.py,
+src/winnow/orchestrator_safe.py and their tests, docs/SPEC.md, docs/DECISIONS.md,
 docs/MILESTONES.md, docs/COZEMPIC.md, docs/USAGEFOUNDRY.md, docs/FORK.md,
 README.md and this file.
 

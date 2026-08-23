@@ -60,8 +60,8 @@ mistake the measurement exists to catch.
 | [docs/COZEMPIC.md](docs/COZEMPIC.md) | The vendored tool against the spec, decision by decision: six questions its code already answers, eight places the two disagree with a verdict and a reason on each, and what is still open |
 | [docs/USAGEFOUNDRY.md](docs/USAGEFOUNDRY.md) | Eleven collisions between the vendored tool and the orchestrator that would run it, with evidence on both sides; §8 is orchestrator-safe mode as built, including what it does not yet prove |
 | [docs/behavioral-digest-design.md](docs/behavioral-digest-design.md) | Cozempic's own design note, arrived with the merge |
-| `src/winnow/` | Orchestrator-safe mode, about 1,200 lines with its tests. The only winnow code that runs |
-| `src/cozempic/`, `plugin/`, `npm/`, `packaging/`, `tests/` | Cozempic 1.8.39, about 21,700 lines, vendored unmodified. Not winnow, not installed, not started |
+| `src/winnow/` | `cli.py` and orchestrator-safe mode, about 1,200 lines with its tests |
+| `src/winnow/legacy/`, `plugin/`, `npm/`, `packaging/`, `tests/` | The tree inherited from Cozempic 1.8.39, about 21,700 lines. Renamed into winnow by [docs/FORK.md](docs/FORK.md) phase 1; still not installed and not started |
 
 **No `winnow inspect`, no cache readout, no `winnow bench`.** The numbers the documents cite as
 measured were produced by analysis scripts in earlier work and are recorded with their sample sizes;
@@ -92,30 +92,34 @@ Six things it guarantees, each argued and evidenced in
 - **It does not compete with the harness's context and cost controls.** The harness owns `--autocompact` and the per-cycle budget, so a mutating prune is refused while a Claude process is live and belongs between cycles.
 - **Nothing is written into the model's memory.** `digest inject` writes to `~/.claude/projects/*/memory/`; it is refused, and the plugin directory drops the skills and the MCP server.
 
-Nothing in `src/cozempic/` was modified to do any of it. Every closure is out of tree, which is a
-constraint ([docs/DECISIONS.md](docs/DECISIONS.md) §0) and also the more honest test: a wrapper that
-has to patch the thing it wraps has not shown the thing is safe to run.
+Nothing in `src/winnow/legacy/` was modified to do any of it. That tree is winnow's own code now
+([docs/DECISIONS.md](docs/DECISIONS.md) §0) and the rename has since rewritten every name in it, but
+every closure above is still held from outside it — which is the more honest test: a wrapper that has
+to patch the thing it wraps has not shown the thing is safe to run.
 
 **What it has not shown.** The mode has never run inside a real orchestrated cycle — everything was
 exercised by hand in a container. No network call was proved absent, only switched off. The guard was
 never enabled, deliberately.
 [docs/USAGEFOUNDRY.md](docs/USAGEFOUNDRY.md) §8.9 lists each gap with the command that would close it.
 
-## The vendored tool
+## The inherited tool
 
-`src/cozempic/` is [Cozempic](https://github.com/Ruya-AI/cozempic) 1.8.39 by Ruya AI, in-tree at a
-pinned upstream commit. It is real, working software: 18 pruning strategies in three tiers, a
-nine-invariant validator that refuses any prune leaving a `tool_use` without its result, a floor pass
-that re-adds the last 10 turns, a guard daemon, five hooks and a doctor with 15 checks. Its test
+`src/winnow/legacy/` is [Cozempic](https://github.com/Ruya-AI/cozempic) 1.8.39 by Ruya AI, forked
+into this repository and renamed. It is real, working software: 18 pruning strategies in three tiers,
+a nine-invariant validator that refuses any prune leaving a `tool_use` without its result, a floor
+pass that re-adds the last 10 turns, a guard daemon, five hooks and a doctor with 15 checks. Its test
 suite passes here (see below).
 
-It is here as **one arm of a measurement**, and [docs/DECISIONS.md](docs/DECISIONS.md) §0 argues that
-choice against four alternatives. Two consequences worth stating on the front page:
+It arrived as **one arm of a measurement**, and [docs/DECISIONS.md](docs/DECISIONS.md) §0 argues that
+choice against four alternatives — then reverses the read-only half of it. Two consequences worth
+stating on the front page:
 
-**It is read-only.** No change to `src/cozempic/` belongs in this repository. `winnow bench` needs a
-byte-stable baseline, and Cozempic upgrades itself from PyPI on every session start and every CLI
-invocation, so pinning it as a dependency would let the baseline move underneath the measurement.
-Changes wanted in the tool go upstream.
+**It is winnow's code, and changes to it belong here.** §0 was reversed on 2026-08-23, on the
+operator's instruction: winnow is a fork of the tool rather than a measurement of a read-only copy of
+it. What that costs — custody of a 4,300-line daemon that can `SIGKILL` a live session, no clean diff
+against upstream, nothing to send back — §0.1 sets out cost by cost, and it keeps the read-only
+decision beside the reversal because none of its reasoning was refuted.
+[docs/FORK.md](docs/FORK.md) is the map the rename executed against.
 
 **It is not installed, and that is deliberate.** Installing it starts a daemon that can `SIGKILL` a
 live editor, writes hooks into `~/.claude/settings.json`, and, in its default tier, strips the
@@ -136,12 +140,14 @@ nobody has run.
 
 ## Running the tests
 
-Two suites: Cozempic's, and winnow's own tests for the mode.
+Two suites: the inherited one, and winnow's own tests for the mode.
 
 > [!WARNING]
-> **Cozempic's suite writes into your home directory.** Running it added cozempic's seven hooks to
-> `~/.claude/settings.json`, wrote `~/.cozempic_global_initialized`, and left fixture content in
-> `~/.cozempic/behavioral-digest.md`. It leaves a `settings.<timestamp>.bak` beside the file it
+> **The inherited suite writes into your home directory.** Running it added seven hooks to
+> `~/.claude/settings.json`, wrote `~/.winnow_global_initialized`, and left fixture content in
+> `~/.winnow/behavioral-digest.md`. Those paths were `~/.cozempic*` when this was observed and are
+> the renamed ones now ([docs/FORK.md](docs/FORK.md) §6.1); the writes are the same writes. It
+> leaves a `settings.<timestamp>.bak` beside the file it
 > edited, which is how it was caught. `WINNOW_ORCHESTRATOR=1 python -m winnow safe check` before and
 > after will tell you. Evidence and the exact diff: [docs/USAGEFOUNDRY.md](docs/USAGEFOUNDRY.md) §7.
 
@@ -150,7 +156,9 @@ python3 -m venv .venv && .venv/bin/pip install -q pytest
 .venv/bin/python -m pytest -q -p no:cacheprovider
 ```
 
-Measured on this tree, 2026-08-23: **1960 passed, 1 failed, 17 skipped**, in about 36 seconds. The
+Measured on this tree, 2026-08-23, after the rename: **1978 passed, 1 failed, 17 skipped, 283
+subtests passed**, in about 40 seconds. (Before the rename, and before the tests it added, the same
+command gave 1960 passed, 1 failed, 17 skipped.) The
 failure is in `tests/test_guard_hardening.py::TestG4_PidfileWriteIsAtomic`, it is pre-existing on the
 merge commit, and it is not attributable to the code with confidence: **which of that class's two
 tests fails alternates between runs on an unchanged tree**, the same race reproduced outside pytest
@@ -177,7 +185,7 @@ neither, and the one-line fix to the image that makes it unnecessary.
 - **Not a daemon, and it never touches a live session.** The vendor's own hooks reference says the transcript "is written asynchronously and may lag the in-memory conversation": editing the file mid-session is not merely unsafe, it does not change what gets sent.
 - **Not destructive.** Copy-on-write only. The original transcript is opened read-only and is both the archive and the recovery source; winnow adds files and never removes them.
 - **No model call, no network, no MCP server.** Not a style preference: a summariser would put the thing being measured inside the instrument, and one added tool definition sits at the top of the invalidation cascade and was priced at $8.14 to $8.26 a week against $0.14 of benefit per use.
-- **Not a competitor to Cozempic.** They are two tools for two shapes of session, and [docs/COZEMPIC.md](docs/COZEMPIC.md) §2.1 says which shape each one is right for.
+- **Not a rebuild of what it inherited.** The pruning tool now in `src/winnow/legacy/` and the tool this specification describes are for two shapes of session, and [docs/COZEMPIC.md](docs/COZEMPIC.md) §2.1 says which shape each one is right for. The fork renamed the first; it did not merge them.
 
 Full list with reasons: [docs/SPEC.md](docs/SPEC.md) §3.
 
@@ -200,8 +208,11 @@ rather than a failure of it.
 
 ## Licence and attribution
 
-[`LICENSE`](LICENSE) is **Ruya AI's MIT notice**, and it arrived with the vendored tree. It covers
-`src/cozempic/`, `plugin/`, `npm/`, `packaging/` and `tests/`. It is not winnow's licence, and
-winnow's licence has not been chosen. [`CONTRIBUTORS.md`](CONTRIBUTORS.md) credits Cozempic's
-contributors, and stays for the same reason: the attribution obligation is real whatever this
-repository decides to become.
+[`LICENSE`](LICENSE) is **MIT**, and it carries two copyright lines: Ruya AI's, which arrived with
+the inherited tree, and winnow's. One permission notice covers both and the whole repository:
+[docs/DECISIONS.md](docs/DECISIONS.md) §0.6 settled on MIT throughout and no second licence for
+winnow's own additions, rather than restating upstream's contribution under terms its authors did not
+pick. [`NOTICE`](NOTICE) records what was derived from what, and
+[`CONTRIBUTORS.md`](CONTRIBUTORS.md) credits the people who wrote the inherited code: that
+attribution was never conditional on the code staying unmodified, which makes it more load-bearing
+after the fork rather than less.

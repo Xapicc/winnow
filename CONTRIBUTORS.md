@@ -1,7 +1,7 @@
 # Contributors
 
 > **This file lists the contributors to Cozempic**, the tool vendored in
-> `src/cozempic/`, and it arrived with that tree. It is not a list of winnow's
+> `src/winnow/legacy/`, and it arrived with that tree. It is not a list of winnow's
 > contributors. It stays because the attribution obligation is real: see
 > [docs/DECISIONS.md](docs/DECISIONS.md) §0.
 

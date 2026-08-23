@@ -11,8 +11,11 @@
 > another cell. Neither changes the kill criteria, and the kill criteria are the part of this
 > document that matters.
 >
-> One acceptance criterion is now blocked outright rather than merely unwritten: nothing in this
-> container can run the test suite. See [USAGEFOUNDRY.md](USAGEFOUNDRY.md) §7.
+> One acceptance criterion looked blocked outright rather than merely unwritten: nothing in this
+> container could run the test suite. That was true of the image as it stood and is not true now —
+> `uv` is at `/usr/local/bin/uv` and [USAGEFOUNDRY.md](USAGEFOUNDRY.md) §7, which this cited for the
+> blockage, runs the suite in under a minute. What is still unwritten is CI: nobody runs it
+> automatically, which is [FORK.md](FORK.md) phase 1's exit condition.
 
 Appetite: **two weeks of one person's work**, taken as ten working days. Fixed time,
 variable scope: if the work does not fit, the last milestone is cut, not extended.

@@ -1,15 +1,16 @@
 {
   "mcpServers": {
-    "cozempic": {
+    "winnow": {
       "command": "uv",
       "args": [
         "run",
-        "--with",
-        "fastmcp",
-        "--with",
-        "cozempic",
+        "--project",
+        "${CLAUDE_PLUGIN_ROOT}/..",
+        "--extra",
+        "mcp",
+        "--frozen",
         "python",
-        "${CLAUDE_PLUGIN_ROOT}/servers/cozempic_mcp.py"
+        "${CLAUDE_PLUGIN_ROOT}/servers/winnow_mcp.py"
       ]
     }
   }

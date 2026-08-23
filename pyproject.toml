@@ -42,10 +42,12 @@ dependencies = [
 dev = [
     "pytest>=7.0",
 ]
-# fastmcp is imported by plugin/servers/cozempic_mcp.py, and by nothing the CLI
+# fastmcp is imported by plugin/servers/winnow_mcp.py, and by nothing the CLI
 # reaches. An extra rather than a hard dependency for that reason: `winnow list`
-# should not pull an MCP framework. Phase 4 moves the server into an image and
-# this becomes the image's dependency (docs/FORK.md §7).
+# should not pull an MCP framework. It is not an interim measure any more: the
+# server stays a local stdio process spawned by Claude Code, and plugin/.mcp.json
+# names this extra (`uv run --extra mcp --frozen`), which is what keeps the
+# server on this tree instead of a published package (docs/USAGEFOUNDRY.md §1.9).
 mcp = [
     "fastmcp>=2.0",
 ]

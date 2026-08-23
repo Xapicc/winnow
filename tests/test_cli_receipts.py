@@ -24,7 +24,7 @@ class TestCliEmitsReceipt(unittest.TestCase):
     def test_committed_receipt_written_under_home(self):
         with tempfile.TemporaryDirectory() as home:
             with patch.dict(os.environ, {"HOME": home}):
-                os.environ.pop("COZEMPIC_NO_RECEIPTS", None)
+                os.environ.pop("WINNOW_NO_RECEIPTS", None)
                 cli._emit_prune_receipt(
                     Path(home) / "sess-xyz.jsonl", _pr(),
                     source="manual", outcome="committed", cwd=home,
@@ -44,7 +44,7 @@ class TestCliEmitsReceipt(unittest.TestCase):
     def test_deferred_path_emits_valid_receipt(self):
         with tempfile.TemporaryDirectory() as home:
             with patch.dict(os.environ, {"HOME": home}):
-                os.environ.pop("COZEMPIC_NO_RECEIPTS", None)
+                os.environ.pop("WINNOW_NO_RECEIPTS", None)
                 cli._emit_prune_receipt(
                     Path(home) / "s.jsonl", _pr(), source="manual",
                     outcome="deferred", cwd=home, defer_reason="prune_lock",
@@ -62,7 +62,7 @@ class TestCliEmitsReceipt(unittest.TestCase):
         # not persist a garbage receipt
         with tempfile.TemporaryDirectory() as home:
             with patch.dict(os.environ, {"HOME": home}):
-                os.environ.pop("COZEMPIC_NO_RECEIPTS", None)
+                os.environ.pop("WINNOW_NO_RECEIPTS", None)
                 cli._emit_prune_receipt(None, object(), source="manual", outcome="committed")
                 rec_dir = Path(home) / ".cozempic" / "receipts"
                 # no parseable garbage receipt persisted (dir absent or empty)

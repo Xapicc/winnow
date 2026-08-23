@@ -40,7 +40,7 @@ class TestNudge(unittest.TestCase):
         # NOT inherit an ambient CLAUDE_CONFIG_DIR (e.g. the conftest autouse fixture)
         # or get_claude_dir would diverge from where record_session wrote the sidecar.
         e = {k: v for k, v in os.environ.items()
-             if not k.startswith("COZEMPIC_NUDGE") and k != "CLAUDE_CONFIG_DIR"}
+             if not k.startswith("WINNOW_NUDGE") and k != "CLAUDE_CONFIG_DIR"}
         if env:
             e.update(env)
         with patch("sys.stdin", io.StringIO(payload)), patch("sys.stdout", out), \
@@ -113,7 +113,7 @@ class TestNudge(unittest.TestCase):
         self.assertIsNone(self._run(300_000, "jd"))      # 30% — 25 already latched, silent
 
     def test_off_env_silences(self):
-        self.assertIsNone(self._run(560_000, "soff", env={"COZEMPIC_NUDGE_OFF": "1"}))
+        self.assertIsNone(self._run(560_000, "soff", env={"WINNOW_NUDGE_OFF": "1"}))
 
     def test_non_blocking_bad_stdin(self):
         from winnow.legacy.cli import cmd_nudge
@@ -145,7 +145,7 @@ class TestNudge(unittest.TestCase):
             payload = json.dumps({"transcript_path": str(t), "session_id": "s1"})
             out = io.StringIO()
             import os
-            e = {k: v for k, v in os.environ.items() if not k.startswith("COZEMPIC_NUDGE")}
+            e = {k: v for k, v in os.environ.items() if not k.startswith("WINNOW_NUDGE")}
             with patch("sys.stdin", io.StringIO(payload)), patch("sys.stdout", out), \
                  patch("pathlib.Path.home", return_value=self.home), \
                  patch.dict(os.environ, e, clear=True):
@@ -179,7 +179,7 @@ class TestNudge(unittest.TestCase):
                   "content": "Async agent launched successfully. agentId: zz1 (internal ID)"}]}}
         p.write_text(json.dumps(assist) + "\n" + json.dumps(agent) + "\n")
         out = io.StringIO()
-        e = {k: v for k, v in os.environ.items() if not k.startswith("COZEMPIC_NUDGE")}
+        e = {k: v for k, v in os.environ.items() if not k.startswith("WINNOW_NUDGE")}
         with patch("sys.stdin", io.StringIO(json.dumps({"transcript_path": str(p), "session_id": "if1"}))), \
              patch("sys.stdout", out), patch("pathlib.Path.home", return_value=self.home), \
              patch.dict(os.environ, e, clear=True):

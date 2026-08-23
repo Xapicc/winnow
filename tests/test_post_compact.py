@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 from winnow.legacy.session import cwd_to_project_slug, get_claude_dir
 from winnow.legacy.team import read_team_checkpoint
-from winnow.legacy.init import COZEMPIC_HOOKS
+from winnow.legacy.init import WINNOW_HOOKS
 
 
 def _run_post_compact(cwd: str) -> str:
@@ -364,10 +364,10 @@ class TestCmdPostCompact(unittest.TestCase):
 class TestInitHooksIncludePostCompact(unittest.TestCase):
 
     def test_post_compact_in_cozempic_hooks(self):
-        self.assertIn("PostCompact", COZEMPIC_HOOKS)
+        self.assertIn("PostCompact", WINNOW_HOOKS)
 
     def test_post_compact_hook_command_correct(self):
-        entries = COZEMPIC_HOOKS["PostCompact"]
+        entries = WINNOW_HOOKS["PostCompact"]
         self.assertEqual(len(entries), 1)
 
         hooks = entries[0]["hooks"]
@@ -378,12 +378,12 @@ class TestInitHooksIncludePostCompact(unittest.TestCase):
 
     def test_pre_compact_still_exists(self):
         """Ensure PreCompact wasn't accidentally removed."""
-        self.assertIn("PreCompact", COZEMPIC_HOOKS)
+        self.assertIn("PreCompact", WINNOW_HOOKS)
 
     def test_all_expected_hooks_present(self):
         """Verify all expected hook events are defined."""
         expected = {"SessionStart", "PostToolUse", "PreCompact", "PostCompact", "Stop"}
-        self.assertEqual(expected, set(COZEMPIC_HOOKS.keys()))
+        self.assertEqual(expected, set(WINNOW_HOOKS.keys()))
 
 
 if __name__ == "__main__":

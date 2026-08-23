@@ -450,87 +450,87 @@ class TestReceiptsEnabled(unittest.TestCase):
     """
 
     def test_zero_value_does_not_disable(self):
-        """COZEMPIC_NO_RECEIPTS=0 means 'no, don't disable' -> receipts enabled."""
-        with patch.dict(os.environ, {"COZEMPIC_NO_RECEIPTS": "0"}):
+        """WINNOW_NO_RECEIPTS=0 means 'no, don't disable' -> receipts enabled."""
+        with patch.dict(os.environ, {"WINNOW_NO_RECEIPTS": "0"}):
             self.assertTrue(
                 receipts_enabled(),
-                "COZEMPIC_NO_RECEIPTS=0 must leave receipts enabled (bug: '0' is falsy-string)",
+                "WINNOW_NO_RECEIPTS=0 must leave receipts enabled (bug: '0' is falsy-string)",
             )
 
     def test_false_value_does_not_disable(self):
-        """COZEMPIC_NO_RECEIPTS=false -> receipts enabled."""
-        with patch.dict(os.environ, {"COZEMPIC_NO_RECEIPTS": "false"}):
+        """WINNOW_NO_RECEIPTS=false -> receipts enabled."""
+        with patch.dict(os.environ, {"WINNOW_NO_RECEIPTS": "false"}):
             self.assertTrue(
                 receipts_enabled(),
-                "COZEMPIC_NO_RECEIPTS=false must leave receipts enabled",
+                "WINNOW_NO_RECEIPTS=false must leave receipts enabled",
             )
 
     def test_no_value_does_not_disable(self):
-        """F-2: COZEMPIC_NO_RECEIPTS=no -> receipts enabled (explicit falsy = keep ON)."""
-        with patch.dict(os.environ, {"COZEMPIC_NO_RECEIPTS": "no"}):
+        """F-2: WINNOW_NO_RECEIPTS=no -> receipts enabled (explicit falsy = keep ON)."""
+        with patch.dict(os.environ, {"WINNOW_NO_RECEIPTS": "no"}):
             self.assertTrue(
                 receipts_enabled(),
-                "COZEMPIC_NO_RECEIPTS=no must leave receipts enabled",
+                "WINNOW_NO_RECEIPTS=no must leave receipts enabled",
             )
 
     def test_off_value_does_not_disable(self):
-        """F-2: COZEMPIC_NO_RECEIPTS=off -> receipts enabled (explicit falsy = keep ON)."""
-        with patch.dict(os.environ, {"COZEMPIC_NO_RECEIPTS": "off"}):
+        """F-2: WINNOW_NO_RECEIPTS=off -> receipts enabled (explicit falsy = keep ON)."""
+        with patch.dict(os.environ, {"WINNOW_NO_RECEIPTS": "off"}):
             self.assertTrue(
                 receipts_enabled(),
-                "COZEMPIC_NO_RECEIPTS=off must leave receipts enabled",
+                "WINNOW_NO_RECEIPTS=off must leave receipts enabled",
             )
 
     def test_disabled_string_disables(self):
-        """F-2: COZEMPIC_NO_RECEIPTS=disabled -> False (privacy fail-safe: unrecognized opt-out -> OFF)."""
-        with patch.dict(os.environ, {"COZEMPIC_NO_RECEIPTS": "disabled"}):
+        """F-2: WINNOW_NO_RECEIPTS=disabled -> False (privacy fail-safe: unrecognized opt-out -> OFF)."""
+        with patch.dict(os.environ, {"WINNOW_NO_RECEIPTS": "disabled"}):
             self.assertFalse(
                 receipts_enabled(),
-                "COZEMPIC_NO_RECEIPTS=disabled must disable receipts (privacy fail-safe: unrecognized -> OFF)",
+                "WINNOW_NO_RECEIPTS=disabled must disable receipts (privacy fail-safe: unrecognized -> OFF)",
             )
 
     def test_garbage_value_disables(self):
-        """F-2: COZEMPIC_NO_RECEIPTS=nope -> False (privacy fail-safe: unrecognized opt-out -> OFF)."""
-        with patch.dict(os.environ, {"COZEMPIC_NO_RECEIPTS": "nope"}):
+        """F-2: WINNOW_NO_RECEIPTS=nope -> False (privacy fail-safe: unrecognized opt-out -> OFF)."""
+        with patch.dict(os.environ, {"WINNOW_NO_RECEIPTS": "nope"}):
             self.assertFalse(
                 receipts_enabled(),
-                "COZEMPIC_NO_RECEIPTS=nope must disable receipts (privacy fail-safe)",
+                "WINNOW_NO_RECEIPTS=nope must disable receipts (privacy fail-safe)",
             )
 
     def test_digit_two_disables(self):
-        """F-2: COZEMPIC_NO_RECEIPTS=2 -> False (privacy fail-safe: unrecognized -> OFF)."""
-        with patch.dict(os.environ, {"COZEMPIC_NO_RECEIPTS": "2"}):
+        """F-2: WINNOW_NO_RECEIPTS=2 -> False (privacy fail-safe: unrecognized -> OFF)."""
+        with patch.dict(os.environ, {"WINNOW_NO_RECEIPTS": "2"}):
             self.assertFalse(
                 receipts_enabled(),
-                "COZEMPIC_NO_RECEIPTS=2 must disable receipts (privacy fail-safe)",
+                "WINNOW_NO_RECEIPTS=2 must disable receipts (privacy fail-safe)",
             )
 
     def test_whitespace_only_enables(self):
-        """F-2: COZEMPIC_NO_RECEIPTS='  ' (whitespace-only) -> True (treated as absent)."""
-        with patch.dict(os.environ, {"COZEMPIC_NO_RECEIPTS": "  "}):
+        """F-2: WINNOW_NO_RECEIPTS='  ' (whitespace-only) -> True (treated as absent)."""
+        with patch.dict(os.environ, {"WINNOW_NO_RECEIPTS": "  "}):
             self.assertTrue(
                 receipts_enabled(),
-                "COZEMPIC_NO_RECEIPTS=whitespace-only must leave receipts enabled (treated as absent)",
+                "WINNOW_NO_RECEIPTS=whitespace-only must leave receipts enabled (treated as absent)",
             )
 
     def test_one_still_disables(self):
-        """Regression guard: COZEMPIC_NO_RECEIPTS=1 must still disable receipts."""
-        with patch.dict(os.environ, {"COZEMPIC_NO_RECEIPTS": "1"}):
+        """Regression guard: WINNOW_NO_RECEIPTS=1 must still disable receipts."""
+        with patch.dict(os.environ, {"WINNOW_NO_RECEIPTS": "1"}):
             self.assertFalse(receipts_enabled())
 
     def test_true_disables(self):
-        """Regression guard: COZEMPIC_NO_RECEIPTS=true must disable receipts."""
-        with patch.dict(os.environ, {"COZEMPIC_NO_RECEIPTS": "true"}):
+        """Regression guard: WINNOW_NO_RECEIPTS=true must disable receipts."""
+        with patch.dict(os.environ, {"WINNOW_NO_RECEIPTS": "true"}):
             self.assertFalse(receipts_enabled())
 
     def test_yes_disables(self):
-        """Regression guard: COZEMPIC_NO_RECEIPTS=yes must disable receipts."""
-        with patch.dict(os.environ, {"COZEMPIC_NO_RECEIPTS": "yes"}):
+        """Regression guard: WINNOW_NO_RECEIPTS=yes must disable receipts."""
+        with patch.dict(os.environ, {"WINNOW_NO_RECEIPTS": "yes"}):
             self.assertFalse(receipts_enabled())
 
     def test_on_disables(self):
-        """Regression guard: COZEMPIC_NO_RECEIPTS=on must disable receipts."""
-        with patch.dict(os.environ, {"COZEMPIC_NO_RECEIPTS": "on"}):
+        """Regression guard: WINNOW_NO_RECEIPTS=on must disable receipts."""
+        with patch.dict(os.environ, {"WINNOW_NO_RECEIPTS": "on"}):
             self.assertFalse(receipts_enabled())
 
     def test_absent_is_enabled(self):
@@ -538,15 +538,15 @@ class TestReceiptsEnabled(unittest.TestCase):
         (not clear=True full-env-copy) so the test stays hermetic and can't be
         perturbed by other env vars read during the call."""
         with patch.dict(os.environ):
-            os.environ.pop("COZEMPIC_NO_RECEIPTS", None)
+            os.environ.pop("WINNOW_NO_RECEIPTS", None)
             self.assertTrue(receipts_enabled())
 
     def test_empty_string_is_enabled(self):
-        """F-2: COZEMPIC_NO_RECEIPTS='' -> True (empty treated as absent)."""
-        with patch.dict(os.environ, {"COZEMPIC_NO_RECEIPTS": ""}):
+        """F-2: WINNOW_NO_RECEIPTS='' -> True (empty treated as absent)."""
+        with patch.dict(os.environ, {"WINNOW_NO_RECEIPTS": ""}):
             self.assertTrue(
                 receipts_enabled(),
-                "COZEMPIC_NO_RECEIPTS='' must leave receipts enabled (treated as absent)",
+                "WINNOW_NO_RECEIPTS='' must leave receipts enabled (treated as absent)",
             )
 
 

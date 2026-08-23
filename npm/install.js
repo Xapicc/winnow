@@ -11,13 +11,13 @@ const os = require("os");
 // `pip install --upgrade` here would otherwise bypass them. Pure + exported so
 // the behavior is unit-testable (the previous static-only test gave false
 // confidence and missed a whitespace-pin divergence).
-//   COZEMPIC_PIN=X.Y.Z       → install exactly that reviewed version, never --upgrade
-//   COZEMPIC_PIN=<malformed>  → still an opt-out (drop --upgrade); not used as a spec
-//   COZEMPIC_NO_AUTO_UPDATE   → install without --upgrade (don't move an existing install)
+//   WINNOW_PIN=X.Y.Z       → install exactly that reviewed version, never --upgrade
+//   WINNOW_PIN=<malformed>  → still an opt-out (drop --upgrade); not used as a spec
+//   WINNOW_NO_AUTO_UPDATE   → install without --upgrade (don't move an existing install)
 function decideInstall(env) {
-  const noAutoUpdate = env.COZEMPIC_NO_AUTO_UPDATE;
-  const pinRaw = env.COZEMPIC_PIN;
-  // Non-empty raw value == pinned, EXACTLY like the hook's `[ -z "$COZEMPIC_PIN" ]`
+  const noAutoUpdate = env.WINNOW_NO_AUTO_UPDATE;
+  const pinRaw = env.WINNOW_PIN;
+  // Non-empty raw value == pinned, EXACTLY like the hook's `[ -z "$WINNOW_PIN" ]`
   // (empty/unset → not pinned; whitespace-only → pinned). "" and undefined are the
   // only falsy strings, so !!pinRaw is precisely "raw is non-empty".
   const pinSet = !!pinRaw;
@@ -35,7 +35,7 @@ if (require.main !== module) {
 }
 
 // ── 1. Install or upgrade Python package ─────────────────────────────────────
-const noAutoUpdate = process.env.COZEMPIC_NO_AUTO_UPDATE;
+const noAutoUpdate = process.env.WINNOW_NO_AUTO_UPDATE;
 const { spec, up } = decideInstall(process.env);
 
 const attempts = [

@@ -447,7 +447,7 @@ class TestFloorConfig:
         on sessions ≤50 turns. K=50 re-added every removed turn on small sessions → 0%
         savings. K=10 preserves a meaningful recent-context floor without swallowing
         typical sessions. Operators needing the stricter floor use
-        COZEMPIC_FLOOR_PRESERVE_LAST_K=50.
+        WINNOW_FLOOR_PRESERVE_LAST_K=50.
         """
         from winnow.legacy.config import FloorConfig
 
@@ -457,26 +457,26 @@ class TestFloorConfig:
         assert cfg.preserve_first_message is True
 
     def test_env_var_max_drop_pct(self, monkeypatch):
-        """COZEMPIC_FLOOR_MAX_DROP_PCT=0.3 → FloorConfig.max_user_assistant_drop_pct == 0.3."""
+        """WINNOW_FLOOR_MAX_DROP_PCT=0.3 → FloorConfig.max_user_assistant_drop_pct == 0.3."""
         from winnow.legacy import config as cfg_mod
 
-        monkeypatch.setenv("COZEMPIC_FLOOR_MAX_DROP_PCT", "0.3")
+        monkeypatch.setenv("WINNOW_FLOOR_MAX_DROP_PCT", "0.3")
         resolved = cfg_mod._resolve_floor_with({})
         assert resolved.max_user_assistant_drop_pct == pytest.approx(0.3)
 
     def test_env_var_nan_falls_to_default(self, monkeypatch):
-        """COZEMPIC_FLOOR_MAX_DROP_PCT=nan → falls back to default 0.50."""
+        """WINNOW_FLOOR_MAX_DROP_PCT=nan → falls back to default 0.50."""
         from winnow.legacy import config as cfg_mod
 
-        monkeypatch.setenv("COZEMPIC_FLOOR_MAX_DROP_PCT", "nan")
+        monkeypatch.setenv("WINNOW_FLOOR_MAX_DROP_PCT", "nan")
         resolved = cfg_mod._resolve_floor_with({})
         assert resolved.max_user_assistant_drop_pct == pytest.approx(0.50)
 
     def test_env_var_inf_falls_to_default(self, monkeypatch):
-        """COZEMPIC_FLOOR_MAX_DROP_PCT=inf → falls back to default 0.50."""
+        """WINNOW_FLOOR_MAX_DROP_PCT=inf → falls back to default 0.50."""
         from winnow.legacy import config as cfg_mod
 
-        monkeypatch.setenv("COZEMPIC_FLOOR_MAX_DROP_PCT", "inf")
+        monkeypatch.setenv("WINNOW_FLOOR_MAX_DROP_PCT", "inf")
         resolved = cfg_mod._resolve_floor_with({})
         assert resolved.max_user_assistant_drop_pct == pytest.approx(0.50)
 
@@ -518,7 +518,7 @@ class TestFloorConfig:
         """
         from winnow.legacy import config as cfg_mod
 
-        monkeypatch.delenv("COZEMPIC_FLOOR_PRESERVE_FIRST", raising=False)
+        monkeypatch.delenv("WINNOW_FLOOR_PRESERVE_FIRST", raising=False)
         result = cfg_mod._resolve_floor_with({"floor": {"preserve_first_message": "false"}})
         assert result.preserve_first_message is False, (
             "string 'false' in JSON config must parse to False; "
@@ -529,7 +529,7 @@ class TestFloorConfig:
         """File config preserve_first_message='0' → False (same bug, different token)."""
         from winnow.legacy import config as cfg_mod
 
-        monkeypatch.delenv("COZEMPIC_FLOOR_PRESERVE_FIRST", raising=False)
+        monkeypatch.delenv("WINNOW_FLOOR_PRESERVE_FIRST", raising=False)
         result = cfg_mod._resolve_floor_with({"floor": {"preserve_first_message": "0"}})
         assert result.preserve_first_message is False
 
@@ -537,7 +537,7 @@ class TestFloorConfig:
         """File config preserve_first_message='no' → False."""
         from winnow.legacy import config as cfg_mod
 
-        monkeypatch.delenv("COZEMPIC_FLOOR_PRESERVE_FIRST", raising=False)
+        monkeypatch.delenv("WINNOW_FLOOR_PRESERVE_FIRST", raising=False)
         result = cfg_mod._resolve_floor_with({"floor": {"preserve_first_message": "no"}})
         assert result.preserve_first_message is False
 
@@ -549,7 +549,7 @@ class TestFloorConfig:
         """
         from winnow.legacy import config as cfg_mod
 
-        monkeypatch.delenv("COZEMPIC_FLOOR_PRESERVE_FIRST", raising=False)
+        monkeypatch.delenv("WINNOW_FLOOR_PRESERVE_FIRST", raising=False)
         result = cfg_mod._resolve_floor_with({"floor": {"preserve_first_message": False}})
         assert result.preserve_first_message is False
 
@@ -557,7 +557,7 @@ class TestFloorConfig:
         """File config preserve_first_message='true' → True."""
         from winnow.legacy import config as cfg_mod
 
-        monkeypatch.delenv("COZEMPIC_FLOOR_PRESERVE_FIRST", raising=False)
+        monkeypatch.delenv("WINNOW_FLOOR_PRESERVE_FIRST", raising=False)
         result = cfg_mod._resolve_floor_with({"floor": {"preserve_first_message": "true"}})
         assert result.preserve_first_message is True
 
@@ -565,7 +565,7 @@ class TestFloorConfig:
         """File config preserve_first_message='1' → True."""
         from winnow.legacy import config as cfg_mod
 
-        monkeypatch.delenv("COZEMPIC_FLOOR_PRESERVE_FIRST", raising=False)
+        monkeypatch.delenv("WINNOW_FLOOR_PRESERVE_FIRST", raising=False)
         result = cfg_mod._resolve_floor_with({"floor": {"preserve_first_message": "1"}})
         assert result.preserve_first_message is True
 
@@ -573,7 +573,7 @@ class TestFloorConfig:
         """Native JSON bool true → True (regression guard)."""
         from winnow.legacy import config as cfg_mod
 
-        monkeypatch.delenv("COZEMPIC_FLOOR_PRESERVE_FIRST", raising=False)
+        monkeypatch.delenv("WINNOW_FLOOR_PRESERVE_FIRST", raising=False)
         result = cfg_mod._resolve_floor_with({"floor": {"preserve_first_message": True}})
         assert result.preserve_first_message is True
 

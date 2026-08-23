@@ -75,7 +75,7 @@ def _load_canonical_hooks() -> dict:
         return {}
 
 
-COZEMPIC_HOOKS = _load_canonical_hooks()
+WINNOW_HOOKS = _load_canonical_hooks()
 
 
 # ─── Core logic ──────────────────────────────────────────────────────────────
@@ -382,7 +382,7 @@ def wire_hooks(project_dir: str) -> dict:
     """
     path = _settings_path(project_dir)
 
-    if not COZEMPIC_HOOKS:
+    if not WINNOW_HOOKS:
         return {
             "added": [], "updated": [], "skipped": [],
             "settings_path": str(path), "backup_path": None,
@@ -410,7 +410,7 @@ def wire_hooks(project_dir: str) -> dict:
         # #158: bake the absolute interpreter into the hook fallback so the guard
         # resolves even when bare `cozempic` isn't on the hook's PATH.
         abs_python, ephemeral = _resolve_cozempic_python()
-        canonical_hooks = _bake_cozempic_path(COZEMPIC_HOOKS, abs_python)
+        canonical_hooks = _bake_cozempic_path(WINNOW_HOOKS, abs_python)
 
         for event_name, hook_entries in canonical_hooks.items():
             existing = hooks.get(event_name, [])

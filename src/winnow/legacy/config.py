@@ -178,7 +178,7 @@ def _resolve_floor_with(file_data: dict[str, Any]) -> FloorConfig:
         floor_data = {}
 
     # max_user_assistant_drop_pct
-    raw_env = os.environ.get("COZEMPIC_FLOOR_MAX_DROP_PCT")
+    raw_env = os.environ.get("WINNOW_FLOOR_MAX_DROP_PCT")
     if raw_env is not None and raw_env != "":
         drop_pct = _clamp_float(
             raw_env, *_FLOOR_MAX_DROP_PCT_RANGE, _FLOOR_MAX_DROP_PCT_DEFAULT,
@@ -193,7 +193,7 @@ def _resolve_floor_with(file_data: dict[str, Any]) -> FloorConfig:
         drop_pct = _FLOOR_MAX_DROP_PCT_DEFAULT
 
     # preserve_last_k_turns
-    raw_env = os.environ.get("COZEMPIC_FLOOR_PRESERVE_LAST_K")
+    raw_env = os.environ.get("WINNOW_FLOOR_PRESERVE_LAST_K")
     if raw_env is not None and raw_env != "":
         last_k = _clamp_int(
             raw_env, *_FLOOR_PRESERVE_LAST_K_RANGE, _FLOOR_PRESERVE_LAST_K_DEFAULT,
@@ -213,7 +213,7 @@ def _resolve_floor_with(file_data: dict[str, Any]) -> FloorConfig:
     # bool("0") both returned True — opposite of intent and inconsistent with the
     # env path which uses _parse_bool. Now: pass native JSON bools through as-is;
     # coerce non-bool values via _parse_bool (handles "false"/"0"/"no" correctly).
-    raw_env = os.environ.get("COZEMPIC_FLOOR_PRESERVE_FIRST")
+    raw_env = os.environ.get("WINNOW_FLOOR_PRESERVE_FIRST")
     if raw_env is not None and raw_env != "":
         preserve_first = _parse_bool(raw_env, default=True)
     elif "preserve_first_message" in floor_data:

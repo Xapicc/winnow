@@ -20,7 +20,7 @@ class TestGlobalAutoInit(unittest.TestCase):
         from winnow.legacy import cli
         with tempfile.TemporaryDirectory() as tmp:
             self._stub_home_claude(tmp)
-            with mock.patch.dict(os.environ, {"COZEMPIC_NO_GLOBAL_INIT": "1"}):
+            with mock.patch.dict(os.environ, {"WINNOW_NO_GLOBAL_INIT": "1"}):
                 with mock.patch.object(cli, "_GLOBAL_INIT_MARKER", self._stub_marker(tmp)):
                     with mock.patch.object(cli.Path, "home", return_value=Path(tmp)):
                         cli._maybe_global_init(["list"])
@@ -34,7 +34,7 @@ class TestGlobalAutoInit(unittest.TestCase):
             marker = self._stub_marker(tmp)
             marker.touch()
             with mock.patch.dict(os.environ, {}, clear=False):
-                os.environ.pop("COZEMPIC_NO_GLOBAL_INIT", None)
+                os.environ.pop("WINNOW_NO_GLOBAL_INIT", None)
                 with mock.patch.object(cli, "_GLOBAL_INIT_MARKER", marker):
                     with mock.patch.object(cli.Path, "home", return_value=Path(tmp)):
                         # Should bail out before calling run_init
@@ -46,7 +46,7 @@ class TestGlobalAutoInit(unittest.TestCase):
         from winnow.legacy import cli
         with tempfile.TemporaryDirectory() as tmp:
             # No ~/.claude/ created
-            os.environ.pop("COZEMPIC_NO_GLOBAL_INIT", None)
+            os.environ.pop("WINNOW_NO_GLOBAL_INIT", None)
             marker = self._stub_marker(tmp)
             with mock.patch.object(cli, "_GLOBAL_INIT_MARKER", marker):
                 with mock.patch.object(cli.Path, "home", return_value=Path(tmp)):
@@ -60,7 +60,7 @@ class TestGlobalAutoInit(unittest.TestCase):
         from winnow.legacy import cli
         with tempfile.TemporaryDirectory() as tmp:
             self._stub_home_claude(tmp)
-            os.environ.pop("COZEMPIC_NO_GLOBAL_INIT", None)
+            os.environ.pop("WINNOW_NO_GLOBAL_INIT", None)
             marker = self._stub_marker(tmp)
             with mock.patch.object(cli, "_GLOBAL_INIT_MARKER", marker):
                 with mock.patch.object(cli.Path, "home", return_value=Path(tmp)):
@@ -78,7 +78,7 @@ class TestGlobalAutoInit(unittest.TestCase):
         from winnow.legacy import cli
         with tempfile.TemporaryDirectory() as tmp:
             self._stub_home_claude(tmp)
-            os.environ.pop("COZEMPIC_NO_GLOBAL_INIT", None)
+            os.environ.pop("WINNOW_NO_GLOBAL_INIT", None)
             marker = self._stub_marker(tmp)
             with mock.patch.object(cli, "_GLOBAL_INIT_MARKER", marker):
                 with mock.patch.object(cli.Path, "home", return_value=Path(tmp)):
@@ -94,7 +94,7 @@ class TestGlobalAutoInit(unittest.TestCase):
         from winnow.legacy import cli
         with tempfile.TemporaryDirectory() as tmp:
             self._stub_home_claude(tmp)
-            os.environ.pop("COZEMPIC_NO_GLOBAL_INIT", None)
+            os.environ.pop("WINNOW_NO_GLOBAL_INIT", None)
             marker = self._stub_marker(tmp)
             with mock.patch.object(cli, "_GLOBAL_INIT_MARKER", marker):
                 with mock.patch.object(cli.Path, "home", return_value=Path(tmp)):
@@ -110,7 +110,7 @@ class TestGlobalAutoInit(unittest.TestCase):
         from winnow.legacy import cli
         with tempfile.TemporaryDirectory() as tmp:
             self._stub_home_claude(tmp)
-            os.environ.pop("COZEMPIC_NO_GLOBAL_INIT", None)
+            os.environ.pop("WINNOW_NO_GLOBAL_INIT", None)
             marker = self._stub_marker(tmp)
             with mock.patch.object(cli, "_GLOBAL_INIT_MARKER", marker):
                 with mock.patch.object(cli.Path, "home", return_value=Path(tmp)):
@@ -126,7 +126,7 @@ class TestGlobalAutoInit(unittest.TestCase):
         from winnow.legacy import cli
         with tempfile.TemporaryDirectory() as tmp:
             self._stub_home_claude(tmp)
-            os.environ.pop("COZEMPIC_NO_GLOBAL_INIT", None)
+            os.environ.pop("WINNOW_NO_GLOBAL_INIT", None)
             marker = self._stub_marker(tmp)
             with mock.patch.object(cli, "_GLOBAL_INIT_MARKER", marker):
                 with mock.patch.object(cli.Path, "home", return_value=Path(tmp)):
@@ -141,7 +141,7 @@ class TestGlobalAutoInit(unittest.TestCase):
             with self.subTest(flag=help_flag):
                 with tempfile.TemporaryDirectory() as tmp:
                     self._stub_home_claude(tmp)
-                    os.environ.pop("COZEMPIC_NO_GLOBAL_INIT", None)
+                    os.environ.pop("WINNOW_NO_GLOBAL_INIT", None)
                     marker = self._stub_marker(tmp)
                     with mock.patch.object(cli, "_GLOBAL_INIT_MARKER", marker):
                         with mock.patch.object(cli.Path, "home", return_value=Path(tmp)):
@@ -424,7 +424,7 @@ class TestDoSMarkerOnFailure(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             # Fake home with .claude dir
             (Path(tmp) / ".claude").mkdir()
-            os.environ.pop("COZEMPIC_NO_GLOBAL_INIT", None)
+            os.environ.pop("WINNOW_NO_GLOBAL_INIT", None)
             marker = Path(tmp) / ".cozempic_global_initialized"
             with mock.patch.object(cli, "_GLOBAL_INIT_MARKER", marker):
                 with mock.patch.object(cli.Path, "home", return_value=Path(tmp)):

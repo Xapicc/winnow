@@ -49,32 +49,32 @@ class TestTheSwitch(unittest.TestCase):
 class TestEnvironmentOverlay(unittest.TestCase):
     def test_every_switch_usagefoundry_names_is_in_the_overlay(self):
         for name in (
-            "COZEMPIC_NO_GLOBAL_INIT",
-            "COZEMPIC_NO_AUTO_INIT",
-            "COZEMPIC_NO_AUTO_UPDATE",
-            "COZEMPIC_PIN",
-            "COZEMPIC_NO_TELEMETRY",
-            "COZEMPIC_NO_RECEIPTS",
+            "WINNOW_NO_GLOBAL_INIT",
+            "WINNOW_NO_AUTO_INIT",
+            "WINNOW_NO_AUTO_UPDATE",
+            "WINNOW_PIN",
+            "WINNOW_NO_TELEMETRY",
+            "WINNOW_NO_RECEIPTS",
         ):
             self.assertIn(name, safe.SAFE_ENV)
 
     def test_the_pin_names_the_vendored_version(self):
         pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn(
-            f'version = "{safe.SAFE_ENV["COZEMPIC_PIN"]}"',
+            f'version = "{safe.SAFE_ENV["WINNOW_PIN"]}"',
             pyproject,
-            "COZEMPIC_PIN must name the tree in src/, or the pin points at a "
+            "WINNOW_PIN must name the tree in src/, or the pin points at a "
             "version that is not the one being measured",
         )
 
     def test_interactive_is_forced_on_not_off(self):
         # guard.py:1410 — interactive mode only ever makes the guard MORE
         # conservative about reloading. `off` would be the wrong direction.
-        self.assertEqual(safe.SAFE_ENV["COZEMPIC_INTERACTIVE"], "on")
+        self.assertEqual(safe.SAFE_ENV["WINNOW_INTERACTIVE"], "on")
 
     def test_the_mid_turn_force_line_is_disabled(self):
         # guard.py:1479 — 0 disables the force that overrides the deferral.
-        self.assertEqual(safe.SAFE_ENV["COZEMPIC_FORCE_RELOAD_PCT"], "0")
+        self.assertEqual(safe.SAFE_ENV["WINNOW_FORCE_RELOAD_PCT"], "0")
 
     def test_every_overlay_entry_carries_a_reason(self):
         self.assertEqual(set(safe.SAFE_ENV), set(safe.SAFE_ENV_REASONS))
@@ -82,15 +82,15 @@ class TestEnvironmentOverlay(unittest.TestCase):
             self.assertTrue(why.strip(), name)
 
     def test_overlay_wins_and_nothing_is_removed(self):
-        merged = safe.safe_environment({"PATH": "/bin", "COZEMPIC_PIN": "0.0.1"})
+        merged = safe.safe_environment({"PATH": "/bin", "WINNOW_PIN": "0.0.1"})
         self.assertEqual(merged["PATH"], "/bin")
-        self.assertEqual(merged["COZEMPIC_PIN"], safe.SAFE_ENV["COZEMPIC_PIN"])
+        self.assertEqual(merged["WINNOW_PIN"], safe.SAFE_ENV["WINNOW_PIN"])
 
     def test_apply_puts_it_in_the_process_environment(self):
         with mock.patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("COZEMPIC_NO_GLOBAL_INIT", None)
+            os.environ.pop("WINNOW_NO_GLOBAL_INIT", None)
             safe.apply_safe_environment()
-            self.assertEqual(os.environ["COZEMPIC_NO_GLOBAL_INIT"], "1")
+            self.assertEqual(os.environ["WINNOW_NO_GLOBAL_INIT"], "1")
 
 
 class TestDataDirectory(unittest.TestCase):
@@ -373,9 +373,9 @@ class TestHomeStateRedirect(unittest.TestCase):
                 tmp / "cozempic-installed",
             )
             # ping_install_if_new writes the sentinel before it looks at
-            # COZEMPIC_NO_TELEMETRY (updater.py:186), so the write is the thing
+            # WINNOW_NO_TELEMETRY (updater.py:186), so the write is the thing
             # to relocate, not the network call one line after it.
-            with mock.patch.dict(os.environ, {"COZEMPIC_NO_TELEMETRY": "1"}):
+            with mock.patch.dict(os.environ, {"WINNOW_NO_TELEMETRY": "1"}):
                 winnow.legacy.updater.ping_install_if_new()
             self.assertTrue((tmp / "cozempic-installed").is_file())
 
@@ -507,7 +507,7 @@ class TestPluginDirectory(unittest.TestCase):
             self.assertEqual(manifest["derived_from"]["name"], "cozempic")
             self.assertEqual(
                 manifest["derived_from"]["version"],
-                safe.VENDORED_COZEMPIC_VERSION,
+                safe.UPSTREAM_VERSION,
             )
             self.assertEqual(manifest["derived_from"]["license"], "MIT")
             self.assertIn("Ruya AI", manifest["derived_from"]["copyright"])
@@ -686,13 +686,13 @@ class TestCheckReport(unittest.TestCase):
         # The overlay supplies it to every `winnow safe run`, which is the only
         # path this mode opens to the vendored tree.
         findings = self._by_name(safe.check({safe.ENV_SWITCH: "1"}))
-        finding = findings["env:COZEMPIC_NO_AUTO_UPDATE"]
+        finding = findings["env:WINNOW_NO_AUTO_UPDATE"]
         self.assertTrue(finding.ok)
         self.assertIn("overlay supplies", finding.detail)
 
     def test_a_conflicting_overlay_variable_is_a_violation(self):
-        env = {safe.ENV_SWITCH: "1", "COZEMPIC_NO_AUTO_UPDATE": "0"}
-        finding = self._by_name(safe.check(env))["env:COZEMPIC_NO_AUTO_UPDATE"]
+        env = {safe.ENV_SWITCH: "1", "WINNOW_NO_AUTO_UPDATE": "0"}
+        finding = self._by_name(safe.check(env))["env:WINNOW_NO_AUTO_UPDATE"]
         self.assertFalse(finding.ok)
         self.assertIn("conflicts", finding.detail)
 

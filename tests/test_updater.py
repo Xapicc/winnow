@@ -52,12 +52,12 @@ class TestShouldCheck(unittest.TestCase):
 class _EnvIsolated(unittest.TestCase):
     """Save → clear → restore the auto-update opt-out env vars around each test.
 
-    A maintainer who PINS carries COZEMPIC_PIN in their shell (the feature's own
+    A maintainer who PINS carries WINNOW_PIN in their shell (the feature's own
     target audience), so any test touching maybe_auto_update must neutralize these
     or it fails order-dependently. We save-and-restore (not pop) so a pre-existing
     ambient value survives the run (#123 QA P3 — was a destructive pop)."""
 
-    _OPT_VARS = ("COZEMPIC_NO_AUTO_UPDATE", "COZEMPIC_PIN")
+    _OPT_VARS = ("WINNOW_NO_AUTO_UPDATE", "WINNOW_PIN")
 
     def setUp(self):
         self._saved_env = {k: os.environ.pop(k, None) for k in self._OPT_VARS}
@@ -71,8 +71,8 @@ class _EnvIsolated(unittest.TestCase):
 
 class TestMaybeAutoUpdate(_EnvIsolated):
     def test_skips_when_env_var_set(self):
-        """COZEMPIC_NO_AUTO_UPDATE=1 disables all update activity."""
-        with patch.dict(os.environ, {"COZEMPIC_NO_AUTO_UPDATE": "1"}):
+        """WINNOW_NO_AUTO_UPDATE=1 disables all update activity."""
+        with patch.dict(os.environ, {"WINNOW_NO_AUTO_UPDATE": "1"}):
             with patch("winnow.legacy.updater._should_check") as mock_check:
                 from winnow.legacy.updater import maybe_auto_update
                 maybe_auto_update()
@@ -206,11 +206,11 @@ class TestDoUpgradeDispatch(unittest.TestCase):
 
 class TestAutoUpdateOptOuts(_EnvIsolated):
     """#123: the documented kill switch must actually stop the Python updater,
-    and COZEMPIC_PIN holds a reviewed version without auto-installing it."""
+    and WINNOW_PIN holds a reviewed version without auto-installing it."""
 
     def test_no_auto_update_skips_everything(self):
         from winnow.legacy import updater
-        os.environ["COZEMPIC_NO_AUTO_UPDATE"] = "1"
+        os.environ["WINNOW_NO_AUTO_UPDATE"] = "1"
         with patch("winnow.legacy.updater._should_check") as sc, \
              patch("winnow.legacy.updater._do_upgrade") as up:
             updater.maybe_auto_update(force=True)
@@ -219,7 +219,7 @@ class TestAutoUpdateOptOuts(_EnvIsolated):
 
     def test_pin_disables_autoupdate(self):
         from winnow.legacy import updater
-        os.environ["COZEMPIC_PIN"] = updater.__version__  # pinned to current
+        os.environ["WINNOW_PIN"] = updater.__version__  # pinned to current
         with patch("winnow.legacy.updater._get_latest_version", return_value="99.0.0"), \
              patch("winnow.legacy.updater._do_upgrade") as up, \
              patch("winnow.legacy.updater._should_check", return_value=True):
@@ -229,7 +229,7 @@ class TestAutoUpdateOptOuts(_EnvIsolated):
     def test_pin_warns_on_drift(self):
         import io
         from winnow.legacy import updater
-        os.environ["COZEMPIC_PIN"] = "1.0.0"  # != current installed version
+        os.environ["WINNOW_PIN"] = "1.0.0"  # != current installed version
         buf = io.StringIO()
         with patch("sys.stdout", buf), \
              patch("winnow.legacy.updater._should_check", return_value=True), \
@@ -244,7 +244,7 @@ class TestAutoUpdateOptOuts(_EnvIsolated):
     def test_pin_matching_current_is_silent(self):
         import io
         from winnow.legacy import updater
-        os.environ["COZEMPIC_PIN"] = updater.__version__
+        os.environ["WINNOW_PIN"] = updater.__version__
         buf = io.StringIO()
         with patch("sys.stdout", buf), \
              patch("winnow.legacy.updater._should_check", return_value=True), \
@@ -255,15 +255,15 @@ class TestAutoUpdateOptOuts(_EnvIsolated):
     def test_pinned_version_helper(self):
         from winnow.legacy import updater
         self.assertIsNone(updater._pinned_version())
-        os.environ["COZEMPIC_PIN"] = " 1.8.30 "
+        os.environ["WINNOW_PIN"] = " 1.8.30 "
         self.assertEqual(updater._pinned_version(), "1.8.30")  # trimmed
 
     def test_whitespace_pin_disables_update_matching_shell(self):
         # #123 QA P3: a whitespace-only pin must be PINNED (auto-update OFF), the
-        # same as the hook's `[ -z "$COZEMPIC_PIN" ]` (non-empty → skip upgrade),
+        # same as the hook's `[ -z "$WINNOW_PIN" ]` (non-empty → skip upgrade),
         # not fall through to auto-update as the old .strip()->None did.
         from winnow.legacy import updater
-        os.environ["COZEMPIC_PIN"] = "   "
+        os.environ["WINNOW_PIN"] = "   "
         self.assertTrue(updater._pinned_version())  # truthy → counts as pinned
         with patch("winnow.legacy.updater._should_check", return_value=True), \
              patch("winnow.legacy.updater._do_upgrade") as up:
@@ -271,10 +271,10 @@ class TestAutoUpdateOptOuts(_EnvIsolated):
             up.assert_not_called()
 
     def test_v_prefix_pin_does_not_false_warn(self):
-        # #123 QA P3: COZEMPIC_PIN=v<current> must not warn against <current>.
+        # #123 QA P3: WINNOW_PIN=v<current> must not warn against <current>.
         import io
         from winnow.legacy import updater
-        os.environ["COZEMPIC_PIN"] = "v" + updater.__version__
+        os.environ["WINNOW_PIN"] = "v" + updater.__version__
         buf = io.StringIO()
         with patch("sys.stdout", buf), \
              patch("winnow.legacy.updater._should_check", return_value=True), \
@@ -287,7 +287,7 @@ class TestAutoUpdateOptOuts(_EnvIsolated):
         # copy-paste `pip install 'cozempic==garbage'` that errors.
         import io
         from winnow.legacy import updater
-        os.environ["COZEMPIC_PIN"] = "garbage"
+        os.environ["WINNOW_PIN"] = "garbage"
         buf = io.StringIO()
         with patch("sys.stdout", buf), \
              patch("winnow.legacy.updater._should_check", return_value=True), \
@@ -304,7 +304,7 @@ class TestAutoUpdateOptOuts(_EnvIsolated):
         import io
         from winnow.legacy import updater
         for v in ("１.８.３２", "١.٨.٣٢"):
-            os.environ["COZEMPIC_PIN"] = v
+            os.environ["WINNOW_PIN"] = v
             buf = io.StringIO()
             with patch("sys.stdout", buf), \
                  patch("winnow.legacy.updater._should_check", return_value=True), \
@@ -326,7 +326,7 @@ class TestHookHonorsOptOuts(unittest.TestCase):
         hooks = json.loads((Path(winnow.legacy.__file__).parent / "data" / "hooks.json").read_text())
         cmd = hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"]
         # The pip --upgrade must be inside a guard that checks both opt-outs.
-        guard = 'if [ -z "$COZEMPIC_NO_AUTO_UPDATE" ] && [ -z "$COZEMPIC_PIN" ]; then'
+        guard = 'if [ -z "$WINNOW_NO_AUTO_UPDATE" ] && [ -z "$WINNOW_PIN" ]; then'
         self.assertIn(guard, cmd)
         # And the guard must come BEFORE the upgrade in the command string.
         self.assertLess(cmd.index(guard), cmd.index("pip install --upgrade cozempic"))
@@ -350,9 +350,9 @@ class TestHookHonorsOptOuts(unittest.TestCase):
             "console.log(JSON.stringify(cases.map(decideInstall)));"
         )
         cases = [
-            {}, {"COZEMPIC_NO_AUTO_UPDATE": "1"}, {"COZEMPIC_PIN": "1.8.30"},
-            {"COZEMPIC_PIN": "v1.8.30"}, {"COZEMPIC_PIN": "garbage"},
-            {"COZEMPIC_PIN": "   "}, {"COZEMPIC_PIN": "1.0.0; rm -rf /"}, {"COZEMPIC_PIN": ""},
+            {}, {"WINNOW_NO_AUTO_UPDATE": "1"}, {"WINNOW_PIN": "1.8.30"},
+            {"WINNOW_PIN": "v1.8.30"}, {"WINNOW_PIN": "garbage"},
+            {"WINNOW_PIN": "   "}, {"WINNOW_PIN": "1.0.0; rm -rf /"}, {"WINNOW_PIN": ""},
         ]
         out = subprocess.run([node, "-e", script, str(install_js), json.dumps(cases)],
                              capture_output=True, text=True, timeout=30)

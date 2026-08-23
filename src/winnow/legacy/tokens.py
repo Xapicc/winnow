@@ -16,7 +16,7 @@ from .helpers import get_content_blocks, get_msg_type, text_of
 from .types import Message
 
 # Constants
-DEFAULT_CONTEXT_WINDOW = 1_000_000  # All current Claude models are 1M. Pro plan users can override with COZEMPIC_CONTEXT_WINDOW=200000.
+DEFAULT_CONTEXT_WINDOW = 1_000_000  # All current Claude models are 1M. Pro plan users can override with WINNOW_CONTEXT_WINDOW=200000.
 SYSTEM_OVERHEAD_TOKENS = 21_000
 
 # Upper bounds for env-var overrides.
@@ -45,11 +45,11 @@ def get_system_overhead_tokens() -> int:
     Sessions with heavy rules files, MCP servers, and tool schemas can
     have 30K-40K+ tokens of system overhead. The default (21K) is
     conservative for lightweight sessions. Override with
-    COZEMPIC_SYSTEM_OVERHEAD_TOKENS env var or --system-overhead-tokens flag.
+    WINNOW_SYSTEM_OVERHEAD_TOKENS env var or --system-overhead-tokens flag.
     """
     from ._validation import parse_env_non_negative_int
     override = parse_env_non_negative_int(
-        "COZEMPIC_SYSTEM_OVERHEAD_TOKENS", maximum=MAX_SYSTEM_OVERHEAD_TOKENS
+        "WINNOW_SYSTEM_OVERHEAD_TOKENS", maximum=MAX_SYSTEM_OVERHEAD_TOKENS
     )
     if override is not None:
         return override
@@ -88,7 +88,7 @@ HAIKU_CONTEXT_WINDOW = 200_000
 # Claude Code does NOT append "[1m]" to model IDs in the JSONL — the model
 # field always contains the base ID (e.g., "claude-opus-4-7"). 1M context is
 # the standard for current models on Max plans, so we default 4.5/4.6 to 1M.
-# Users on Pro (200K) can override with COZEMPIC_CONTEXT_WINDOW=200000.
+# Users on Pro (200K) can override with WINNOW_CONTEXT_WINDOW=200000.
 MODEL_CONTEXT_WINDOWS: dict[str, int] = {
     # Current models — default 1M (standard for Claude Code Max plans)
     "claude-opus-4-8": 1_000_000,
@@ -109,7 +109,7 @@ MODEL_CONTEXT_WINDOWS: dict[str, int] = {
 
 
 def get_context_window_override() -> int | None:
-    """Check for user override via COZEMPIC_CONTEXT_WINDOW env var.
+    """Check for user override via WINNOW_CONTEXT_WINDOW env var.
 
     Requires a strictly-positive integer. Zero previously hit the
     `if val:` falsy-trap and was silently ignored; negative values
@@ -118,7 +118,7 @@ def get_context_window_override() -> int | None:
     (triggering model-based detection at detect_context_window).
     """
     from ._validation import parse_env_positive_int
-    return parse_env_positive_int("COZEMPIC_CONTEXT_WINDOW", maximum=MAX_CONTEXT_WINDOW)
+    return parse_env_positive_int("WINNOW_CONTEXT_WINDOW", maximum=MAX_CONTEXT_WINDOW)
 
 # Chars-per-token defaults, calibrated against live Claude Code JSONL.
 # Measured 3.08–3.27 chars/token on real sessions: JSON keys, UUIDs, tool
@@ -134,12 +134,12 @@ CHARS_PER_TOKEN_DEFAULT = 3.1  # blended default
 def get_chars_per_token() -> float:
     """Resolve the heuristic chars-per-token divisor.
 
-    Honors the ``COZEMPIC_CHARS_PER_TOKEN`` env override (positive float,
+    Honors the ``WINNOW_CHARS_PER_TOKEN`` env override (positive float,
     clamped to a sane 1.0–20.0 range); otherwise returns the calibrated
     default. Affects only the heuristic fallback — exact usage-based counts
     ignore it entirely.
     """
-    raw = os.environ.get("COZEMPIC_CHARS_PER_TOKEN")
+    raw = os.environ.get("WINNOW_CHARS_PER_TOKEN")
     if raw:
         try:
             val = float(raw)
@@ -177,7 +177,7 @@ def detect_context_window(messages: list[Message]) -> int:
     """Detect the context window size from the session's model.
 
     Priority:
-    1. COZEMPIC_CONTEXT_WINDOW env var (user override)
+    1. WINNOW_CONTEXT_WINDOW env var (user override)
     2. Model detection from session data (exact match, then prefix match)
     3. DEFAULT_CONTEXT_WINDOW (1M)
 

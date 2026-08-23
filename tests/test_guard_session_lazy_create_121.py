@@ -78,7 +78,7 @@ class TestPatientSessionWait121(unittest.TestCase):
 
         with patch.object(guard, "find_sessions", side_effect=late_find), \
              patch.object(guard.time, "sleep"), \
-             patch.dict(os.environ, {"COZEMPIC_SESSION_WAIT_SECONDS": "3600"}):
+             patch.dict(os.environ, {"WINNOW_SESSION_WAIT_SECONDS": "3600"}):
             r = guard._resolve_session_patiently("f0702a2b")
         self.assertIsNotNone(r, "FIX: patient wait must resolve a lazily-created JSONL")
         self.assertEqual(r["session_id"], "f0702a2b")
@@ -95,27 +95,27 @@ class TestPatientSessionWait121(unittest.TestCase):
         # Truly-abandoned session (file never appears) → bounded give-up, no hang.
         with patch.object(guard, "find_sessions", return_value=[]), \
              patch.object(guard.time, "sleep"), \
-             patch.dict(os.environ, {"COZEMPIC_SESSION_WAIT_SECONDS": "30"}):
+             patch.dict(os.environ, {"WINNOW_SESSION_WAIT_SECONDS": "30"}):
             r = guard._resolve_session_patiently("nope")
         self.assertIsNone(r)
 
     def test_patient_wait_disabled_when_budget_zero(self):
         with patch.object(guard, "find_sessions", return_value=[]), \
              patch.object(guard.time, "sleep"), \
-             patch.dict(os.environ, {"COZEMPIC_SESSION_WAIT_SECONDS": "0"}):
+             patch.dict(os.environ, {"WINNOW_SESSION_WAIT_SECONDS": "0"}):
             r = guard._resolve_session_patiently("f0702a2b")
         self.assertIsNone(r)
 
     def test_wait_budget_rejects_nonfinite_and_clamps(self):
-        # Same gate-disable class as the other COZEMPIC_* knobs: a NaN/inf budget
+        # Same gate-disable class as the other WINNOW_* knobs: a NaN/inf budget
         # would make `waited < budget` never bound the loop.
         for bad in ("nan", "NaN", "inf", "-inf", "1e999", "-5", "abc", ""):
-            with patch.dict(os.environ, {"COZEMPIC_SESSION_WAIT_SECONDS": bad}):
+            with patch.dict(os.environ, {"WINNOW_SESSION_WAIT_SECONDS": bad}):
                 v = guard._session_wait_budget()
                 self.assertTrue(math.isfinite(v) and v >= 0, f"bad {bad!r} leaked {v}")
-        with patch.dict(os.environ, {"COZEMPIC_SESSION_WAIT_SECONDS": "999999"}):
+        with patch.dict(os.environ, {"WINNOW_SESSION_WAIT_SECONDS": "999999"}):
             self.assertEqual(guard._session_wait_budget(), 3600.0)  # clamped
-        with patch.dict(os.environ, {"COZEMPIC_SESSION_WAIT_SECONDS": "120"}):
+        with patch.dict(os.environ, {"WINNOW_SESSION_WAIT_SECONDS": "120"}):
             self.assertEqual(guard._session_wait_budget(), 120.0)
 
 

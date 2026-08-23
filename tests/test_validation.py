@@ -134,7 +134,7 @@ class TestCoercePositiveFloat(unittest.TestCase):
 
 class TestParseEnvPositiveInt(unittest.TestCase):
     """Env var helper: warn+fallback (does NOT raise). Used for
-    COZEMPIC_CONTEXT_WINDOW — zero would cause divide-by-zero downstream."""
+    WINNOW_CONTEXT_WINDOW — zero would cause divide-by-zero downstream."""
 
     def test_returns_none_when_unset(self):
         with patch.dict(os.environ, {}, clear=False):
@@ -392,7 +392,7 @@ class TestParseEnvBool(unittest.TestCase):
     # ── whitespace-only input ────────────────────────────────────────────────
 
     def test_whitespace_only_returns_default_silently(self):
-        """COZEMPIC_DEBUG='   ' must return default WITHOUT a warning.
+        """WINNOW_DEBUG='   ' must return default WITHOUT a warning.
 
         The bug: raw == "" guard fires BEFORE strip(), so '   ' slips
         through as non-empty → normalized="" → not in token sets → spurious

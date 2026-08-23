@@ -228,12 +228,12 @@ class TestVersionedPruneCounter(unittest.TestCase):
         from winnow.legacy import helpers
         import os
         urls = []
-        with patch.dict(os.environ, {"COZEMPIC_NO_TELEMETRY": "1"}), \
+        with patch.dict(os.environ, {"WINNOW_NO_TELEMETRY": "1"}), \
              patch("winnow.legacy.helpers._HostFileLock"), \
              patch("winnow.legacy.helpers.atomic_write_text"), \
              patch("urllib.request.urlopen", side_effect=lambda *a, **k: urls.append(1)):
             helpers.record_savings(123_456, total_tokens=500_000, turn_count=10)
-        self.assertEqual(urls, [], "COZEMPIC_NO_TELEMETRY must suppress all pings")
+        self.assertEqual(urls, [], "WINNOW_NO_TELEMETRY must suppress all pings")
 
 
 if __name__ == "__main__":

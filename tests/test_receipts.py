@@ -45,7 +45,7 @@ class TestWriteReceipt(unittest.TestCase):
         # ensure opt-out env is not set from the ambient environment
         self._patch = patch.dict(os.environ, {}, clear=False)
         self._patch.start()
-        os.environ.pop("COZEMPIC_NO_RECEIPTS", None)
+        os.environ.pop("WINNOW_NO_RECEIPTS", None)
 
     def tearDown(self):
         self._patch.stop()
@@ -106,7 +106,7 @@ class TestWriteReceipt(unittest.TestCase):
 
     def test_optout_env_disables(self):
         with tempfile.TemporaryDirectory() as tmp:
-            with patch.dict(os.environ, {"COZEMPIC_NO_RECEIPTS": "1"}):
+            with patch.dict(os.environ, {"WINNOW_NO_RECEIPTS": "1"}):
                 self.assertFalse(receipts_enabled())
                 self.assertIsNone(_emit(tmp))
             self.assertFalse((receipts_dir(Path(tmp))).exists())

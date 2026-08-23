@@ -20,7 +20,7 @@ class Cozempic < Formula
       Every Claude Code session is protected automatically after the first
       cozempic command. To opt out:
 
-        export COZEMPIC_NO_GLOBAL_INIT=1
+        export WINNOW_NO_GLOBAL_INIT=1
     EOS
   end
 

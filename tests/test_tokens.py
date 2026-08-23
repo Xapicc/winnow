@@ -457,14 +457,14 @@ class TestCalibratedHeuristicPath(unittest.TestCase):
 
     def setUp(self):
         # These tests assert exact heuristic totals against the default ratio.
-        # Isolate from a COZEMPIC_CHARS_PER_TOKEN override that may be set in the
+        # Isolate from a WINNOW_CHARS_PER_TOKEN override that may be set in the
         # developer's shell (same env-leak class PR #95 fixed for the window).
-        self._saved_cpt = os.environ.pop("COZEMPIC_CHARS_PER_TOKEN", None)
+        self._saved_cpt = os.environ.pop("WINNOW_CHARS_PER_TOKEN", None)
         self.addCleanup(self._restore_cpt)
 
     def _restore_cpt(self):
         if self._saved_cpt is not None:
-            os.environ["COZEMPIC_CHARS_PER_TOKEN"] = self._saved_cpt
+            os.environ["WINNOW_CHARS_PER_TOKEN"] = self._saved_cpt
 
     def test_calibrated_ratio_used_when_usage_and_content_available(self):
         """When exact usage exists but we force heuristic path,
@@ -548,52 +548,52 @@ class TestEnvVarOverrideValidation(unittest.TestCase):
         return get_system_overhead_tokens()
 
     def test_zero_context_window_was_falsy_trap_now_rejected(self):
-        """COZEMPIC_CONTEXT_WINDOW=0 was silently swallowed by the old
+        """WINNOW_CONTEXT_WINDOW=0 was silently swallowed by the old
         `if val:` check. Now returns None (plus a warning) so the caller
         falls back to model-based detection."""
         import os
         from unittest.mock import patch
-        with patch.dict(os.environ, {"COZEMPIC_CONTEXT_WINDOW": "0"}):
+        with patch.dict(os.environ, {"WINNOW_CONTEXT_WINDOW": "0"}):
             self.assertIsNone(self._get_window())
 
     def test_negative_context_window_rejected(self):
         """Previously returned -100, producing context_pct=-110%."""
         import os
         from unittest.mock import patch
-        with patch.dict(os.environ, {"COZEMPIC_CONTEXT_WINDOW": "-100"}):
+        with patch.dict(os.environ, {"WINNOW_CONTEXT_WINDOW": "-100"}):
             self.assertIsNone(self._get_window())
 
     def test_valid_context_window_override(self):
         import os
         from unittest.mock import patch
-        with patch.dict(os.environ, {"COZEMPIC_CONTEXT_WINDOW": "200000"}):
+        with patch.dict(os.environ, {"WINNOW_CONTEXT_WINDOW": "200000"}):
             self.assertEqual(self._get_window(), 200000)
 
     def test_system_overhead_accepts_zero(self):
         """0 is valid here — a session with no rules/MCP has no overhead."""
         import os
         from unittest.mock import patch
-        with patch.dict(os.environ, {"COZEMPIC_SYSTEM_OVERHEAD_TOKENS": "0"}):
+        with patch.dict(os.environ, {"WINNOW_SYSTEM_OVERHEAD_TOKENS": "0"}):
             self.assertEqual(self._get_overhead(), 0)
 
     def test_system_overhead_rejects_negative(self):
         import os
         from unittest.mock import patch
-        with patch.dict(os.environ, {"COZEMPIC_SYSTEM_OVERHEAD_TOKENS": "-50"}):
+        with patch.dict(os.environ, {"WINNOW_SYSTEM_OVERHEAD_TOKENS": "-50"}):
             self.assertEqual(self._get_overhead(), SYSTEM_OVERHEAD_TOKENS)
 
 
 class TestCharsPerTokenOverride(unittest.TestCase):
-    """COZEMPIC_CHARS_PER_TOKEN override for the heuristic divisor."""
+    """WINNOW_CHARS_PER_TOKEN override for the heuristic divisor."""
 
     def setUp(self):
-        self._saved = os.environ.pop("COZEMPIC_CHARS_PER_TOKEN", None)
+        self._saved = os.environ.pop("WINNOW_CHARS_PER_TOKEN", None)
         self.addCleanup(self._restore)
 
     def _restore(self):
-        os.environ.pop("COZEMPIC_CHARS_PER_TOKEN", None)
+        os.environ.pop("WINNOW_CHARS_PER_TOKEN", None)
         if self._saved is not None:
-            os.environ["COZEMPIC_CHARS_PER_TOKEN"] = self._saved
+            os.environ["WINNOW_CHARS_PER_TOKEN"] = self._saved
 
     def test_default_when_unset(self):
         from winnow.legacy.tokens import get_chars_per_token
@@ -601,25 +601,25 @@ class TestCharsPerTokenOverride(unittest.TestCase):
 
     def test_valid_override_honored(self):
         from winnow.legacy.tokens import get_chars_per_token
-        os.environ["COZEMPIC_CHARS_PER_TOKEN"] = "2.5"
+        os.environ["WINNOW_CHARS_PER_TOKEN"] = "2.5"
         self.assertEqual(get_chars_per_token(), 2.5)
 
     def test_out_of_range_falls_back_to_default(self):
         from winnow.legacy.tokens import get_chars_per_token
         for bad in ("99", "0", "0.5", "-3"):
-            os.environ["COZEMPIC_CHARS_PER_TOKEN"] = bad
+            os.environ["WINNOW_CHARS_PER_TOKEN"] = bad
             self.assertEqual(get_chars_per_token(), CHARS_PER_TOKEN_DEFAULT, bad)
 
     def test_garbage_falls_back_to_default(self):
         from winnow.legacy.tokens import get_chars_per_token
-        os.environ["COZEMPIC_CHARS_PER_TOKEN"] = "abc"
+        os.environ["WINNOW_CHARS_PER_TOKEN"] = "abc"
         self.assertEqual(get_chars_per_token(), CHARS_PER_TOKEN_DEFAULT)
 
     def test_override_changes_heuristic_total(self):
         msgs = [make_user(0, "a" * 1000), make_assistant_no_usage(1, "")]
-        os.environ["COZEMPIC_CHARS_PER_TOKEN"] = "2.0"
+        os.environ["WINNOW_CHARS_PER_TOKEN"] = "2.0"
         total_dense, _ = estimate_tokens_heuristic(msgs)
-        os.environ["COZEMPIC_CHARS_PER_TOKEN"] = "4.0"
+        os.environ["WINNOW_CHARS_PER_TOKEN"] = "4.0"
         total_sparse, _ = estimate_tokens_heuristic(msgs)
         # Smaller divisor → more tokens per char.
         self.assertGreater(total_dense, total_sparse)

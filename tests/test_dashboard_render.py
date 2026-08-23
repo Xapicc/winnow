@@ -132,7 +132,7 @@ class TestWriteDashboard(unittest.TestCase):
 
     def test_render_dashboard_from_receipts(self):
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ.pop("COZEMPIC_NO_RECEIPTS", None)
+            os.environ.pop("WINNOW_NO_RECEIPTS", None)
             base = Path(tmp)
             s = StrategyResult("tool-output-trim", [], 1000, 200, 1, 0, 1, "")
             res = PrescriptionResult("standard", [s], 5000, 4000, 10, 9, 2000, 1500,

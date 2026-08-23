@@ -56,7 +56,7 @@ def _run_guard(token_estimate: int, env: dict, context_window: int = 200_000):
     e = {kk: vv for kk, vv in os.environ.items() if not kk.startswith("COZEMPIC")}
     # Disable the warned-before-reload grace wait so these tests exercise the
     # idle-reload wiring directly (the warned-gate has its own dedicated tests).
-    e.setdefault("COZEMPIC_RELOAD_WARN_GRACE", "0")
+    e.setdefault("WINNOW_RELOAD_WARN_GRACE", "0")
     e.update(env)
 
     with contextlib.ExitStack() as s:
@@ -103,23 +103,23 @@ class TestInteractiveLoopWiring(unittest.TestCase):
         # cycle1 not-idle (prev=-1) → defer; cycle2 idle but idle_cycles=1<2 →
         # still defer (one stable cycle could be a mid-turn stall); cycle3
         # idle_cycles=2 → sustained idle → reload.
-        calls = _run_guard(self.OVER_HARD2, {"COZEMPIC_INTERACTIVE": "on"})
+        calls = _run_guard(self.OVER_HARD2, {"WINNOW_INTERACTIVE": "on"})
         self.assertEqual(calls, [False, False, True],
                          "interactive reloads only after SUSTAINED idle (2 cycles)")
 
     def test_headless_reloads_immediately(self):
-        calls = _run_guard(self.OVER_HARD2, {"COZEMPIC_INTERACTIVE": "off"})
+        calls = _run_guard(self.OVER_HARD2, {"WINNOW_INTERACTIVE": "off"})
         self.assertEqual(calls, [True, True, True],
                          "headless: reload every cycle (today's behavior, unchanged)")
 
     def test_force_line_reloads_even_mid_turn(self):
-        calls = _run_guard(self.OVER_FORCE, {"COZEMPIC_INTERACTIVE": "on"})
+        calls = _run_guard(self.OVER_FORCE, {"WINNOW_INTERACTIVE": "on"})
         self.assertEqual(calls, [True, True, True],
                          "past ~88%: reload even mid-turn (beats the autocompact wall)")
 
     def test_force_disabled_keeps_deferring_until_sustained_idle(self):
-        calls = _run_guard(self.OVER_FORCE, {"COZEMPIC_INTERACTIVE": "on",
-                                             "COZEMPIC_FORCE_RELOAD_PCT": "0"})
+        calls = _run_guard(self.OVER_FORCE, {"WINNOW_INTERACTIVE": "on",
+                                             "WINNOW_FORCE_RELOAD_PCT": "0"})
         self.assertEqual(calls, [False, False, True],
                          "force disabled: defer mid-turn, reload only at sustained idle")
 
@@ -127,8 +127,8 @@ class TestInteractiveLoopWiring(unittest.TestCase):
         # grace high + never warned (no nudge fires in this harness) → even at
         # sustained idle the reload is HELD (armed, waiting for the warning), so
         # the user is never reloaded without first being warned.
-        calls = _run_guard(self.OVER_HARD2, {"COZEMPIC_INTERACTIVE": "on",
-                                             "COZEMPIC_RELOAD_WARN_GRACE": "9999"})
+        calls = _run_guard(self.OVER_HARD2, {"WINNOW_INTERACTIVE": "on",
+                                             "WINNOW_RELOAD_WARN_GRACE": "9999"})
         self.assertEqual(calls, [False, False, False],
                          "interactive idle reload must wait for the warning")
 

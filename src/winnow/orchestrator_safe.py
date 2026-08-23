@@ -84,57 +84,58 @@ def is_enabled(env: dict[str, str] | None = None) -> bool:
 
 # ── The environment the mode runs the vendored tree under ────────────────────
 
-# The version in pyproject.toml, which is the version of the tree in src/. The
-# pin names it so that a self-update cannot move the measured artefact even if
-# the no-update switch is somehow missed (USAGEFOUNDRY §1.8).
-VENDORED_COZEMPIC_VERSION = "1.8.39"
+# The version this tree was inherited at. Provenance first — it is what
+# `derived_from` in the generated plugin manifest records — and the pin second:
+# WINNOW_PIN names it so that a self-update cannot move the measured artefact
+# even if the no-update switch is somehow missed (USAGEFOUNDRY §1.8).
+UPSTREAM_VERSION = "1.8.39"
 
 _SAFE_ENV_SPEC: tuple[tuple[str, str, str], ...] = (
     (
-        "COZEMPIC_NO_GLOBAL_INIT",
+        "WINNOW_NO_GLOBAL_INIT",
         "1",
         "cli.py:2076 — without it a single invocation writes hooks into the "
         "bind-mounted ~/.claude/settings.json, and headless skips the "
         "confirmation that would have stopped it. USAGEFOUNDRY §1.7",
     ),
     (
-        "COZEMPIC_NO_AUTO_INIT",
+        "WINNOW_NO_AUTO_INIT",
         "1",
         "cli.py:2269 — keeps a settings.json out of the agent's worktree. "
         "USAGEFOUNDRY §4",
     ),
     (
-        "COZEMPIC_NO_AUTO_UPDATE",
+        "WINNOW_NO_AUTO_UPDATE",
         "1",
         "updater.py:239 — a session that mutates its own runtime cannot have "
         "its result attributed to a version. USAGEFOUNDRY §1.8",
     ),
     (
-        "COZEMPIC_PIN",
-        VENDORED_COZEMPIC_VERSION,
+        "WINNOW_PIN",
+        UPSTREAM_VERSION,
         "updater.py:217 — names the vendored tree, so the second update path "
         "(the SessionStart hook's own guard) is closed too. USAGEFOUNDRY §1.8",
     ),
     (
-        "COZEMPIC_NO_TELEMETRY",
+        "WINNOW_NO_TELEMETRY",
         "1",
         "helpers.py:236 — three outbound requests per prune to a third "
         "party's worker. SPEC §10 says no network. USAGEFOUNDRY §4",
     ),
     (
-        "COZEMPIC_NO_RECEIPTS",
+        "WINNOW_NO_RECEIPTS",
         "1",
         "receipts.py:34 — container-local, so hygiene rather than a "
         "collision. USAGEFOUNDRY §4",
     ),
     (
-        "COZEMPIC_NUDGE_OFF",
+        "WINNOW_NUDGE_OFF",
         "1",
         "cli.py:1429 — the Stop-hook nudge writes "
         "~/.claude/cozempic-metrics/nudge-state.json. USAGEFOUNDRY §1.7",
     ),
     (
-        "COZEMPIC_INTERACTIVE",
+        "WINNOW_INTERACTIVE",
         "on",
         "guard.py:1410 — narrows, and does not close, the kill path of a "
         "daemon started by something other than this mode: an interactive "
@@ -143,7 +144,7 @@ _SAFE_ENV_SPEC: tuple[tuple[str, str, str], ...] = (
         "forced. USAGEFOUNDRY §1.1",
     ),
     (
-        "COZEMPIC_FORCE_RELOAD_PCT",
+        "WINNOW_FORCE_RELOAD_PCT",
         "0",
         "guard.py:1479 — 0 disables the mid-turn force line that overrides "
         "the deferral above. Same narrowing, same caveat: the closure is that "
@@ -1011,7 +1012,7 @@ def redirect_home_writes(target_dir: Path) -> dict[str, Path]:
 
     `winnow.legacy.cli.main` calls `ping_install_if_new()` before it parses argv
     (cli.py:2398), and that writes ~/.cozempic_installed with no env switch in
-    front of it — `COZEMPIC_NO_TELEMETRY` stops the network ping, one line
+    front of it — `WINNOW_NO_TELEMETRY` stops the network ping, one line
     later, not the write (updater.py:186). So the refusal table cannot cover
     this and the environment overlay cannot either: the only lever left is the
     path itself.

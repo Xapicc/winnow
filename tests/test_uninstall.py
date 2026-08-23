@@ -15,7 +15,7 @@ from winnow.legacy import init as cz_init
 # A realistic cozempic hook command (carries the schema marker + canonical wrapper
 # shape that _is_cozempic_command recognizes — a bare "cozempic ..." is NOT matched
 # by design, so user inline calls are never eaten).
-COZ_CMD = ("export COZEMPIC_NO_AUTO_INIT=1; { cozempic checkpoint 2>/dev/null || "
+COZ_CMD = ("export WINNOW_NO_AUTO_INIT=1; { cozempic checkpoint 2>/dev/null || "
            "python3 -m cozempic checkpoint; }  # cozempic-hook-schema=2")
 
 

@@ -321,7 +321,7 @@ class TestNoPlaceholderPidVisible(unittest.TestCase):
 
 
 class TestFreshWindowEnvVarClamping(unittest.TestCase):
-    """DA round 3 N2 regression test: the ``COZEMPIC_PIDFILE_FRESH_SECONDS``
+    """DA round 3 N2 regression test: the ``WINNOW_PIDFILE_FRESH_SECONDS``
     env var must be clamped to ``(0, _FRESH_MAX]``. Operator typos like
     ``inf``, ``1e10``, ``-1``, ``0``, ``NaN``, or non-numeric junk must
     fall back to the default rather than silently disabling staleness
@@ -329,7 +329,7 @@ class TestFreshWindowEnvVarClamping(unittest.TestCase):
     forever; a 0/negative window would never classify anything fresh).
     """
 
-    ENV_VAR = "COZEMPIC_PIDFILE_FRESH_SECONDS"
+    ENV_VAR = "WINNOW_PIDFILE_FRESH_SECONDS"
 
     def _reload_with_env(self, value):
         """Set or unset the env var, reload spawn_lock, and return the
@@ -383,7 +383,7 @@ class TestFreshWindowEnvVarClamping(unittest.TestCase):
     def test_env_var_clamps_above_max(self):
         """Values > _FRESH_MAX (300s) must clamp to default. Reason:
         legitimate slow-Popen scenarios live well under 5 minutes; values
-        higher are almost certainly typos (e.g. ``COZEMPIC_PIDFILE_FRESH_SECONDS=300000``
+        higher are almost certainly typos (e.g. ``WINNOW_PIDFILE_FRESH_SECONDS=300000``
         meaning "1e10 ns" or similar) that would let stale pidfiles from
         crashed prior spawns block new ones for hours."""
         from winnow.legacy.spawn_lock import _DEFAULT_FRESH, _FRESH_MAX

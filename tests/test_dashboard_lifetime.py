@@ -115,7 +115,7 @@ class TestRecordSavingsSessions(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             sav = Path(tmp) / "sav.json"
             with patch.object(helpers, "_SAVINGS_FILE", sav), \
-                 patch.dict(os.environ, {"COZEMPIC_NO_TELEMETRY": "1"}):
+                 patch.dict(os.environ, {"WINNOW_NO_TELEMETRY": "1"}):
                 helpers.record_savings(100, total_tokens=1000, turn_count=10, session_id="A")
                 helpers.record_savings(100, total_tokens=1000, turn_count=10, session_id="A")  # repeat
                 helpers.record_savings(100, total_tokens=1000, turn_count=10, session_id="B")

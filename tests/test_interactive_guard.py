@@ -19,24 +19,24 @@ from unittest.mock import patch, MagicMock
 class TestDetectInteractive(unittest.TestCase):
     def test_env_on_forces_true(self):
         from winnow.legacy.guard import _detect_interactive
-        with patch.dict("os.environ", {"COZEMPIC_INTERACTIVE": "on"}):
+        with patch.dict("os.environ", {"WINNOW_INTERACTIVE": "on"}):
             self.assertTrue(_detect_interactive(None))
             self.assertTrue(_detect_interactive(12345))
 
     def test_env_off_forces_false(self):
         from winnow.legacy.guard import _detect_interactive
-        with patch.dict("os.environ", {"COZEMPIC_INTERACTIVE": "off"}):
+        with patch.dict("os.environ", {"WINNOW_INTERACTIVE": "off"}):
             self.assertFalse(_detect_interactive(None))
             self.assertFalse(_detect_interactive(12345))
 
     def test_auto_no_pid_defaults_interactive(self):
         from winnow.legacy.guard import _detect_interactive
-        with patch.dict("os.environ", {"COZEMPIC_INTERACTIVE": "auto"}):
+        with patch.dict("os.environ", {"WINNOW_INTERACTIVE": "auto"}):
             self.assertTrue(_detect_interactive(None))
 
     def test_auto_with_tty_is_interactive(self):
         from winnow.legacy import guard
-        with patch.dict("os.environ", {"COZEMPIC_INTERACTIVE": "auto"}), \
+        with patch.dict("os.environ", {"WINNOW_INTERACTIVE": "auto"}), \
              patch("winnow.legacy.guard.subprocess.run",
                    return_value=MagicMock(stdout="ttys001\n")):
             self.assertTrue(guard._detect_interactive(4242))
@@ -44,14 +44,14 @@ class TestDetectInteractive(unittest.TestCase):
     def test_auto_no_tty_is_headless(self):
         from winnow.legacy import guard
         for ttyval in ("??", "?", "-", ""):
-            with patch.dict("os.environ", {"COZEMPIC_INTERACTIVE": "auto"}), \
+            with patch.dict("os.environ", {"WINNOW_INTERACTIVE": "auto"}), \
                  patch("winnow.legacy.guard.subprocess.run",
                        return_value=MagicMock(stdout=ttyval + "\n")):
                 self.assertFalse(guard._detect_interactive(4242), ttyval)
 
     def test_auto_ps_failure_defaults_interactive(self):
         from winnow.legacy import guard
-        with patch.dict("os.environ", {"COZEMPIC_INTERACTIVE": "auto"}), \
+        with patch.dict("os.environ", {"WINNOW_INTERACTIVE": "auto"}), \
              patch("winnow.legacy.guard.subprocess.run", side_effect=OSError):
             self.assertTrue(guard._detect_interactive(4242))
 
@@ -61,22 +61,22 @@ class TestIdleBackoffCycles(unittest.TestCase):
         from winnow.legacy.guard import _idle_backoff_cycles
         with patch.dict("os.environ", {}, clear=False) as _:
             import os
-            os.environ.pop("COZEMPIC_IDLE_BACKOFF_CYCLES", None)
+            os.environ.pop("WINNOW_IDLE_BACKOFF_CYCLES", None)
             self.assertEqual(_idle_backoff_cycles(), 4)
 
     def test_env_override(self):
         from winnow.legacy.guard import _idle_backoff_cycles
-        with patch.dict("os.environ", {"COZEMPIC_IDLE_BACKOFF_CYCLES": "10"}):
+        with patch.dict("os.environ", {"WINNOW_IDLE_BACKOFF_CYCLES": "10"}):
             self.assertEqual(_idle_backoff_cycles(), 10)
 
     def test_zero_disables(self):
         from winnow.legacy.guard import _idle_backoff_cycles
-        with patch.dict("os.environ", {"COZEMPIC_IDLE_BACKOFF_CYCLES": "0"}):
+        with patch.dict("os.environ", {"WINNOW_IDLE_BACKOFF_CYCLES": "0"}):
             self.assertEqual(_idle_backoff_cycles(), 0)
 
     def test_garbage_falls_back(self):
         from winnow.legacy.guard import _idle_backoff_cycles
-        with patch.dict("os.environ", {"COZEMPIC_IDLE_BACKOFF_CYCLES": "nope"}):
+        with patch.dict("os.environ", {"WINNOW_IDLE_BACKOFF_CYCLES": "nope"}):
             self.assertEqual(_idle_backoff_cycles(), 4)
 
 
@@ -85,23 +85,23 @@ class TestForceReloadPct(unittest.TestCase):
         from winnow.legacy.guard import _force_reload_pct
         import os
         with patch.dict("os.environ", {}, clear=False):
-            os.environ.pop("COZEMPIC_FORCE_RELOAD_PCT", None)
+            os.environ.pop("WINNOW_FORCE_RELOAD_PCT", None)
             self.assertAlmostEqual(_force_reload_pct(), 0.88)
 
     def test_env_override(self):
         from winnow.legacy.guard import _force_reload_pct
-        with patch.dict("os.environ", {"COZEMPIC_FORCE_RELOAD_PCT": "0.95"}):
+        with patch.dict("os.environ", {"WINNOW_FORCE_RELOAD_PCT": "0.95"}):
             self.assertAlmostEqual(_force_reload_pct(), 0.95)
 
     def test_out_of_range_disables(self):
         from winnow.legacy.guard import _force_reload_pct
         for bad in ("0", "-1", "1.5", "2"):
-            with patch.dict("os.environ", {"COZEMPIC_FORCE_RELOAD_PCT": bad}):
+            with patch.dict("os.environ", {"WINNOW_FORCE_RELOAD_PCT": bad}):
                 self.assertEqual(_force_reload_pct(), 0.0, bad)
 
     def test_garbage_falls_back(self):
         from winnow.legacy.guard import _force_reload_pct
-        with patch.dict("os.environ", {"COZEMPIC_FORCE_RELOAD_PCT": "x"}):
+        with patch.dict("os.environ", {"WINNOW_FORCE_RELOAD_PCT": "x"}):
             self.assertAlmostEqual(_force_reload_pct(), 0.88)
 
 

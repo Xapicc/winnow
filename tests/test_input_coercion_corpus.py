@@ -1,6 +1,6 @@
 """Standing safeguard (1.8.23): a table-driven ADVERSARIAL CORPUS thrown at every
 numeric input-validator, so the NaN/inf/huge-int "gate-disable" class (PR #116 +
-the COZEMPIC_RELOAD_WARN_GRACE follow-up) cannot regress.
+the WINNOW_RELOAD_WARN_GRACE follow-up) cannot regress.
 
 Why this exists: IEEE-754 makes every comparison with NaN False, and `inf <= 0` is
 False, so a NaN/inf that slips past a `value <= 0` check silently DISABLES the
@@ -11,7 +11,7 @@ them. This corpus catches the whole class with an OUTPUT-shaped invariant:
     For every adversarial input, a validator must EITHER reject it (raise / clean
     argparse error) OR return a finite, in-range, correctly-typed value.
 
-Adding a new COZEMPIC_* numeric knob? Add one row to _ENV_VALIDATORS and the corpus
+Adding a new WINNOW_* numeric knob? Add one row to _ENV_VALIDATORS and the corpus
 is applied automatically. Zero dependencies (cozempic is stdlib-only — no hypothesis).
 
 Extended in PR-2 (input-validation hardening) to cover:
@@ -74,7 +74,7 @@ def _env(name, value):
             os.environ[name] = old
 
 
-_TOKEN_ENV_KEYS = ("COZEMPIC_CONTEXT_WINDOW", "COZEMPIC_SYSTEM_OVERHEAD_TOKENS")
+_TOKEN_ENV_KEYS = ("WINNOW_CONTEXT_WINDOW", "WINNOW_SYSTEM_OVERHEAD_TOKENS")
 
 
 def _token_env_clean() -> dict:
@@ -102,16 +102,16 @@ def _assert_finite_inrange(tc, r):
 # (validator, ENV var) — these return a default on bad input (never raise), so the
 # RETURN value must always be sane.
 _ENV_VALIDATORS = [
-    (g._reload_warn_grace,        "COZEMPIC_RELOAD_WARN_GRACE"),
-    (g._force_reload_pct,         "COZEMPIC_FORCE_RELOAD_PCT"),
-    (g._idle_reload_cycles,       "COZEMPIC_IDLE_RELOAD_CYCLES"),
-    (g._idle_backoff_cycles,      "COZEMPIC_IDLE_BACKOFF_CYCLES"),
-    (g._read_min_prune_ratio,     "COZEMPIC_MIN_PRUNE_RATIO"),
-    (g._read_hard_exit_threshold, "COZEMPIC_GUARD_HARD_EXIT_K"),
-    (t.get_chars_per_token,       "COZEMPIC_CHARS_PER_TOKEN"),
+    (g._reload_warn_grace,        "WINNOW_RELOAD_WARN_GRACE"),
+    (g._force_reload_pct,         "WINNOW_FORCE_RELOAD_PCT"),
+    (g._idle_reload_cycles,       "WINNOW_IDLE_RELOAD_CYCLES"),
+    (g._idle_backoff_cycles,      "WINNOW_IDLE_BACKOFF_CYCLES"),
+    (g._read_min_prune_ratio,     "WINNOW_MIN_PRUNE_RATIO"),
+    (g._read_hard_exit_threshold, "WINNOW_GUARD_HARD_EXIT_K"),
+    (t.get_chars_per_token,       "WINNOW_CHARS_PER_TOKEN"),
     # ── PR #137 additions — maintenance contract: one row per new knob ────────
-    (g._reload_ledger_window_s,   "COZEMPIC_RELOAD_WINDOW_S"),
-    (g._reload_ledger_max,        "COZEMPIC_RELOAD_MAX"),
+    (g._reload_ledger_window_s,   "WINNOW_RELOAD_WINDOW_S"),
+    (g._reload_ledger_max,        "WINNOW_RELOAD_MAX"),
 ]
 
 
@@ -155,26 +155,26 @@ class TestParseEnvPositiveIntMaximum(unittest.TestCase):
 
     def test_huge_int_rejected_with_maximum(self):
         """10**400 > maximum=4_000_000 → must return None (not the huge int)."""
-        with mock.patch.dict(os.environ, {"COZEMPIC_TEST_CW": str(_HUGE_INT)}):
-            result = parse_env_positive_int("COZEMPIC_TEST_CW", maximum=t.MAX_CONTEXT_WINDOW)
+        with mock.patch.dict(os.environ, {"WINNOW_TEST_CW": str(_HUGE_INT)}):
+            result = parse_env_positive_int("WINNOW_TEST_CW", maximum=t.MAX_CONTEXT_WINDOW)
         self.assertIsNone(result, f"huge int leaked through: {result!r}")
 
     def test_above_maximum_rejected(self):
         """5_000_000 > 4_000_000 → None."""
-        with mock.patch.dict(os.environ, {"COZEMPIC_TEST_CW": "5000000"}):
-            result = parse_env_positive_int("COZEMPIC_TEST_CW", maximum=t.MAX_CONTEXT_WINDOW)
+        with mock.patch.dict(os.environ, {"WINNOW_TEST_CW": "5000000"}):
+            result = parse_env_positive_int("WINNOW_TEST_CW", maximum=t.MAX_CONTEXT_WINDOW)
         self.assertIsNone(result, f"above-max value leaked through: {result!r}")
 
     def test_below_maximum_accepted(self):
         """200_000 <= 4_000_000 → 200_000 (valid override)."""
-        with mock.patch.dict(os.environ, {"COZEMPIC_TEST_CW": "200000"}):
-            result = parse_env_positive_int("COZEMPIC_TEST_CW", maximum=t.MAX_CONTEXT_WINDOW)
+        with mock.patch.dict(os.environ, {"WINNOW_TEST_CW": "200000"}):
+            result = parse_env_positive_int("WINNOW_TEST_CW", maximum=t.MAX_CONTEXT_WINDOW)
         self.assertEqual(result, 200_000)
 
     def test_no_maximum_still_works(self):
         """Without maximum= kwarg the old behavior (no upper bound) is unchanged."""
-        with mock.patch.dict(os.environ, {"COZEMPIC_TEST_CW": "200000"}):
-            result = parse_env_positive_int("COZEMPIC_TEST_CW")
+        with mock.patch.dict(os.environ, {"WINNOW_TEST_CW": "200000"}):
+            result = parse_env_positive_int("WINNOW_TEST_CW")
         self.assertEqual(result, 200_000)
 
 
@@ -182,17 +182,17 @@ class TestParseEnvNonNegativeIntMaximum(unittest.TestCase):
     """P-A: parse_env_non_negative_int must reject values above the maximum kwarg."""
 
     def test_huge_int_rejected_with_maximum(self):
-        with mock.patch.dict(os.environ, {"COZEMPIC_TEST_SOH": str(_HUGE_INT)}):
+        with mock.patch.dict(os.environ, {"WINNOW_TEST_SOH": str(_HUGE_INT)}):
             result = parse_env_non_negative_int(
-                "COZEMPIC_TEST_SOH", maximum=_DEFAULT_CONTEXT_WINDOW
+                "WINNOW_TEST_SOH", maximum=_DEFAULT_CONTEXT_WINDOW
             )
         self.assertIsNone(result, f"huge int leaked through: {result!r}")
 
     def test_zero_still_valid(self):
         """0 is a legitimate 'no overhead' value and must not be rejected."""
-        with mock.patch.dict(os.environ, {"COZEMPIC_TEST_SOH": "0"}):
+        with mock.patch.dict(os.environ, {"WINNOW_TEST_SOH": "0"}):
             result = parse_env_non_negative_int(
-                "COZEMPIC_TEST_SOH", maximum=_DEFAULT_CONTEXT_WINDOW
+                "WINNOW_TEST_SOH", maximum=_DEFAULT_CONTEXT_WINDOW
             )
         self.assertEqual(result, 0)
 
@@ -206,27 +206,27 @@ class TestTokensUpperBound(unittest.TestCase):
 
     def test_context_window_huge_int_returns_none(self):
         with mock.patch.dict(os.environ,
-                             {"COZEMPIC_CONTEXT_WINDOW": str(_HUGE_INT)}, clear=False):
+                             {"WINNOW_CONTEXT_WINDOW": str(_HUGE_INT)}, clear=False):
             result = t.get_context_window_override()
         self.assertIsNone(result, f"huge int leaked from get_context_window_override: {result!r}")
 
     def test_context_window_5m_returns_none(self):
         """5_000_000 > MAX_CONTEXT_WINDOW (4_000_000) → None."""
         with mock.patch.dict(os.environ,
-                             {"COZEMPIC_CONTEXT_WINDOW": "5000000"}, clear=False):
+                             {"WINNOW_CONTEXT_WINDOW": "5000000"}, clear=False):
             result = t.get_context_window_override()
         self.assertIsNone(result, f"above-max value leaked: {result!r}")
 
     def test_context_window_200k_accepted(self):
         with mock.patch.dict(os.environ,
-                             {"COZEMPIC_CONTEXT_WINDOW": "200000"}, clear=False):
+                             {"WINNOW_CONTEXT_WINDOW": "200000"}, clear=False):
             result = t.get_context_window_override()
         self.assertEqual(result, 200_000)
 
     def test_system_overhead_huge_int_falls_back_to_default(self):
-        """Huge COZEMPIC_SYSTEM_OVERHEAD_TOKENS → falls back to SYSTEM_OVERHEAD_TOKENS (21000)."""
+        """Huge WINNOW_SYSTEM_OVERHEAD_TOKENS → falls back to SYSTEM_OVERHEAD_TOKENS (21000)."""
         with mock.patch.dict(os.environ,
-                             {"COZEMPIC_SYSTEM_OVERHEAD_TOKENS": str(_HUGE_INT)}, clear=False):
+                             {"WINNOW_SYSTEM_OVERHEAD_TOKENS": str(_HUGE_INT)}, clear=False):
             result = t.get_system_overhead_tokens()
         self.assertEqual(result, _SYSTEM_OVERHEAD_DEFAULT,
                          f"huge int leaked from get_system_overhead_tokens: {result!r}")
@@ -234,7 +234,7 @@ class TestTokensUpperBound(unittest.TestCase):
     def test_system_overhead_zero_accepted(self):
         """0 is a legitimate 'no overhead' value → must return 0, not the default."""
         with mock.patch.dict(os.environ,
-                             {"COZEMPIC_SYSTEM_OVERHEAD_TOKENS": "0"}, clear=False):
+                             {"WINNOW_SYSTEM_OVERHEAD_TOKENS": "0"}, clear=False):
             result = t.get_system_overhead_tokens()
         self.assertEqual(result, 0,
                          "0 system-overhead was silently dropped (truthiness / upper-bound bug)")
@@ -288,9 +288,9 @@ class TestApplyTokenEnvOverrides(unittest.TestCase):
         args = types.SimpleNamespace(system_overhead_tokens=0, context_window=None)
         with mock.patch.dict(os.environ, _token_env_clean(), clear=True):
             cli._apply_token_env_overrides(args)
-            self.assertEqual(os.environ.get("COZEMPIC_SYSTEM_OVERHEAD_TOKENS"), "0",
+            self.assertEqual(os.environ.get("WINNOW_SYSTEM_OVERHEAD_TOKENS"), "0",
                              "system_overhead_tokens=0 was silently dropped (truthiness bug)")
-            self.assertNotIn("COZEMPIC_CONTEXT_WINDOW", os.environ)
+            self.assertNotIn("WINNOW_CONTEXT_WINDOW", os.environ)
 
     def test_zero_context_window_sets_env(self):
         """context_window=0: also set (downstream parse_env_positive_int will reject it,
@@ -298,24 +298,24 @@ class TestApplyTokenEnvOverrides(unittest.TestCase):
         args = types.SimpleNamespace(system_overhead_tokens=None, context_window=0)
         with mock.patch.dict(os.environ, _token_env_clean(), clear=True):
             cli._apply_token_env_overrides(args)
-            self.assertEqual(os.environ.get("COZEMPIC_CONTEXT_WINDOW"), "0")
-            self.assertNotIn("COZEMPIC_SYSTEM_OVERHEAD_TOKENS", os.environ)
+            self.assertEqual(os.environ.get("WINNOW_CONTEXT_WINDOW"), "0")
+            self.assertNotIn("WINNOW_SYSTEM_OVERHEAD_TOKENS", os.environ)
 
     def test_both_none_sets_neither(self):
         """When both attrs are None, neither env var is touched."""
         args = types.SimpleNamespace(system_overhead_tokens=None, context_window=None)
         with mock.patch.dict(os.environ, _token_env_clean(), clear=True):
             cli._apply_token_env_overrides(args)
-            self.assertNotIn("COZEMPIC_CONTEXT_WINDOW", os.environ)
-            self.assertNotIn("COZEMPIC_SYSTEM_OVERHEAD_TOKENS", os.environ)
+            self.assertNotIn("WINNOW_CONTEXT_WINDOW", os.environ)
+            self.assertNotIn("WINNOW_SYSTEM_OVERHEAD_TOKENS", os.environ)
 
     def test_positive_values_set_env(self):
         """Normal positive values are set as expected."""
         args = types.SimpleNamespace(system_overhead_tokens=30000, context_window=200000)
         with mock.patch.dict(os.environ, _token_env_clean(), clear=True):
             cli._apply_token_env_overrides(args)
-            self.assertEqual(os.environ["COZEMPIC_CONTEXT_WINDOW"], "200000")
-            self.assertEqual(os.environ["COZEMPIC_SYSTEM_OVERHEAD_TOKENS"], "30000")
+            self.assertEqual(os.environ["WINNOW_CONTEXT_WINDOW"], "200000")
+            self.assertEqual(os.environ["WINNOW_SYSTEM_OVERHEAD_TOKENS"], "30000")
 
 
 # ── H-1: _prescan_argv must allow --system-overhead-tokens 0 through to the env ──
@@ -335,7 +335,7 @@ class TestPrescanArgvZeroOverhead(unittest.TestCase):
         with mock.patch.dict(os.environ, _token_env_clean(), clear=True):
             cleaned = cli._prescan_argv(["guard", "--system-overhead-tokens", "0"])
             self.assertEqual(
-                os.environ.get("COZEMPIC_SYSTEM_OVERHEAD_TOKENS"), "0",
+                os.environ.get("WINNOW_SYSTEM_OVERHEAD_TOKENS"), "0",
                 "--system-overhead-tokens 0 was silently dropped by _prescan_argv "
                 "(gate was `<= 0`; must be `< 0` so 0 is passed through)"
             )
@@ -348,7 +348,7 @@ class TestPrescanArgvZeroOverhead(unittest.TestCase):
         with mock.patch.dict(os.environ, _token_env_clean(), clear=True):
             cli._prescan_argv(["guard", "--system-overhead-tokens=0"])
             self.assertEqual(
-                os.environ.get("COZEMPIC_SYSTEM_OVERHEAD_TOKENS"), "0",
+                os.environ.get("WINNOW_SYSTEM_OVERHEAD_TOKENS"), "0",
                 "--system-overhead-tokens=0 (= form) was silently dropped by _prescan_argv"
             )
 
@@ -357,7 +357,7 @@ class TestPrescanArgvZeroOverhead(unittest.TestCase):
         with mock.patch.dict(os.environ, _token_env_clean(), clear=True):
             cli._prescan_argv(["guard", "--system-overhead-tokens", "-1"])
             self.assertIsNone(
-                os.environ.get("COZEMPIC_SYSTEM_OVERHEAD_TOKENS"),
+                os.environ.get("WINNOW_SYSTEM_OVERHEAD_TOKENS"),
                 "negative --system-overhead-tokens must still be rejected by prescan"
             )
 
@@ -366,7 +366,7 @@ class TestPrescanArgvZeroOverhead(unittest.TestCase):
         with mock.patch.dict(os.environ, _token_env_clean(), clear=True):
             cli._prescan_argv(["guard", "--context-window", "0"])
             self.assertIsNone(
-                os.environ.get("COZEMPIC_CONTEXT_WINDOW"),
+                os.environ.get("WINNOW_CONTEXT_WINDOW"),
                 "--context-window 0 must be rejected (0 is not a valid context window)"
             )
 

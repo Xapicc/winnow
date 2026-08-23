@@ -31,7 +31,7 @@ from .metrics import (
 
 RECEIPTS_DIRNAME = "receipts"
 INDEX_FILENAME = "index.jsonl"
-_OPT_OUT_ENV = "COZEMPIC_NO_RECEIPTS"
+_OPT_OUT_ENV = "WINNOW_NO_RECEIPTS"
 
 # Pre-compiled: called on every write_receipt path; compiling per-call is wasted work.
 _CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]")
@@ -44,9 +44,9 @@ def receipts_dir(base_dir: Path | None = None) -> Path:
 
 
 def receipts_enabled() -> bool:
-    """False if the user opted out via ``COZEMPIC_NO_RECEIPTS``.
+    """False if the user opted out via ``WINNOW_NO_RECEIPTS``.
 
-    Receipts are ON by default (``COZEMPIC_NO_RECEIPTS`` unset or empty).
+    Receipts are ON by default (``WINNOW_NO_RECEIPTS`` unset or empty).
 
     Truth table (case-insensitive, whitespace stripped):
       * unset / empty / whitespace-only  → True  (receipts ON — treated as absent)
@@ -58,7 +58,7 @@ def receipts_enabled() -> bool:
     Deliberate divergence from ``not parse_env_bool(...)`` (which would ENABLE
     receipts for unrecognized values via its default=False fallback): for a
     PRIVACY opt-out knob the fail-safe direction must be "disabled", not
-    "enabled".  A user who sets ``COZEMPIC_NO_RECEIPTS=disabled`` intends to
+    "enabled".  A user who sets ``WINNOW_NO_RECEIPTS=disabled`` intends to
     opt out; silently re-enabling receipts would be a privacy regression.
     """
     raw = os.environ.get(_OPT_OUT_ENV)

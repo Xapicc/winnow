@@ -75,19 +75,19 @@ GUARD_CYCLE_ERROR_DEFER_MAX = 20
 # well past any normal subagent batch but short enough that a stuck
 # session doesn't outlive an operator's workday.
 #
-# Override via env var COZEMPIC_GUARD_HARD_EXIT_K (sister-module
+# Override via env var WINNOW_GUARD_HARD_EXIT_K (sister-module
 # precedent: spawn_lock._read_fresh_window_seconds clamps + falls back
 # on garbage). Read EXACTLY ONCE at module import time — requires a
 # daemon restart to take effect (same convention as
-# COZEMPIC_PIDFILE_FRESH_SECONDS).
+# WINNOW_PIDFILE_FRESH_SECONDS).
 def _read_hard_exit_threshold() -> int:
-    """Read COZEMPIC_GUARD_HARD_EXIT_K env var. Clamps to (10, 1000].
+    """Read WINNOW_GUARD_HARD_EXIT_K env var. Clamps to (10, 1000].
 
     Read at module import time only — restart the daemon to apply
     a new value. Invalid values (non-numeric, <=K=10, > 1000) fall
     back to the default 50.
     """
-    raw = os.environ.get("COZEMPIC_GUARD_HARD_EXIT_K")
+    raw = os.environ.get("WINNOW_GUARD_HARD_EXIT_K")
     if raw is None:
         return 50
     try:
@@ -115,19 +115,19 @@ RELOAD_WATCHER_POLL_INTERVAL_SECONDS = 1
 # Minimum fraction of session bytes that prune must save to justify a reload.
 # If saved_bytes / original_bytes < _MIN_PRUNE_RATIO, the resumed Claude would
 # re-trigger HARD immediately (context dominated by immutable tool-result blocks).
-# Override via env var COZEMPIC_MIN_PRUNE_RATIO. Read at module import time only
+# Override via env var WINNOW_MIN_PRUNE_RATIO. Read at module import time only
 # — restart the daemon to apply a new value.
 _DEFAULT_MIN_PRUNE_RATIO = 0.10
 
 
 def _read_min_prune_ratio() -> float:
-    """Read COZEMPIC_MIN_PRUNE_RATIO env var. Clamps to (0.0, 1.0) exclusive.
+    """Read WINNOW_MIN_PRUNE_RATIO env var. Clamps to (0.0, 1.0) exclusive.
 
     Read at module import time only — restart the daemon to apply a new
     value. Invalid values (non-numeric, NaN, inf, <= 0.0, >= 1.0) fall
     back to the default 0.10.
     """
-    raw = os.environ.get("COZEMPIC_MIN_PRUNE_RATIO")
+    raw = os.environ.get("WINNOW_MIN_PRUNE_RATIO")
     if raw is None:
         return _DEFAULT_MIN_PRUNE_RATIO
     try:
@@ -300,10 +300,10 @@ _DEFAULT_SESSION_WAIT_SECONDS = 900.0
 
 def _session_wait_budget() -> float:
     """Total seconds to wait for an explicit session's lazily-created JSONL (#121).
-    `COZEMPIC_SESSION_WAIT_SECONDS` overrides; finite, clamped to [0, 3600]. 0
+    `WINNOW_SESSION_WAIT_SECONDS` overrides; finite, clamped to [0, 3600]. 0
     disables the patient wait (the daemon reverts to the bare 15s resolve)."""
     try:
-        v = float(os.environ.get("COZEMPIC_SESSION_WAIT_SECONDS", _DEFAULT_SESSION_WAIT_SECONDS))
+        v = float(os.environ.get("WINNOW_SESSION_WAIT_SECONDS", _DEFAULT_SESSION_WAIT_SECONDS))
     except (TypeError, ValueError):
         return _DEFAULT_SESSION_WAIT_SECONDS
     # Reject NaN/inf (every comparison would be False → the loop never bounds).
@@ -319,7 +319,7 @@ def _resolve_session_patiently(session_id: str, claude_pid: int | None = None) -
     After the initial 15s `_resolve_session_by_id` attempt, keep polling with
     backoff until (a) the file appears, (b) the session's Claude process exits when
     a `claude_pid` is known — nothing left to guard, or (c) the
-    `COZEMPIC_SESSION_WAIT_SECONDS` budget elapses. The daemon keeps its
+    `WINNOW_SESSION_WAIT_SECONDS` budget elapses. The daemon keeps its
     already-acquired spawn claim while waiting, so a slow first message no longer
     kills the guard for the whole session, and `doctor` still sees it alive.
 
@@ -333,7 +333,7 @@ def _resolve_session_patiently(session_id: str, claude_pid: int | None = None) -
         return None
     print(
         f"  Session JSONL not written yet — Claude Code creates it on the first user "
-        f"turn; waiting up to {int(budget)}s (COZEMPIC_SESSION_WAIT_SECONDS to tune).",
+        f"turn; waiting up to {int(budget)}s (WINNOW_SESSION_WAIT_SECONDS to tune).",
         file=sys.stderr,
     )
     waited = 0.0
@@ -670,7 +670,7 @@ def start_guard(
         if session_id:
             # Make the give-up visible in the guard log instead of a silent death.
             print("  (waited for the session JSONL but it never appeared within the "
-                  "budget — raise COZEMPIC_SESSION_WAIT_SECONDS to wait longer)",
+                  "budget — raise WINNOW_SESSION_WAIT_SECONDS to wait longer)",
                   file=sys.stderr)
         else:
             print("  Tip: Use --session <session_id> for explicit targeting.", file=sys.stderr)
@@ -841,7 +841,7 @@ def start_guard(
             # AND the diagnostic recommends `/clear` (which also
             # destroys subagent state). Hard cap at
             # HARD_LOOP_HARD_EXIT_THRESHOLD (default 50, override via
-            # COZEMPIC_GUARD_HARD_EXIT_K) ensures eventual exit so a
+            # WINNOW_GUARD_HARD_EXIT_K) ensures eventual exit so a
             # stuck `extract_team_state` (BUG-G15 family) can't wedge
             # the daemon forever.
             if consecutive_empty_hard_prunes >= HARD_LOOP_EXIT_THRESHOLD:
@@ -1401,13 +1401,13 @@ def start_guard(
 def _detect_interactive(claude_pid: int | None) -> bool:
     """Component H — is this an interactive (TTY) Claude session?
 
-    COZEMPIC_INTERACTIVE=on|off forces the answer; the default ``auto`` checks
+    WINNOW_INTERACTIVE=on|off forces the answer; the default ``auto`` checks
     whether the Claude process owns a controlling terminal (``claude -p`` /
     headless / CI runs have none). When uncertain we default to *interactive*
     (True) — the safer bias, because interactive mode only ever makes the guard
     MORE conservative about reloading (warn + reload at idle, never mid-turn).
     """
-    mode = os.environ.get("COZEMPIC_INTERACTIVE", "auto").strip().lower()
+    mode = os.environ.get("WINNOW_INTERACTIVE", "auto").strip().lower()
     if mode in ("on", "1", "true", "yes"):
         return True
     if mode in ("off", "0", "false", "no"):
@@ -1428,7 +1428,7 @@ def _detect_interactive(claude_pid: int | None) -> bool:
 def _idle_backoff_cycles() -> int:
     """Component F — cycles of a stable transcript before poll back-off kicks in."""
     try:
-        n = int(os.environ.get("COZEMPIC_IDLE_BACKOFF_CYCLES", "4"))
+        n = int(os.environ.get("WINNOW_IDLE_BACKOFF_CYCLES", "4"))
         return min(n, 10_000) if n > 0 else 0  # cap absurd values
     except (TypeError, ValueError):
         return 4
@@ -1443,7 +1443,7 @@ def _idle_reload_cycles() -> int:
     consecutive idle cycles (~2 intervals) distinguishes a real lull from a
     momentary stall. Minimum 1."""
     try:
-        n = int(os.environ.get("COZEMPIC_IDLE_RELOAD_CYCLES", "2"))
+        n = int(os.environ.get("WINNOW_IDLE_RELOAD_CYCLES", "2"))
         # Cap an absurd value (e.g. 10**400) so `idle_cycles >= n` can't be made
         # permanently unreachable (which would silently disable idle reloads).
         return min(n, 10_000) if n >= 1 else 1
@@ -1457,11 +1457,11 @@ def _reload_warn_grace() -> float:
     Stop-hook nudge can't wedge reloads forever). Default 120s; <=0 disables the
     wait (reload as soon as idle)."""
     try:
-        v = float(os.environ.get("COZEMPIC_RELOAD_WARN_GRACE", "120"))
+        v = float(os.environ.get("WINNOW_RELOAD_WARN_GRACE", "120"))
         # Reject NaN/inf OR huge-finite (> 3600, 1h): both classes make
         # `elapsed >= grace` permanently False, silently disabling the fallback.
         # 1h is the meaningful ceiling for an interactive session grace period —
-        # same large-finite gate-disable class as COZEMPIC_RELOAD_WINDOW_S.
+        # same large-finite gate-disable class as WINNOW_RELOAD_WINDOW_S.
         # (<=0 "disable" semantic is preserved — falls through to `return v`.)
         if not math.isfinite(v) or v > 3600:
             return 120.0
@@ -1476,7 +1476,7 @@ def _force_reload_pct() -> float:
     safe_to_reload gate inside the cycle keeps protecting in-flight work even
     here). Default 0.88; set <=0 or >1 to disable the mid-turn force entirely."""
     try:
-        v = float(os.environ.get("COZEMPIC_FORCE_RELOAD_PCT", "0.88"))
+        v = float(os.environ.get("WINNOW_FORCE_RELOAD_PCT", "0.88"))
         return v if 0.0 < v <= 1.0 else 0.0
     except (TypeError, ValueError):
         return 0.88
@@ -2668,7 +2668,7 @@ _RELOAD_LEDGER_HIST_CAP = 50
 
 def _reload_ledger_window_s() -> int:
     from ._validation import parse_env_positive_int
-    v = parse_env_positive_int("COZEMPIC_RELOAD_WINDOW_S", maximum=86400)
+    v = parse_env_positive_int("WINNOW_RELOAD_WINDOW_S", maximum=86400)
     return max(60, v) if v is not None else 600
 
 
@@ -2678,7 +2678,7 @@ def _reload_ledger_max() -> int:
     # len(hist) >= max always False (hist[-cap:] bounds the list on write),
     # silently disabling the storm-guard for the entire [cap+1, old-100] range.
     # max(1, v) removed: parse_env_positive_int guarantees v >= 1 when non-None.
-    v = parse_env_positive_int("COZEMPIC_RELOAD_MAX", maximum=_RELOAD_LEDGER_HIST_CAP)
+    v = parse_env_positive_int("WINNOW_RELOAD_MAX", maximum=_RELOAD_LEDGER_HIST_CAP)
     return v if v is not None else 3
 
 

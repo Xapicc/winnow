@@ -87,7 +87,7 @@ from typing import Iterator
 # (CI hosted runners, macOS with Crowdstrike/SentinelOne EDR scanning the
 # Python binary, cold filesystem cache after pip install) Popen can take
 # several seconds. Operators can override via the
-# ``COZEMPIC_PIDFILE_FRESH_SECONDS`` env var without code changes.
+# ``WINNOW_PIDFILE_FRESH_SECONDS`` env var without code changes.
 #
 # Override is parsed at import time and CLAMPED to ``(0, _FRESH_MAX]``.
 # Invalid values (non-numeric, NaN, inf, ≤0, > _FRESH_MAX) silently fall
@@ -104,7 +104,7 @@ _FRESH_MAX = 300.0
 
 
 def _read_fresh_window_seconds() -> float:
-    """Read the COZEMPIC_PIDFILE_FRESH_SECONDS env var and clamp.
+    """Read the WINNOW_PIDFILE_FRESH_SECONDS env var and clamp.
 
     IMPORTANT: this value is read EXACTLY ONCE at module import time
     and cached in module-level ``_FRESH_PIDFILE_SECONDS``. Changing
@@ -112,7 +112,7 @@ def _read_fresh_window_seconds() -> float:
     — the daemon must be restarted (or the module re-imported via
     ``importlib.reload``) to pick up the new value. This mirrors the
     "config frozen at process start" convention used for other
-    cozempic env vars (e.g. ``COZEMPIC_GUARD_HARD_EXIT_K`` in guard.py).
+    cozempic env vars (e.g. ``WINNOW_GUARD_HARD_EXIT_K`` in guard.py).
     Operators tuning the fresh window for a fleet should set the env
     var in their shell rc BEFORE launching Claude Code, not after.
 
@@ -121,7 +121,7 @@ def _read_fresh_window_seconds() -> float:
     the daemon working rather than failing at startup over a
     misconfigured env var. (DA round 1 N3 docstring fold.)
     """
-    raw = os.environ.get("COZEMPIC_PIDFILE_FRESH_SECONDS")
+    raw = os.environ.get("WINNOW_PIDFILE_FRESH_SECONDS")
     if raw is None:
         return _DEFAULT_FRESH
     try:

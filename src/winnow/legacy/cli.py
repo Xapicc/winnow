@@ -83,10 +83,10 @@ def _apply_token_env_overrides(args) -> None:
     """
     cw = getattr(args, "context_window", None)
     if cw is not None:
-        os.environ["COZEMPIC_CONTEXT_WINDOW"] = str(cw)
+        os.environ["WINNOW_CONTEXT_WINDOW"] = str(cw)
     soh = getattr(args, "system_overhead_tokens", None)
     if soh is not None:
-        os.environ["COZEMPIC_SYSTEM_OVERHEAD_TOKENS"] = str(soh)
+        os.environ["WINNOW_SYSTEM_OVERHEAD_TOKENS"] = str(soh)
 
 
 # Fix Windows stdout/stderr encoding for Unicode characters (box-drawing, emoji)
@@ -1431,7 +1431,7 @@ def cmd_nudge(args):
     prune, no reload, never blocks the stop, never fed to the model. Always exit 0.
     """
     import json as _json
-    if os.environ.get("COZEMPIC_NUDGE_OFF"):
+    if os.environ.get("WINNOW_NUDGE_OFF"):
         return
     try:
         payload = _json.load(sys.stdin)
@@ -1460,7 +1460,7 @@ def cmd_nudge(args):
     # Tiers: prefer the guard's RESOLVED reload-tier fractions (so the nudge fires
     # where the guard actually reloads — tracks a raised --threshold and keeps the
     # FYI aligned with the real SOFT tier); fall back to the defaults. An explicit
-    # COZEMPIC_NUDGE_PCTS override always wins.
+    # WINNOW_NUDGE_PCTS override always wins.
     tiers = _NUDGE_DEFAULT_TIERS
     try:
         from .session import get_session_nudge_tiers
@@ -1469,7 +1469,7 @@ def cmd_nudge(args):
             tiers = tuple(_gt)
     except Exception:
         pass
-    raw = os.environ.get("COZEMPIC_NUDGE_PCTS")
+    raw = os.environ.get("WINNOW_NUDGE_PCTS")
     if raw:
         try:
             # Keep only finite fractions in (0, 1]; a NaN/inf tier silently disables
@@ -1546,7 +1546,7 @@ def cmd_nudge(args):
     msg = _build_nudge_message(tier_key, pct, proj, inflight=inflight)
     # First-nudge-only opt-out hint.
     if not sess_state.get("hint_shown"):
-        msg += "  ·  silence: COZEMPIC_NUDGE_OFF=1"
+        msg += "  ·  silence: WINNOW_NUDGE_OFF=1"
         sess_state["hint_shown"] = True
     _persist()  # records the newly-fired tier (and any drop)
     # Only the actionable reload tiers (anything above the lowest/SOFT FYI tier)
@@ -1955,7 +1955,7 @@ def _prescan_argv(argv: list[str]) -> list[str]:
 
     Argparse requires root-level flags before the subcommand name; this lets users
     put --context-window and --system-overhead-tokens anywhere (#13).
-    Also strips --no-auto-init (sets COZEMPIC_NO_AUTO_INIT=1 as a side effect) so
+    Also strips --no-auto-init (sets WINNOW_NO_AUTO_INIT=1 as a side effect) so
     auto-init can opt out per-invocation regardless of where the flag appears.
     Returns cleaned argv with those flags removed so argparse sees the rest normally.
     """
@@ -1966,11 +1966,11 @@ def _prescan_argv(argv: list[str]) -> list[str]:
         tok = argv[i]
         # --no-auto-init / --no-global-init can appear anywhere (before or after subcommand)
         if tok == "--no-auto-init":
-            os.environ["COZEMPIC_NO_AUTO_INIT"] = "1"
+            os.environ["WINNOW_NO_AUTO_INIT"] = "1"
             i += 1
             continue
         if tok == "--no-global-init":
-            os.environ["COZEMPIC_NO_GLOBAL_INIT"] = "1"
+            os.environ["WINNOW_NO_GLOBAL_INIT"] = "1"
             i += 1
             continue
         if not sub_seen and tok in _SUBCOMMANDS:
@@ -1984,7 +1984,7 @@ def _prescan_argv(argv: list[str]) -> list[str]:
                 try:
                     if int(val) <= 0:
                         raise ValueError
-                    os.environ["COZEMPIC_CONTEXT_WINDOW"] = val
+                    os.environ["WINNOW_CONTEXT_WINDOW"] = val
                 except ValueError:
                     print(f"Warning: ignoring invalid --context-window '{val}'", file=sys.stderr)
                 i += 2
@@ -1994,7 +1994,7 @@ def _prescan_argv(argv: list[str]) -> list[str]:
                 try:
                     if int(val) <= 0:
                         raise ValueError
-                    os.environ["COZEMPIC_CONTEXT_WINDOW"] = val
+                    os.environ["WINNOW_CONTEXT_WINDOW"] = val
                 except ValueError:
                     print(f"Warning: ignoring invalid --context-window '{val}'", file=sys.stderr)
                 i += 1
@@ -2004,7 +2004,7 @@ def _prescan_argv(argv: list[str]) -> list[str]:
                 try:
                     if int(val) < 0:
                         raise ValueError
-                    os.environ["COZEMPIC_SYSTEM_OVERHEAD_TOKENS"] = val
+                    os.environ["WINNOW_SYSTEM_OVERHEAD_TOKENS"] = val
                 except ValueError:
                     print(f"Warning: ignoring invalid --system-overhead-tokens '{val}'", file=sys.stderr)
                 i += 2
@@ -2014,7 +2014,7 @@ def _prescan_argv(argv: list[str]) -> list[str]:
                 try:
                     if int(val) < 0:
                         raise ValueError
-                    os.environ["COZEMPIC_SYSTEM_OVERHEAD_TOKENS"] = val
+                    os.environ["WINNOW_SYSTEM_OVERHEAD_TOKENS"] = val
                 except ValueError:
                     print(f"Warning: ignoring invalid --system-overhead-tokens '{val}'", file=sys.stderr)
                 i += 1
@@ -2093,7 +2093,7 @@ def _maybe_global_init(argv: list[str]) -> None:
     every project, including projects the user has never run cozempic in.
 
     Bail-outs (in order):
-      1. COZEMPIC_NO_GLOBAL_INIT=1 in env (also set by --no-global-init)
+      1. WINNOW_NO_GLOBAL_INIT=1 in env (also set by --no-global-init)
       2. Marker file exists (already done once)
       3. Subcommand is in _AUTO_INIT_SKIP_CMDS
       4. ~/.claude/ doesn't exist (Claude Code not installed yet)
@@ -2104,7 +2104,7 @@ def _maybe_global_init(argv: list[str]) -> None:
     prints a one-line opt-out notice to stderr. Touches the marker file so
     we never ask again on this machine.
     """
-    if os.environ.get("COZEMPIC_NO_GLOBAL_INIT"):
+    if os.environ.get("WINNOW_NO_GLOBAL_INIT"):
         return
     if _GLOBAL_INIT_MARKER.exists():
         return
@@ -2223,14 +2223,14 @@ def _maybe_global_init(argv: list[str]) -> None:
         )
         print(
             "  Disable any time with `cozempic init --uninstall-global` "
-            "or COZEMPIC_NO_GLOBAL_INIT=1.\n",
+            "or WINNOW_NO_GLOBAL_INIT=1.\n",
             file=sys.stderr,
         )
     else:
         print(
             f"  Cozempic: protecting every Claude Code session globally "
             f"({summary} hook(s) wired into ~/.claude/settings.json). "
-            "Disable with `cozempic init --uninstall-global` or COZEMPIC_NO_GLOBAL_INIT=1.",
+            "Disable with `cozempic init --uninstall-global` or WINNOW_NO_GLOBAL_INIT=1.",
             file=sys.stderr,
         )
 
@@ -2288,7 +2288,7 @@ def _maybe_auto_init(argv: list[str]) -> None:
     """Auto-wire cozempic into the current Claude project on first use.
 
     Bail-outs (in order):
-      1. COZEMPIC_NO_AUTO_INIT=1 in env (also set by --no-auto-init via _prescan_argv)
+      1. WINNOW_NO_AUTO_INIT=1 in env (also set by --no-auto-init via _prescan_argv)
       2. cwd has no .claude/ directory (not a Claude project)
       3. Subcommand is in _AUTO_INIT_SKIP_CMDS or no subcommand was given
       4. Global hooks are current in ~/.claude/settings.json (local would be redundant)
@@ -2297,7 +2297,7 @@ def _maybe_auto_init(argv: list[str]) -> None:
     Otherwise: runs init silently and prints a single one-line notice to stderr.
     Failures are non-fatal — the user's original command still runs.
     """
-    if os.environ.get("COZEMPIC_NO_AUTO_INIT"):
+    if os.environ.get("WINNOW_NO_AUTO_INIT"):
         return
 
     claude_dir = Path.cwd() / ".claude"
@@ -2354,7 +2354,7 @@ def _maybe_auto_init(argv: list[str]) -> None:
             parts.append(f"{len(updated)} refreshed from stale schema")
         print(
             f"  Cozempic: auto-initialized this project ({', '.join(parts)}). "
-            "Disable with --no-auto-init or COZEMPIC_NO_AUTO_INIT=1.",
+            "Disable with --no-auto-init or WINNOW_NO_AUTO_INIT=1.",
             file=sys.stderr,
         )
 

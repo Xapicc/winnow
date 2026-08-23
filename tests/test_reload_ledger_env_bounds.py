@@ -2,11 +2,11 @@
 
 The reload-rate ledger uses two env-overridable knobs:
 
-  COZEMPIC_RELOAD_WINDOW_S  — look-back window in seconds (default 600)
-  COZEMPIC_RELOAD_MAX       — max reloads allowed per window (default 3)
+  WINNOW_RELOAD_WINDOW_S  — look-back window in seconds (default 600)
+  WINNOW_RELOAD_MAX       — max reloads allowed per window (default 3)
 
 Without upper bounds, a huge env value (e.g. from a typo like
-COZEMPIC_RELOAD_WINDOW_S=86400000 meaning "86400 with extra zeros") makes
+WINNOW_RELOAD_WINDOW_S=86400000 meaning "86400 with extra zeros") makes
 the ledger window effectively infinite, so the storm guard NEVER fires.
 This silently disables the protection for the session's lifetime.
 
@@ -47,10 +47,10 @@ class TestReloadLedgerWindowSEnvBounds(unittest.TestCase):
 
         env = {}
         if env_val is not None:
-            env["COZEMPIC_RELOAD_WINDOW_S"] = env_val
+            env["WINNOW_RELOAD_WINDOW_S"] = env_val
         with patch.dict(os.environ, env, clear=False):
             if env_val is None:
-                os.environ.pop("COZEMPIC_RELOAD_WINDOW_S", None)
+                os.environ.pop("WINNOW_RELOAD_WINDOW_S", None)
             return _reload_ledger_window_s()
 
     # ── RED-at-base: out-of-range values must be rejected to default ──────────
@@ -127,10 +127,10 @@ class TestReloadLedgerMaxEnvBounds(unittest.TestCase):
 
         env = {}
         if env_val is not None:
-            env["COZEMPIC_RELOAD_MAX"] = env_val
+            env["WINNOW_RELOAD_MAX"] = env_val
         with patch.dict(os.environ, env, clear=False):
             if env_val is None:
-                os.environ.pop("COZEMPIC_RELOAD_MAX", None)
+                os.environ.pop("WINNOW_RELOAD_MAX", None)
             return _reload_ledger_max()
 
     # ── RED-at-base: out-of-range values must be rejected to default ──────────
@@ -207,7 +207,7 @@ class TestReloadLedgerMaxEnvBounds(unittest.TestCase):
         self.assertEqual(self._call("10"), 10)
 
     def test_zero_rejected_to_default(self):
-        """COZEMPIC_RELOAD_MAX=0 is rejected (not positive) → default 3.
+        """WINNOW_RELOAD_MAX=0 is rejected (not positive) → default 3.
 
         parse_env_positive_int rejects 0 (not positive) → None → default 3.
         This is rejection, not a clamp: max(1, v) was dead code, now removed.
@@ -240,10 +240,10 @@ class TestReloadWarnGraceBounds(unittest.TestCase):
 
         env = {}
         if env_val is not None:
-            env["COZEMPIC_RELOAD_WARN_GRACE"] = env_val
+            env["WINNOW_RELOAD_WARN_GRACE"] = env_val
         with patch.dict(os.environ, env, clear=False):
             if env_val is None:
-                os.environ.pop("COZEMPIC_RELOAD_WARN_GRACE", None)
+                os.environ.pop("WINNOW_RELOAD_WARN_GRACE", None)
             return _reload_warn_grace()
 
     # ── RED-at-base: huge finite values must be rejected to default ──────────

@@ -9,7 +9,7 @@ Items covered:
        `_graceful_shutdown` (PR #92 added the K=10 leak alongside it).
   #4 — At K=10, when `agents_active=True`, the daemon must DEFER exit
        (keep cycling at backoff cap) rather than `sys.exit(0)`. A hard
-       cap (default K=50, configurable via COZEMPIC_GUARD_HARD_EXIT_K)
+       cap (default K=50, configurable via WINNOW_GUARD_HARD_EXIT_K)
        ensures eventual exit even if agents perma-run.
   #5 — `DaemonSpawnClaim` + daemon hand-off must write the same 3-line
        payload as `_ReloadLock` (pid + iso-timestamp + initiator) for
@@ -283,7 +283,7 @@ class TestPolishPR93_K10DeferWhenAgentsActive(unittest.TestCase):
     """When K reaches HARD_LOOP_EXIT_THRESHOLD (=10) but agents are still
     running, the daemon MUST defer exit. A hard cap at
     HARD_LOOP_HARD_EXIT_THRESHOLD (default 50, configurable via
-    COZEMPIC_GUARD_HARD_EXIT_K) ensures eventual exit.
+    WINNOW_GUARD_HARD_EXIT_K) ensures eventual exit.
     """
 
     SESSION_ID = "pr93k10a-0000-0000-0000-000000000093"
@@ -453,18 +453,18 @@ class TestPolishPR93_K10DeferWhenAgentsActive(unittest.TestCase):
         self.assertEqual(guard_mod.HARD_LOOP_HARD_EXIT_THRESHOLD, 50)
 
     def test_env_var_overrides_hard_cap(self):
-        """Module-import env var COZEMPIC_GUARD_HARD_EXIT_K is read by
+        """Module-import env var WINNOW_GUARD_HARD_EXIT_K is read by
         _read_hard_exit_threshold and clamped. Test the helper directly
         (not via importlib.reload which is hard to clean up reliably)."""
         import winnow.legacy.guard as guard_mod
-        with patch.dict(os.environ, {"COZEMPIC_GUARD_HARD_EXIT_K": "25"}):
+        with patch.dict(os.environ, {"WINNOW_GUARD_HARD_EXIT_K": "25"}):
             self.assertEqual(guard_mod._read_hard_exit_threshold(), 25)
 
     def test_env_var_invalid_falls_back_to_default(self):
         import winnow.legacy.guard as guard_mod
         for bad in ("not-a-number", "0", "-5", "10", "9", "10000"):
             with self.subTest(value=bad):
-                with patch.dict(os.environ, {"COZEMPIC_GUARD_HARD_EXIT_K": bad}):
+                with patch.dict(os.environ, {"WINNOW_GUARD_HARD_EXIT_K": bad}):
                     self.assertEqual(
                         guard_mod._read_hard_exit_threshold(), 50,
                         f"invalid value {bad!r} must fall back to default 50",
@@ -646,7 +646,7 @@ class TestPolishPR93_HookSchemaV9(unittest.TestCase):
 
 class TestPolishPR93_FreshWindowDocstring(unittest.TestCase):
     """N3: `_read_fresh_window_seconds` docstring must clarify that the
-    env var COZEMPIC_PIDFILE_FRESH_SECONDS is read at module import time
+    env var WINNOW_PIDFILE_FRESH_SECONDS is read at module import time
     and requires a daemon restart (not just env-var update) to take effect.
     """
 

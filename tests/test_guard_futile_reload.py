@@ -205,7 +205,7 @@ class TestSubstantialPruneProceedsWithReload(unittest.TestCase):
 # Test 3 — MIN_PRUNE_RATIO env var override
 # ---------------------------------------------------------------------------
 class TestMinPruneRatioEnvVarOverride(unittest.TestCase):
-    """COZEMPIC_MIN_PRUNE_RATIO=0.05 → threshold drops to 5%.
+    """WINNOW_MIN_PRUNE_RATIO=0.05 → threshold drops to 5%.
     A 7% prune must now proceed (not be skipped).
     """
 
@@ -219,7 +219,7 @@ class TestMinPruneRatioEnvVarOverride(unittest.TestCase):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def test_min_prune_ratio_env_var_override(self):
-        """COZEMPIC_MIN_PRUNE_RATIO=0.05: 7% savings → should proceed (not futile)."""
+        """WINNOW_MIN_PRUNE_RATIO=0.05: 7% savings → should proceed (not futile)."""
         import importlib
         import winnow.legacy.guard as guard_mod
 
@@ -247,7 +247,7 @@ class TestMinPruneRatioEnvVarOverride(unittest.TestCase):
 
         from winnow.legacy.guard import guard_prune_cycle
 
-        with patch.dict(os.environ, {"COZEMPIC_MIN_PRUNE_RATIO": "0.05"}), \
+        with patch.dict(os.environ, {"WINNOW_MIN_PRUNE_RATIO": "0.05"}), \
              patch.object(guard_mod, "_MIN_PRUNE_RATIO", 0.05), \
              patch("winnow.legacy.guard._guard_tmp_root", return_value=self.tmpdir), \
              patch("winnow.legacy.guard.load_messages", return_value=fake_messages_orig), \
@@ -282,9 +282,9 @@ class TestMinPruneRatioEnvVarOverride(unittest.TestCase):
 # Test 4 — Invalid _MIN_PRUNE_RATIO env var falls back to 0.10
 # ---------------------------------------------------------------------------
 class TestMinPruneRatioInvalidFallsBack(unittest.TestCase):
-    """COZEMPIC_MIN_PRUNE_RATIO=invalid → must fall back to default 0.10.
+    """WINNOW_MIN_PRUNE_RATIO=invalid → must fall back to default 0.10.
 
-    Mirrors PR #93's pattern for COZEMPIC_GUARD_HARD_EXIT_K.
+    Mirrors PR #93's pattern for WINNOW_GUARD_HARD_EXIT_K.
     """
 
     def test_min_prune_ratio_invalid_falls_back(self):
@@ -302,7 +302,7 @@ class TestMinPruneRatioInvalidFallsBack(unittest.TestCase):
 
         from winnow.legacy.guard import _read_min_prune_ratio
 
-        with patch.dict(os.environ, {"COZEMPIC_MIN_PRUNE_RATIO": "not_a_number"}):
+        with patch.dict(os.environ, {"WINNOW_MIN_PRUNE_RATIO": "not_a_number"}):
             val = _read_min_prune_ratio()
 
         self.assertEqual(
@@ -314,7 +314,7 @@ class TestMinPruneRatioInvalidFallsBack(unittest.TestCase):
 
         # Also check boundary values are rejected
         for bad_val in ("0.0", "1.0", "1.5", "-0.1", "inf", "nan"):
-            with patch.dict(os.environ, {"COZEMPIC_MIN_PRUNE_RATIO": bad_val}):
+            with patch.dict(os.environ, {"WINNOW_MIN_PRUNE_RATIO": bad_val}):
                 val = _read_min_prune_ratio()
             self.assertEqual(
                 val,

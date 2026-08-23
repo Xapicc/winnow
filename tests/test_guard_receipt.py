@@ -45,12 +45,12 @@ def _only_receipt(home):
 
 class TestGuardReceipt(unittest.TestCase):
     def setUp(self):
-        os.environ.pop("COZEMPIC_NO_RECEIPTS", None)
+        os.environ.pop("WINNOW_NO_RECEIPTS", None)
 
     def test_guard_prune_emits_committed_receipt(self):
         with tempfile.TemporaryDirectory() as home:
             with patch.dict(os.environ, {"HOME": home}):
-                os.environ.pop("COZEMPIC_NO_RECEIPTS", None)
+                os.environ.pop("WINNOW_NO_RECEIPTS", None)
                 guard._emit_guard_receipt(**_args())
                 rec = _only_receipt(home)
                 validate_receipt(rec)
@@ -63,7 +63,7 @@ class TestGuardReceipt(unittest.TestCase):
     def test_overflow_source_tagged(self):
         with tempfile.TemporaryDirectory() as home:
             with patch.dict(os.environ, {"HOME": home}):
-                os.environ.pop("COZEMPIC_NO_RECEIPTS", None)
+                os.environ.pop("WINNOW_NO_RECEIPTS", None)
                 guard._emit_guard_receipt(**_args(trigger_source="overflow"))
                 self.assertEqual(_only_receipt(home)["trigger"]["source"], "overflow")
 
@@ -72,7 +72,7 @@ class TestGuardReceipt(unittest.TestCase):
         # not persist a garbage receipt
         with tempfile.TemporaryDirectory() as home:
             with patch.dict(os.environ, {"HOME": home}):
-                os.environ.pop("COZEMPIC_NO_RECEIPTS", None)
+                os.environ.pop("WINNOW_NO_RECEIPTS", None)
                 guard._emit_guard_receipt(**_args(pre_te=None))  # must not raise
                 recdir = Path(home) / ".cozempic" / "receipts"
                 self.assertFalse(recdir.exists() and any(
@@ -80,7 +80,7 @@ class TestGuardReceipt(unittest.TestCase):
 
     def test_optout_suppresses(self):
         with tempfile.TemporaryDirectory() as home:
-            with patch.dict(os.environ, {"HOME": home, "COZEMPIC_NO_RECEIPTS": "1"}):
+            with patch.dict(os.environ, {"HOME": home, "WINNOW_NO_RECEIPTS": "1"}):
                 guard._emit_guard_receipt(**_args())
                 self.assertFalse((Path(home) / ".cozempic" / "receipts").exists())
 
@@ -144,7 +144,7 @@ class TestGuardReceiptIntegration(unittest.TestCase):
                     patch("winnow.legacy.guard.save_messages", return_value=None), \
                     patch("winnow.legacy.guard.cleanup_old_backups"), \
                     patch("winnow.legacy.helpers.record_savings"):
-                os.environ.pop("COZEMPIC_NO_RECEIPTS", None)
+                os.environ.pop("WINNOW_NO_RECEIPTS", None)
                 writer()
         recdir = Path(home) / ".cozempic" / "receipts"
         if not recdir.exists():

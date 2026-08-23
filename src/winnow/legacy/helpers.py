@@ -233,7 +233,7 @@ def record_savings(tokens_saved: int, total_tokens: int = 0, turn_count: int = 0
         pass
 
     # Ping global counters (anonymous, no user data, quick with short timeout)
-    if os.environ.get("COZEMPIC_NO_TELEMETRY"):
+    if os.environ.get("WINNOW_NO_TELEMETRY"):
         return
     try:
         from urllib.request import Request, urlopen
@@ -526,10 +526,10 @@ def _protect_match_budget() -> float:
     """Seconds budget for a full --protect-pattern matching pass (#122 hardening).
     stdlib `re` has no step limit, so a catastrophic-backtracking user pattern would
     otherwise hang the prune — worst, the guard daemon which re-scans every cycle.
-    COZEMPIC_PROTECT_MATCH_SECONDS overrides; finite, clamped to [0, 60]; 0 disables."""
+    WINNOW_PROTECT_MATCH_SECONDS overrides; finite, clamped to [0, 60]; 0 disables."""
     import math
     try:
-        v = float(os.environ.get("COZEMPIC_PROTECT_MATCH_SECONDS", "2.0"))
+        v = float(os.environ.get("WINNOW_PROTECT_MATCH_SECONDS", "2.0"))
     except (TypeError, ValueError):
         return 2.0
     if not math.isfinite(v) or v < 0:
@@ -931,7 +931,7 @@ def tag_pattern_matches(messages: list, patterns: list) -> int:
             print("  Cozempic: --protect-pattern matching has no time budget on this "
                   "platform (no SIGALRM) and a supplied pattern can backtrack "
                   "catastrophically; skipping pattern protection this cycle. Simplify "
-                  "the pattern or set COZEMPIC_PROTECT_MATCH_SECONDS=0 to opt out.",
+                  "the pattern or set WINNOW_PROTECT_MATCH_SECONDS=0 to opt out.",
                   file=sys.stderr)
             return 0
     count = 0
@@ -962,7 +962,7 @@ def tag_pattern_matches(messages: list, patterns: list) -> int:
         strip_pattern_tags(messages)  # fail-open: don't leave a half-protected session
         print("  Cozempic: --protect-pattern matching exceeded its time budget — the "
               "pattern is too expensive; skipping pattern protection this cycle "
-              "(COZEMPIC_PROTECT_MATCH_SECONDS to tune).", file=sys.stderr)
+              "(WINNOW_PROTECT_MATCH_SECONDS to tune).", file=sys.stderr)
         return 0
     if matchable and count >= _PROTECT_OVERMATCH_WARN_FRACTION * matchable:
         import sys

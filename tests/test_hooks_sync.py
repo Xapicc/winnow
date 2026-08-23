@@ -36,16 +36,16 @@ class TestHooksSync(unittest.TestCase):
 
 
     def test_all_hooks_export_no_auto_init(self):
-        """Every hook command must set COZEMPIC_NO_AUTO_INIT=1."""
+        """Every hook command must set WINNOW_NO_AUTO_INIT=1."""
         canonical = json.loads(DATA_HOOKS.read_text(encoding="utf-8"))
         for event, entries in canonical.get("hooks", {}).items():
             for entry in entries:
                 for h in entry.get("hooks", []):
                     cmd = h.get("command", "")
                     self.assertIn(
-                        "COZEMPIC_NO_AUTO_INIT=1",
+                        "WINNOW_NO_AUTO_INIT=1",
                         cmd,
-                        msg=f"Hook {event}[{entry.get('matcher', '')}] missing COZEMPIC_NO_AUTO_INIT=1",
+                        msg=f"Hook {event}[{entry.get('matcher', '')}] missing WINNOW_NO_AUTO_INIT=1",
                     )
 
     def test_schema_marker_is_current(self):

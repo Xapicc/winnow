@@ -91,7 +91,7 @@ class TestCodexAdapter(unittest.TestCase):
 
 class TestDashboardInheritance(unittest.TestCase):
     def setUp(self):
-        os.environ.pop("COZEMPIC_NO_RECEIPTS", None)
+        os.environ.pop("WINNOW_NO_RECEIPTS", None)
 
     def _claude_receipt(self, session="cl1"):
         s = StrategyResult("tool-output-trim", [], 1000, 200, 1, 0, 1, "")

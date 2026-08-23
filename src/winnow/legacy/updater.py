@@ -184,7 +184,7 @@ def ping_install_if_new() -> None:
             # Sentinel exists with different version = upgrade (not first install)
             is_upgrade = bool(old_version)
         _INSTALL_SENTINEL.write_text(__version__)
-        if os.environ.get("COZEMPIC_NO_TELEMETRY"):
+        if os.environ.get("WINNOW_NO_TELEMETRY"):
             return
         urlopen(Request(_INSTALL_COUNTER_URL, headers={"User-Agent": f"cozempic/{__version__}"}), timeout=3)
         if is_upgrade:
@@ -203,7 +203,7 @@ _VERSION_SHAPE = re.compile(r"^v?\d+(?:\.\d+)*(?:[._-]?(?:a|b|c|rc|alpha|beta|po
 
 
 def _pinned_version() -> str | None:
-    """The version the user has pinned via COZEMPIC_PIN, or None.
+    """The version the user has pinned via WINNOW_PIN, or None.
 
     A pin means "hold the version I reviewed" — auto-update is disabled while it
     is set. We deliberately do NOT auto-install the pinned version (that would be
@@ -211,10 +211,10 @@ def _pinned_version() -> str | None:
     the caller warns on drift so the human reconciles it.
 
     "Set but non-empty" is the pin test — IDENTICAL to the SessionStart hook's
-    ``[ -z "$COZEMPIC_PIN" ]`` (which sees the raw value), so a whitespace-only
+    ``[ -z "$WINNOW_PIN" ]`` (which sees the raw value), so a whitespace-only
     pin disables auto-update on BOTH paths rather than diverging (#123 QA P3).
     """
-    raw = os.environ.get("COZEMPIC_PIN", "")
+    raw = os.environ.get("WINNOW_PIN", "")
     if not raw:
         return None
     # Any non-empty value is a pin; prefer the trimmed form for display but keep
@@ -232,17 +232,17 @@ def maybe_auto_update(force: bool = False, silent: bool = False) -> None:
         silent: Suppress all output (required for MCP context where stdout is the protocol stream).
 
     Opt-outs (both honored here AND by the SessionStart hook's shell upgrade):
-        COZEMPIC_NO_AUTO_UPDATE=1  — disable all automatic upgrade behaviour.
-        COZEMPIC_PIN=X.Y.Z         — hold a reviewed version; auto-update off,
+        WINNOW_NO_AUTO_UPDATE=1  — disable all automatic upgrade behaviour.
+        WINNOW_PIN=X.Y.Z         — hold a reviewed version; auto-update off,
                                      warn (once/24h) if the running version drifts.
     """
-    if os.environ.get("COZEMPIC_NO_AUTO_UPDATE"):
+    if os.environ.get("WINNOW_NO_AUTO_UPDATE"):
         return
     pin = _pinned_version()
     if pin:
         # Held at a reviewed version — never auto-upgrade. Surface drift (throttled
         # via the same 24h gate) so the user can reconcile manually; no auto-install.
-        # Normalize a leading 'v' so e.g. COZEMPIC_PIN=v1.8.32 doesn't false-warn
+        # Normalize a leading 'v' so e.g. WINNOW_PIN=v1.8.32 doesn't false-warn
         # against 1.8.32, and only emit a reconcile COMMAND for a version-shaped pin
         # so we never print an un-runnable `pip install 'cozempic==garbage'` (QA P3).
         norm = pin.strip().lstrip("vV")[:64]  # cap display so a multi-KB pin can't spam the terminal
@@ -275,7 +275,7 @@ def maybe_auto_update(force: bool = False, silent: bool = False) -> None:
     if not silent:
         print(f"  Cozempic: updating {__version__} → {latest}...", flush=True)
     if _do_upgrade(latest):
-        if not os.environ.get("COZEMPIC_NO_TELEMETRY"):
+        if not os.environ.get("WINNOW_NO_TELEMETRY"):
             try:
                 urlopen(Request(_COUNTER_URL, headers={"User-Agent": f"cozempic/{latest}"}), timeout=3)
             except Exception:

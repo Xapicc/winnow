@@ -120,7 +120,7 @@ class TestHardening1828(unittest.TestCase):
         import os, time
         from winnow.legacy import helpers
         with mock.patch.object(helpers, "_have_sigalrm", return_value=False), \
-             mock.patch.dict(os.environ, {"COZEMPIC_PROTECT_MATCH_SECONDS": "2.0"}):
+             mock.patch.dict(os.environ, {"WINNOW_PROTECT_MATCH_SECONDS": "2.0"}):
             evil = compile_protect_patterns([r"(a+)+$"])
             msgs = [(0, _txt("a" * 5000 + "!"), 50)]  # would hang for minutes if matched
             buf = io.StringIO()
@@ -170,8 +170,8 @@ class TestHardening1828(unittest.TestCase):
         import os, time
         # patch.dict save/restores any pre-existing value instead of unconditionally
         # popping it on teardown (which would clobber a real, externally-set
-        # COZEMPIC_PROTECT_MATCH_SECONDS the developer had in their environment).
-        with mock.patch.dict(os.environ, {"COZEMPIC_PROTECT_MATCH_SECONDS": "1.0"}):
+        # WINNOW_PROTECT_MATCH_SECONDS the developer had in their environment).
+        with mock.patch.dict(os.environ, {"WINNOW_PROTECT_MATCH_SECONDS": "1.0"}):
             evil = compile_protect_patterns([r"(a+)+$"])
             msgs = [(0, _txt("a" * 40 + "!"), 50)]
             t0 = time.perf_counter()

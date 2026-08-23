@@ -41,16 +41,16 @@ DECAY_DAYS = 30  # Universal decay period (MemoryArena 2602.16313)
 
 # Opt-in stderr diagnostics for silent _to_prohibition rejections (A2).
 # `_DEBUG` is kept as a module-level attribute for test monkeypatching;
-# `_debug()` also re-reads the env on each call so setting COZEMPIC_DEBUG=1
+# `_debug()` also re-reads the env on each call so setting WINNOW_DEBUG=1
 # AFTER import (programmatic or shell-inherited mid-run) takes effect.
 # Runs inside hooks (PreCompact, Stop) where unconditional stderr would leak
 # to users — hence env-gated.
 # Accepts: 1/true/yes/on (case-insensitive). Default off.
-_DEBUG = parse_env_bool("COZEMPIC_DEBUG", default=False)
+_DEBUG = parse_env_bool("WINNOW_DEBUG", default=False)
 
 
 def _debug(msg: str) -> None:
-    if _DEBUG or parse_env_bool("COZEMPIC_DEBUG", default=False, warn=False):
+    if _DEBUG or parse_env_bool("WINNOW_DEBUG", default=False, warn=False):
         print(f"[winnow.legacy.digest] {msg}", file=sys.stderr)
 
 # ---------------------------------------------------------------------------
@@ -361,7 +361,7 @@ def _to_prohibition(text: str) -> str:
     # Reject structural / oversize input — cannot be a clean correction.
     # Debug messages emit metadata only (length, newline count, single prefix
     # char). Never echo raw user text — risk of PII / credentials leaking into
-    # stderr logs when COZEMPIC_DEBUG=1.
+    # stderr logs when WINNOW_DEBUG=1.
     if not text:
         return ""
     if len(text) > 200:

@@ -157,7 +157,7 @@ class TestRobustness(unittest.TestCase):
 
 class TestLoadReceipts(unittest.TestCase):
     def setUp(self):
-        os.environ.pop("COZEMPIC_NO_RECEIPTS", None)
+        os.environ.pop("WINNOW_NO_RECEIPTS", None)
 
     def test_missing_dir_returns_empty(self):
         with tempfile.TemporaryDirectory() as tmp:

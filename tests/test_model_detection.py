@@ -80,7 +80,7 @@ class TestDetectModel(unittest.TestCase):
 class TestDetectContextWindow(unittest.TestCase):
 
     def setUp(self):
-        # Isolate from inherited COZEMPIC_CONTEXT_WINDOW env var. Some dev
+        # Isolate from inherited WINNOW_CONTEXT_WINDOW env var. Some dev
         # boxes set this globally (e.g., to force a specific window for the
         # guard daemon). When present, get_context_window_override() returns
         # the env value and short-circuits the MODEL_CONTEXT_WINDOWS dict
@@ -88,12 +88,12 @@ class TestDetectContextWindow(unittest.TestCase):
         # on model-mapping tests that ARE actually correct in production
         # code. Tests that exercise the override path explicitly use
         # patch.dict to set the env var inside their own context.
-        self._prev_env = os.environ.pop("COZEMPIC_CONTEXT_WINDOW", None)
+        self._prev_env = os.environ.pop("WINNOW_CONTEXT_WINDOW", None)
         self.addCleanup(self._restore_env)
 
     def _restore_env(self):
         if self._prev_env is not None:
-            os.environ["COZEMPIC_CONTEXT_WINDOW"] = self._prev_env
+            os.environ["WINNOW_CONTEXT_WINDOW"] = self._prev_env
 
     def test_opus_47_is_1m(self):
         """Current Opus 4.7 defaults to 1M (standard for Claude Code Max)."""
@@ -141,17 +141,17 @@ class TestDetectContextWindow(unittest.TestCase):
 
     def test_env_override(self):
         messages = [make_assistant_with_model(0, "claude-opus-4-6")]
-        with patch.dict(os.environ, {"COZEMPIC_CONTEXT_WINDOW": "200000"}):
+        with patch.dict(os.environ, {"WINNOW_CONTEXT_WINDOW": "200000"}):
             self.assertEqual(detect_context_window(messages), 200_000)
 
     def test_env_override_beats_model(self):
         messages = [make_assistant_with_model(0, "claude-sonnet-4-6")]
-        with patch.dict(os.environ, {"COZEMPIC_CONTEXT_WINDOW": "500000"}):
+        with patch.dict(os.environ, {"WINNOW_CONTEXT_WINDOW": "500000"}):
             self.assertEqual(detect_context_window(messages), 500_000)
 
     def test_invalid_env_override_ignored(self):
         messages = [make_assistant_with_model(0, "claude-opus-4-6")]
-        with patch.dict(os.environ, {"COZEMPIC_CONTEXT_WINDOW": "not_a_number"}):
+        with patch.dict(os.environ, {"WINNOW_CONTEXT_WINDOW": "not_a_number"}):
             self.assertEqual(detect_context_window(messages), 1_000_000)
 
 
@@ -160,12 +160,12 @@ class TestContextWindowFamilyFallback(unittest.TestCase):
 
     def setUp(self):
         # Same isolation as TestDetectContextWindow — an inherited
-        # COZEMPIC_CONTEXT_WINDOW would short-circuit the model-mapping path.
-        self._prev_env = os.environ.pop("COZEMPIC_CONTEXT_WINDOW", None)
+        # WINNOW_CONTEXT_WINDOW would short-circuit the model-mapping path.
+        self._prev_env = os.environ.pop("WINNOW_CONTEXT_WINDOW", None)
 
     def tearDown(self):
         if self._prev_env is not None:
-            os.environ["COZEMPIC_CONTEXT_WINDOW"] = self._prev_env
+            os.environ["WINNOW_CONTEXT_WINDOW"] = self._prev_env
 
     def test_future_haiku_version_is_200k(self):
         # RED-at-base: a Haiku generation not in MODEL_CONTEXT_WINDOWS currently
@@ -215,11 +215,11 @@ class TestGetContextWindowOverride(unittest.TestCase):
             self.assertIsNone(get_context_window_override())
 
     def test_returns_int_when_set(self):
-        with patch.dict(os.environ, {"COZEMPIC_CONTEXT_WINDOW": "1000000"}):
+        with patch.dict(os.environ, {"WINNOW_CONTEXT_WINDOW": "1000000"}):
             self.assertEqual(get_context_window_override(), 1_000_000)
 
     def test_returns_none_for_invalid(self):
-        with patch.dict(os.environ, {"COZEMPIC_CONTEXT_WINDOW": "abc"}):
+        with patch.dict(os.environ, {"WINNOW_CONTEXT_WINDOW": "abc"}):
             self.assertIsNone(get_context_window_override())
 
 
@@ -228,15 +228,15 @@ class TestEstimateSessionTokensWithModel(unittest.TestCase):
     def setUp(self):
         # Same env-isolation pattern as TestDetectContextWindow — see comment
         # there. estimate_session_tokens() calls detect_context_window()
-        # internally, which honours COZEMPIC_CONTEXT_WINDOW. Without this
+        # internally, which honours WINNOW_CONTEXT_WINDOW. Without this
         # cleanup, test_context_pct_200k_model fails on dev boxes that set
         # the env var globally.
-        self._prev_env = os.environ.pop("COZEMPIC_CONTEXT_WINDOW", None)
+        self._prev_env = os.environ.pop("WINNOW_CONTEXT_WINDOW", None)
         self.addCleanup(self._restore_env)
 
     def _restore_env(self):
         if self._prev_env is not None:
-            os.environ["COZEMPIC_CONTEXT_WINDOW"] = self._prev_env
+            os.environ["WINNOW_CONTEXT_WINDOW"] = self._prev_env
 
     def test_includes_model_in_result(self):
         messages = [make_assistant_with_model(0, "claude-opus-4-6", input_tokens=50000)]

@@ -124,7 +124,7 @@ class TestRecordSavingsAtomic(unittest.TestCase):
             savings_file = Path(tmp) / ".cozempic_savings.json"
             with patch("winnow.legacy.helpers._SAVINGS_FILE", savings_file):
                 # Disable telemetry pings
-                with patch.dict(os.environ, {"COZEMPIC_NO_TELEMETRY": "1"}):
+                with patch.dict(os.environ, {"WINNOW_NO_TELEMETRY": "1"}):
                     def writer(_i):
                         record_savings(1000)
 

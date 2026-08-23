@@ -233,12 +233,27 @@ recorded sha rather than pinned as a dependency. `COZEMPIC_NO_AUTO_UPDATE=1` or
 ### 1.9 The plugin's MCP server does not run the vendored tree. Not in the brief.
 
 `plugin/.mcp.json` starts the server as `uv run --with fastmcp --with cozempic python
-${CLAUDE_PLUGIN_ROOT}/servers/cozempic_mcp.py`. Three consequences: it needs `uv`, which is not
-installed in this container; it needs network at spawn; and `--with cozempic` **fetches Cozempic from
-PyPI**, so `--plugin-dir plugin/` would run a downloaded copy rather than `src/cozempic/`. Anyone
-measuring the vendored tree through the plugin would be measuring something else. `fastmcp` is
-therefore a real dependency of the plugin, though not of the runtime
-([COZEMPIC.md](COZEMPIC.md) §1.1).
+${CLAUDE_PLUGIN_ROOT}/servers/cozempic_mcp.py`. Three consequences: it needs `uv`; it needs network
+at spawn; and `--with cozempic` **fetches Cozempic from PyPI**, so `--plugin-dir plugin/` would run a
+downloaded copy rather than `src/cozempic/`. Anyone measuring the vendored tree through the plugin
+would be measuring something else. `fastmcp` is therefore a real dependency of the plugin, though not
+of the runtime ([COZEMPIC.md](COZEMPIC.md) §1.1).
+
+Two corrections to that paragraph, neither of them the fork's doing.
+
+The first consequence used to read "it needs `uv`, **which is not installed in this container**".
+That was true when §1.9 was written and is not true now: `uv 0.12.5` is at `/usr/local/bin/uv`, and
+there is a `.venv` with a `cozempic` console script in it. The image changed under the document,
+which §7 warns about in the other direction; §7's own "`pip`, `pip3`, `uv` and `pytest` all absent"
+is stale for the same reason and by the same commit. Nothing else in §1.9 moves: network at spawn and
+the PyPI fetch are unchanged, and `uv` being present makes the fetch *more* likely to happen, not
+less.
+
+The second is that the third consequence is the one thing here the fork actually resolves rather than
+renames. The server cannot be made to run this repository's code from outside the tree, because the
+fix is that it runs winnow's own code out of an image winnow builds:
+[DECISIONS.md](DECISIONS.md) §0.3, phase 4 of [FORK.md](FORK.md). Until that phase lands, this
+paragraph stands as written and the answer is still "do not enable the vendored `plugin/`".
 
 ### 1.10 Global state is shared across concurrent runs and with the host. Not in the brief.
 
@@ -393,22 +408,52 @@ container, which is precisely what nothing inside it can see.
 
 ## 6. What the next run should not do
 
-Short, because the temptations are specific.
+Short, because the temptations are specific. There were three. **The first was lifted on 2026-08-23**
+and two stand.
 
-Do not patch `src/cozempic/` to fix §1.4 or the guard. [DECISIONS.md](DECISIONS.md) §0 makes that
-tree read-only, and a local edit to a self-updating package is the worst of both. New code goes in
-`src/winnow/`; changes wanted in the tool go upstream.
+> **Lifted: "do not patch `src/cozempic/`."** [DECISIONS.md](DECISIONS.md) §0 was reversed on the
+> operator's instruction and winnow is now a fork. What this section forbade until then is quoted at
+> the end of it, because §8 was built under it and reads as nonsense otherwise.
+>
+> **What replaces it.** The tree is winnow's own code: editable, renamed, and no longer a
+> third-party tree. A fix to the guard is winnow's work and belongs inline. Nothing in it goes
+> upstream, because there is no upstream relationship left to send it to.
+> [FORK.md](FORK.md) is the naming map: the tree moves to `src/winnow/legacy/`, and the word
+> `legacy` in the import path is deliberate. It is inherited code that
+> [DECISIONS.md](DECISIONS.md) §0.2 intends to replace, and D2, D7 and §2 are **not** reversed with
+> §0. Editing the guard is now allowed; adopting its design is still not, and §0.2 says what a run
+> has to amend, by name, before it may.
 
 Do not modify `/workspace/UsageFoundry`. §1.4's harness-side suggestion is a proposal, and the place
-for it is a document beside `proposals/ContextControl/`, written and left for the operator.
+for it is a document beside `proposals/ContextControl/`, written and left for the operator. §1.2 and
+§1.3 are unaffected by the fork: the harness's ownership of session identity has nothing to do with
+who owns the tool's source.
 
 Do not enable the guard to see what happens. §1.2's exposure is a live editor process and §1.3's
 consequence is a run recorded as an unexplained crash. If it must be observed, it should be observed
-against a throwaway session in a container with nothing else in it.
+against a throwaway session in a container with nothing else in it. **The fork makes this more
+pressing, not less.** Ownership of the code that sends the `SIGKILL` is not evidence about what the
+`SIGKILL` does, and a run that reads "the tree is ours now" as licence to try it has confused the
+two. It stays off by default; [DECISIONS.md](DECISIONS.md) §0.2 keeps it off.
 
-All three held in the run that produced §8. The tree is untouched, `/workspace/UsageFoundry` was only
-read, and the guard was never started — which is why "the daemon would have killed this session" is
-still an inference there rather than an observation (§8.9).
+All three held in the run that produced §8, under the rules as they then were. The tree is untouched
+as of that run, `/workspace/UsageFoundry` was only read, and the guard was never started, which is
+why "the daemon would have killed this session" is still an inference there rather than an
+observation (§8.9). Anything §8 says about the tree being unmodified is a record of that run, not a
+rule for the next one.
+
+<details>
+<summary>The prohibition as it stood, 2026-08-23, before the fork</summary>
+
+> Do not patch `src/cozempic/` to fix §1.4 or the guard. [DECISIONS.md](DECISIONS.md) §0 makes that
+> tree read-only, and a local edit to a self-updating package is the worst of both. New code goes in
+> `src/winnow/`; changes wanted in the tool go upstream.
+
+The self-updating half of that argument is dissolved rather than overruled: phase 2 of
+[FORK.md](FORK.md) deletes both update paths, so there is no package updating underneath a local
+edit any more.
+
+</details>
 
 ---
 
@@ -693,7 +738,30 @@ to another release says so here without an edit. MIT's notice requirement is met
 own `LICENSE`, which DECISIONS §0 keeps verbatim: the generated directory contains no upstream bytes at
 all, because both files in it are written by winnow. A test reads that `LICENSE` and fails if the
 recorded copyright line is no longer in it, so the attribution cannot drift away from the file it
-names.
+names. (Verified 2026-08-23: `tests/test_orchestrator_safe.py:503`,
+`test_the_recorded_notice_matches_the_licence_it_points_at`, asserting the substrings `2026 Ruya AI`
+and `MIT License`.)
+
+> **Two sentences here the fork falsifies, 2026-08-23.** Both are prose *and* strings baked into
+> `src/winnow/orchestrator_safe.py`, so the code has to move with the document and the test at :503
+> will not catch either of them: it checks that the copyright line is still in `LICENSE`, which it
+> is, not that the claim about `LICENSE` is still true.
+>
+> **"which DECISIONS §0 keeps verbatim"** is no longer true. §0.6 adds a second copyright line, so
+> `LICENSE` becomes winnow's MIT with both notices over one unmodified permission notice. The
+> requirement is still met, by both notices being present rather than by the file being untouched.
+> The same claim is a literal in `upstream_provenance()` (`orchestrator_safe.py:571-575`): "Vendored
+> prior art, MIT, retained verbatim as LICENSE at the root of the winnow repository (DECISIONS.md
+> §0)". That string is wrong in two ways after the fork, "vendored prior art" and "retained
+> verbatim", and phase 1 of [FORK.md](FORK.md) rewrites it to point at `NOTICE`.
+>
+> **"Winnow has not versioned itself"** stops being true at phase 1. §8.5 was right to refuse to
+> invent a number and the refusal is not being overturned: what changed is that a fork with a
+> container image to tag has to have a version, so [FORK.md](FORK.md) gives winnow **`0.1.0`**,
+> chosen precisely so it cannot be mistaken for a continuation of `1.8.39`. The manifest gains a
+> `version` key at phase 1, and the sentence in `upstream_provenance()`'s notice string, "both are
+> generated by winnow, which has not versioned itself and so declares no version", goes with it. The
+> `derived_from` block is unaffected: upstream's `1.8.39` stays exactly where it is, as provenance.
 
 **Where to write it.** `--out` defaults to `<repository root>/winnow-plugin`, which is gitignored.
 It used to default to `~/.winnow/plugin`, and that path can never be enabled: `discoverPlugins`

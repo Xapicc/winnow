@@ -108,12 +108,6 @@ _SAFE_ENV_SPEC: tuple[tuple[str, str, str], ...] = (
         "USAGEFOUNDRY §4",
     ),
     (
-        "WINNOW_NO_TELEMETRY",
-        "1",
-        "helpers.py:236 — three outbound requests per prune to a third "
-        "party's worker. SPEC §10 says no network. USAGEFOUNDRY §4",
-    ),
-    (
         "WINNOW_NO_RECEIPTS",
         "1",
         "receipts.py:34 — container-local, so hygiene rather than a "

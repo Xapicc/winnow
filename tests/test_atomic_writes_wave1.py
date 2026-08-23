@@ -123,13 +123,11 @@ class TestRecordSavingsAtomic(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             savings_file = Path(tmp) / ".winnow_savings.json"
             with patch("winnow.legacy.helpers._SAVINGS_FILE", savings_file):
-                # Disable telemetry pings
-                with patch.dict(os.environ, {"WINNOW_NO_TELEMETRY": "1"}):
-                    def writer(_i):
-                        record_savings(1000)
+                def writer(_i):
+                    record_savings(1000)
 
-                    with ThreadPoolExecutor(max_workers=10) as ex:
-                        list(ex.map(writer, range(50)))
+                with ThreadPoolExecutor(max_workers=10) as ex:
+                    list(ex.map(writer, range(50)))
 
                 data = json.loads(savings_file.read_text())
                 self.assertEqual(data["tokens_saved"], 50000,

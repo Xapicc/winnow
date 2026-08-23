@@ -206,9 +206,17 @@ class TestReloadRateLedger(unittest.TestCase):
             shutil.rmtree(scratch, ignore_errors=True)
 
 
-class TestVersionedPruneCounter(unittest.TestCase):
-    def test_record_savings_pings_versioned_counter(self):
-        from winnow.legacy import helpers, __version__
+class TestPruneRecordsNothingOutbound(unittest.TestCase):
+    """`record_savings` used to increment three counters on a third party's
+    Cloudflare Worker (`prunes`, `prunes_v<version>` and a savings bucket),
+    suppressible by `WINNOW_NO_TELEMETRY`. Both the counters and the switch are
+    gone (FORK.md §5.1), and the switch is why this asserts on the syscall
+    rather than on the environment: an opt-out that has to be *set* to hold the
+    property is a property that fails by omission.
+    """
+
+    def test_record_savings_makes_no_outbound_request(self):
+        from winnow.legacy import helpers
         urls = []
 
         def _fake_urlopen(req, *a, **k):
@@ -219,21 +227,7 @@ class TestVersionedPruneCounter(unittest.TestCase):
              patch("winnow.legacy.helpers.atomic_write_text"), \
              patch("urllib.request.urlopen", side_effect=_fake_urlopen):
             helpers.record_savings(123_456, total_tokens=500_000, turn_count=10)
-        vtag = "".join(c if (c.isalnum() or c == "_") else "_" for c in __version__.replace(".", "_"))
-        self.assertTrue(any("/counter/prunes/up" in u for u in urls), "base prune counter pinged")
-        self.assertTrue(any(f"/counter/prunes_v{vtag}/up" in u for u in urls),
-                        f"versioned counter prunes_v{vtag} must be pinged; got {urls}")
-
-    def test_no_telemetry_env_suppresses_all_pings(self):
-        from winnow.legacy import helpers
-        import os
-        urls = []
-        with patch.dict(os.environ, {"WINNOW_NO_TELEMETRY": "1"}), \
-             patch("winnow.legacy.helpers._HostFileLock"), \
-             patch("winnow.legacy.helpers.atomic_write_text"), \
-             patch("urllib.request.urlopen", side_effect=lambda *a, **k: urls.append(1)):
-            helpers.record_savings(123_456, total_tokens=500_000, turn_count=10)
-        self.assertEqual(urls, [], "WINNOW_NO_TELEMETRY must suppress all pings")
+        self.assertEqual(urls, [], f"a prune must contact nothing; got {urls}")
 
 
 if __name__ == "__main__":

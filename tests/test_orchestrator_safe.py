@@ -51,7 +51,6 @@ class TestEnvironmentOverlay(unittest.TestCase):
         for name in (
             "WINNOW_NO_GLOBAL_INIT",
             "WINNOW_NO_AUTO_INIT",
-            "WINNOW_NO_TELEMETRY",
             "WINNOW_NO_RECEIPTS",
         ):
             self.assertIn(name, safe.SAFE_ENV)
@@ -62,6 +61,7 @@ class TestEnvironmentOverlay(unittest.TestCase):
         for name in (
             "WINNOW_NO_AUTO_UPDATE",
             "WINNOW_PIN",
+            "WINNOW_NO_TELEMETRY",
         ):
             self.assertNotIn(name, safe.SAFE_ENV)
 

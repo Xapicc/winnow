@@ -1,5 +1,18 @@
 # winnow — milestones, definition of done, kill criteria
 
+> **Status of this document, 2026-08-23.** Restored verbatim after the Cozempic merge (`210b026`)
+> deleted it. The plan below is unchanged and still the plan, with one correction it cannot make
+> itself: **milestone 1 is now cheaper and milestone 3 is now dearer than it says.** Cheaper,
+> because `cozempic diagnose` already reads `usage` off disk and reports occupancy and a cache
+> hit rate ([COZEMPIC.md](COZEMPIC.md) §2), so the instrument has a working precedent to copy
+> rather than invent. Dearer, because the vendored tool supplies a fourth arm the plan did not
+> budget for — a shipped pruner to measure against, which is more informative than the synthetic
+> recency arm and costs another cell. Neither changes the kill criteria, and the kill criteria are
+> the part of this document that matters.
+>
+> One acceptance criterion is now blocked outright rather than merely unwritten: nothing in this
+> container can run the test suite. See [USAGEFOUNDRY.md](USAGEFOUNDRY.md) §7.
+
 Appetite: **two weeks of one person's work**, taken as ten working days. Fixed time,
 variable scope: if the work does not fit, the last milestone is cut, not extended.
 [DECISIONS.md](DECISIONS.md) §5 already records that milestone 3 is the part most likely

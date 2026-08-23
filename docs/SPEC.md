@@ -1,5 +1,12 @@
 # winnow — specification
 
+> **Status of this document, 2026-08-23.** Written before the Cozempic merge (`210b026`), which
+> deleted it. Restored here verbatim: nothing below has been rewritten to agree with the code that
+> now sits in `src/cozempic/`. Where the two disagree, [COZEMPIC.md](COZEMPIC.md) says which side
+> wins and why, decision by decision. Read that document alongside this one; a reader who takes
+> only this file will believe things the repository no longer does, and a reader who takes only the
+> code will believe things this project never agreed to.
+
 **One-liner:** A command-line tool that reads a finished Claude Code session transcript,
 replaces the tool results a stated rule classifies as once-only with recoverable pointers,
 and writes a forked session the operator can resume — deciding what to drop from what the

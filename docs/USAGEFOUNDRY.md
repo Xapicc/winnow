@@ -365,27 +365,31 @@ excluded by default instead of needing to be noticed.
 Everything here is off unless an operator turns it on for a named reason. The last column says what
 happens if it is left on, in one line, so the list can be argued with item by item.
 
+The switches were `COZEMPIC_*` when this section was measured and are `WINNOW_*` since the rename
+([FORK.md](FORK.md) §5.1). The names below are the ones this tree reads; an upstream Cozempic
+installed beside it still reads the old ones, and neither reads the other's.
+
 | Feature | Switch | If left on |
 | --- | --- | --- |
-| Global init into `~/.claude/settings.json` | `COZEMPIC_NO_GLOBAL_INIT=1` (`cli.py:2076`) | Writes hooks onto the operator's host machine, silently, because headless skips the prompt. §1.7 |
-| Project init into `./.claude/settings.json` | `COZEMPIC_NO_AUTO_INIT=1` (`cli.py:2269`) | A settings file appears in the agent's worktree. Inert today: this repository has no `.claude/`, which is its own bail-out |
-| PyPI self-upgrade, both paths | `COZEMPIC_NO_AUTO_UPDATE=1`, or `COZEMPIC_PIN=1.8.39` to hold a reviewed version | The measured artefact changes between runs and no result can name its version. §1.8 |
-| Telemetry counters | `COZEMPIC_NO_TELEMETRY=1` (`helpers.py:236`) | Three outbound requests per prune to a third party's Cloudflare Worker. Counters only, but SPEC §10 says no network |
-| Receipts into `~/.cozempic` | `COZEMPIC_NO_RECEIPTS=1` | Container-local, so this is hygiene rather than a collision. On by default in the tool's own test suite for the same reason |
-| **The guard daemon** | **no environment variable exists.** The only way off is not to install the hook: exclude `SessionStart` from any registered `--plugin-dir`, and keep `COZEMPIC_NO_GLOBAL_INIT=1` so nothing wires it globally | The session can be `SIGKILL`ed mid-cycle, the harness files it as exit -1, and in this container it is not resumed. §1.1, §1.2, §1.3 |
+| Global init into `~/.claude/settings.json` | `WINNOW_NO_GLOBAL_INIT=1` (`cli.py:2076`) | Writes hooks onto the operator's host machine, silently, because headless skips the prompt. §1.7 |
+| Project init into `./.claude/settings.json` | `WINNOW_NO_AUTO_INIT=1` (`cli.py:2269`) | A settings file appears in the agent's worktree. Inert today: this repository has no `.claude/`, which is its own bail-out |
+| PyPI self-upgrade, both paths | `WINNOW_NO_AUTO_UPDATE=1`, or `WINNOW_PIN=1.8.39` to hold a reviewed version | The measured artefact changes between runs and no result can name its version. §1.8 |
+| Telemetry counters | `WINNOW_NO_TELEMETRY=1` (`helpers.py:236`) | Three outbound requests per prune to a third party's Cloudflare Worker. Counters only, but SPEC §10 says no network |
+| Receipts into `~/.winnow` | `WINNOW_NO_RECEIPTS=1` | Container-local, so this is hygiene rather than a collision. On by default in the tool's own test suite for the same reason |
+| **The guard daemon** | **no environment variable exists.** The only way off is not to install the hook: exclude `SessionStart` from any registered `--plugin-dir`, and keep `WINNOW_NO_GLOBAL_INIT=1` so nothing wires it globally | The session can be `SIGKILL`ed mid-cycle, the harness files it as exit -1, and in this container it is not resumed. §1.1, §1.2, §1.3 |
 | **`metadata-strip`** | **no environment variable exists**, and it is gentle-tier so every prescription includes it. Requires a config-file strategy exclusion, or a patch | Spend accounting silently under-reports, killed cycles bill as zero, and the budget ceiling rises to match. §1.4 |
 
 The two bold rows are the finding of this section: **the two features with the largest blast radius
 are the two with no off switch.** Both need a mechanism that does not exist yet, which makes them the
-first implementation task rather than a configuration note. The tool has 28 `COZEMPIC_*` variables
-and none of them is `COZEMPIC_NO_GUARD`.
+first implementation task rather than a configuration note. The tool has 28 `WINNOW_*` variables
+and none of them is `WINNOW_NO_GUARD`.
 
 Both now have one, out of tree, and neither is an environment variable. §8.3 refuses the argv that
 starts the daemon and §8.4 removes `metadata-strip` from the prescription dict both importers already
-hold. One row of this table also turned out to be incomplete: `COZEMPIC_NO_TELEMETRY=1` stops the
+hold. One row of this table also turned out to be incomplete: `WINNOW_NO_TELEMETRY=1` stops the
 outbound counter requests but not the file the same function writes one line earlier, which is §8.6.
 
-Turning that around: adding `COZEMPIC_NO_GUARD` and a strategy-exclusion list is a small,
+Turning that around: adding `WINNOW_NO_GUARD` and a strategy-exclusion list is a small,
 self-contained contribution upstream, and it is the shape of contribution
 [DECISIONS.md](DECISIONS.md) §1 already named as the project's fallback. It would be worth doing even
 if winnow is abandoned.
@@ -650,7 +654,7 @@ compose file should stop the invocation, not silently disarm the mode.
 | --- | --- | --- |
 | 1. Never terminate this session | refuse the argv that starts the daemon or signals one | §8.3 |
 | 2. Never resume a session | refuse `reload`, which spawns a `claude --resume` watcher | §8.3 |
-| 3. No update, no PyPI check, no drift | `COZEMPIC_NO_AUTO_UPDATE=1` + `COZEMPIC_PIN=1.8.39`, refuse `self-update`, and relocate the sentinel the switches do not cover | §8.6 |
+| 3. No update, no PyPI check, no drift | `WINNOW_NO_AUTO_UPDATE=1` + `WINNOW_PIN=1.8.39`, refuse `self-update`, and relocate the sentinel the switches do not cover | §8.6 |
 | 4. No writes to `~/.claude`, no global hooks, no foreign `settings.json` | refuse `init`/`uninstall`/`nudge`, a `--plugin-dir` built from scratch, a redirected checkpoint | §8.5, §8.7 |
 | 5. Do not compete with the harness's context and cost controls | refuse a mutating prune while a Claude process is live | §8.3 |
 | 6. Nothing important written into the model's memory | refuse `digest inject`, drop the skills and the MCP server | §8.3, §8.5 |

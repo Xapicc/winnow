@@ -532,14 +532,27 @@ class TestPluginDirectory(unittest.TestCase):
     def test_the_recorded_notice_matches_the_licence_it_points_at(self):
         # The attribution has to stay true of the file it names, so this reads
         # the repository's LICENSE rather than trusting the string.
-        provenance = safe.upstream_provenance({"license": "MIT"})
+        provenance = safe.upstream_provenance()
         licence = (REPO_ROOT / "LICENSE").read_text(encoding="utf-8")
         self.assertIn(provenance["copyright"], licence)
         self.assertIn("MIT License", licence)
 
-    def test_the_upstream_version_is_read_not_hardcoded(self):
-        # A vendored tree moved to another release should say so here without
-        # an edit to winnow.
+    def test_the_provenance_matches_the_notice_that_records_it(self):
+        # It used to be read out of plugin/.claude-plugin/plugin.json, which was
+        # upstream's manifest. The fork rewrote that file as winnow's own, so
+        # reading it now would record winnow as its own upstream. NOTICE is where
+        # the import is recorded, so that is what these constants are checked
+        # against — the attribution cannot drift away from the file it names.
+        provenance = safe.upstream_provenance()
+        notice = (REPO_ROOT / "NOTICE").read_text(encoding="utf-8")
+        self.assertIn(f"{provenance['version']}", notice)
+        self.assertIn(provenance["copyright"], notice)
+        self.assertIn(provenance["license"], notice)
+        self.assertIn(provenance["name"], notice.lower())
+
+    def test_the_generated_provenance_ignores_the_source_manifest(self):
+        # The source manifest is winnow's own now, and a directory generated
+        # from it must not name winnow as what it was derived from.
         with _temp_dir() as tmp:
             source = tmp / "source"
             (source / ".claude-plugin").mkdir(parents=True)
@@ -548,12 +561,14 @@ class TestPluginDirectory(unittest.TestCase):
                 json.dumps({"hooks": {"SessionStart": []}}), encoding="utf-8"
             )
             (source / ".claude-plugin" / "plugin.json").write_text(
-                json.dumps({"name": "cozempic", "version": "9.9.9",
-                            "license": "MIT"}),
+                json.dumps({"name": "winnow", "version": "9.9.9",
+                            "license": "Apache-2.0"}),
                 encoding="utf-8",
             )
             report = safe.materialise_plugin_dir(source, tmp / "out")
-        self.assertEqual(report["derived_from"]["version"], "9.9.9")
+        self.assertEqual(report["derived_from"]["name"], safe.UPSTREAM_NAME)
+        self.assertEqual(report["derived_from"]["version"], safe.UPSTREAM_VERSION)
+        self.assertEqual(report["derived_from"]["license"], safe.UPSTREAM_LICENSE)
 
     def test_the_default_destination_is_one_the_plugin_scan_can_reach(self):
         # UsageFoundry walks its workspace mounts and skips dot-directories and

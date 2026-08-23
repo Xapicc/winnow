@@ -87,11 +87,15 @@ def is_enabled(env: dict[str, str] | None = None) -> bool:
 
 # ── The environment the mode runs the vendored tree under ────────────────────
 
-# The version this tree was inherited at. Provenance only: it is what
-# `derived_from` in the generated plugin manifest records. It used to be the
-# value this mode forced into WINNOW_PIN, to stop an upgrade moving the measured
-# artefact mid-cycle; the upgrade path is gone, so the pin is too (FORK.md §5.1).
+# What this tree was inherited from, and at which release. Provenance only: it
+# is what `derived_from` in the generated plugin manifest records. UPSTREAM_VERSION
+# used to be the value this mode forced into WINNOW_PIN, to stop an upgrade moving
+# the measured artefact mid-cycle; the upgrade path is gone, so the pin is too
+# (FORK.md §5.1). All three mirror NOTICE, which is the record, and a test fails if
+# they drift from it.
+UPSTREAM_NAME = "cozempic"
 UPSTREAM_VERSION = "1.8.39"
+UPSTREAM_LICENSE = "MIT"
 
 _SAFE_ENV_SPEC: tuple[tuple[str, str, str], ...] = (
     (
@@ -544,24 +548,29 @@ def winnow_command(python: str | None = None, source_root: Path | None = None) -
     return f"PYTHONPATH={root} {interpreter} -m winnow"
 
 
-def upstream_provenance(source_plugin: dict) -> dict:
+def upstream_provenance() -> dict:
     """What the materialised directory was derived from.
 
     The generated directory carries no upstream bytes — both JSON files in it
     are written here — so MIT's notice requirement is not triggered by a copy.
     The derivation is still real: the classification of which hook events are
     safe was read off upstream's manifest, and the checkpoint calls into the
-    vendored tree. So the provenance is recorded rather than dropped, next to
+    inherited tree. So the provenance is recorded rather than dropped, next to
     what was dropped and why, and the notice it points at is the repository's
-    own ``LICENSE``, which DECISIONS §0 keeps verbatim.
+    own ``LICENSE`` and ``NOTICE``.
 
-    Read out of the source manifest rather than hardcoded: a vendored tree
-    moved to another version should say so here without an edit.
+    These four values used to be read out of ``plugin/.claude-plugin/plugin.json``,
+    on the grounds that a vendored tree moved to another release should say so
+    here without an edit. That stopped being true when the fork rewrote that
+    manifest as winnow's own (FORK.md §4, USAGEFOUNDRY §8.5): reading it now
+    would record winnow as its own upstream. There is no vendored tree to move
+    any more, so the provenance is a fixed fact about the import at 210b026 and
+    lives beside the ``NOTICE`` that states it.
     """
     return {
-        "name": source_plugin.get("name"),
-        "version": source_plugin.get("version"),
-        "license": source_plugin.get("license"),
+        "name": UPSTREAM_NAME,
+        "version": UPSTREAM_VERSION,
+        "license": UPSTREAM_LICENSE,
         "copyright": _UPSTREAM_COPYRIGHT,
         "notice": (
             "Derived from the named upstream under the MIT licence, whose "
@@ -607,17 +616,19 @@ def materialise_plugin_dir(
     plugin_json_path = source / ".claude-plugin" / "plugin.json"
     if not plugin_json_path.is_file():
         raise FileNotFoundError(f"no plugin manifest at {plugin_json_path}")
-    source_plugin = json.loads(plugin_json_path.read_text(encoding="utf-8"))
-    # Written from scratch rather than copied and overwritten, for the reason
-    # the hooks manifest is: a field upstream adds is then absent by default
-    # instead of by classification. It also settles the identity question — a
-    # copy carried upstream's description, version, author and repository under
-    # winnow's name, and UsageFoundry displayed them (plugins.ts:107-114).
+    # The source manifest is required but not read: a directory without one is
+    # not a plugin directory, and generating from it would produce something the
+    # app cannot discover. Its *contents* are deliberately ignored — written from
+    # scratch rather than copied and overwritten, for the reason the hooks
+    # manifest is: a field the source adds is then absent by default instead of
+    # by classification. It also settles the identity question — a copy carried
+    # the source's description, version, author and repository under winnow's
+    # name, and UsageFoundry displayed them (plugins.ts:107-114).
     plugin = {
         "name": _SAFE_PLUGIN_NAME,
         "description": _SAFE_PLUGIN_DESCRIPTION,
     }
-    provenance = upstream_provenance(source_plugin)
+    provenance = upstream_provenance()
 
     if dest.exists():
         shutil.rmtree(dest)

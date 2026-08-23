@@ -486,6 +486,18 @@ Within that population, three breaks, ordered by how much they can hurt:
 Phase 4. The target is the operator's, from [DECISIONS.md](DECISIONS.md) §0.3: the server runs
 winnow's own code, from an image winnow builds, fetching nothing at spawn.
 
+> **Amended by the operator, 2026-08-23, before the phase ran.** The container is off. The server
+> stays a local stdio process spawned by Claude Code: no `Dockerfile`, no compose file, no HTTP or SSE
+> transport, no bind address, no auth layer. "Runs winnow's own code, fetching nothing at spawn" is
+> unchanged and is what landed — `uv run --project ${CLAUDE_PLUGIN_ROOT}/.. --extra mcp --frozen`,
+> which resolves this checkout as an editable install and hits no index
+> ([USAGEFOUNDRY.md](USAGEFOUNDRY.md) §1.9). The three bullets below that describe the image, the
+> `docker run` invocation and the read-only mount are therefore **not** what was built; the two that
+> describe the rename and the deleted thread are. `fastmcp` stays the `mcp` extra permanently rather
+> than moving to an image's dependencies, and `pyproject.toml` says so. The version bump in §4 is
+> untouched by this and still unapplied: it was justified by an image needing a tag, so §4 is worth
+> re-reading before it is applied.
+
 Today, `plugin/.mcp.json` is `uv run --with fastmcp --with cozempic python
 ${CLAUDE_PLUGIN_ROOT}/servers/cozempic_mcp.py`. `--with cozempic` fetches from PyPI at spawn, so the
 server runs a downloaded copy and not this tree at all ([USAGEFOUNDRY.md](USAGEFOUNDRY.md) §1.9).
@@ -663,17 +675,22 @@ treated as the unknown it is (§9's kill-path criterion above, `guard.py:_pid_id
       key outside `hooks`. The two files match today and nothing enforces that they keep matching; if
       byte-identity is wanted, phase 3 is where the assertion gets added.
 
-### Phase 4: the container
+### Phase 4: the MCP server
 
-- [ ] Given a machine with no network, when the image is run, then the MCP server starts and answers
-      a `tools/list` with the five tools. Nothing is fetched at spawn.
-- [ ] Given the image, when it is inspected, then it contains no `_startup_maintenance` thread and
-      makes no outbound request on startup.
-- [ ] `.mcp.json` invokes the container and contains no `--with` argument.
-- [ ] Given the default mount, when `treat_session(execute=True)` is called, then it fails because the
-      session directory is mounted read-only, and the error names the flag that would allow it.
-- [ ] The image is tagged `winnow:0.1.0` and `winnow:<git-sha>`, and `winnow --version` inside it
-      prints `0.1.0`.
+Restated after the operator dropped the container (§7's amendment). The four criteria below are what
+the phase was accountable for once the image was off the table; the image, the read-only mount and the
+`winnow:0.1.0` tag are struck rather than deferred, because there is no image to hold them.
+
+- [x] Given the spawn line in `.mcp.json`, when it is run, then the server answers a `tools/list` with
+      the five tools and nothing is fetched at spawn. (Verified over stdio with a JSON-RPC handshake
+      piped in and stdin closed: exit 0, `serverInfo {"name": "winnow"}`, five tools.)
+- [x] `.mcp.json` contains no `--with` argument, does contain `--frozen`, and the project it names
+      resolves to this checkout. Held by `tests/test_plugin_mcp_server.py`.
+- [x] Given the module, when it is imported, then it starts no thread, and `_startup_maintenance`,
+      `ping_install` and `maybe_auto_update` appear nowhere in its code. Held by the same file, over
+      the AST rather than the text, because the comments name all three in order to say they went.
+- [x] Given fastmcp's in-memory client, when each of the five tools is called, then it answers, and
+      `treat_session` defaults to a dry run that changes no bytes and leaves no file behind.
 
 ---
 

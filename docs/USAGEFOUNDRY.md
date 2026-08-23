@@ -260,10 +260,40 @@ the PyPI fetch are unchanged, and `uv` being present makes the fetch *more* like
 less.
 
 The second is that the third consequence is the one thing here the fork actually resolves rather than
-renames. The server cannot be made to run this repository's code from outside the tree, because the
-fix is that it runs winnow's own code out of an image winnow builds:
-[DECISIONS.md](DECISIONS.md) §0.3, phase 4 of [FORK.md](FORK.md). Until that phase lands, this
-paragraph stands as written and the answer is still "do not enable the vendored `plugin/`".
+renames, and as of phase 4 it is resolved. `plugin/.mcp.json` now reads:
+
+```
+uv run --project ${CLAUDE_PLUGIN_ROOT}/.. --extra mcp --frozen python \
+  ${CLAUDE_PLUGIN_ROOT}/servers/winnow_mcp.py
+```
+
+No `--with` argument, so nothing is fetched from an index and the server that answers is
+`src/winnow/`, resolved as an editable install of the checkout the plugin sits in. The earlier plan
+was an image winnow builds ([DECISIONS.md](DECISIONS.md) §0.3, phase 4 of [FORK.md](FORK.md)); the
+operator has since decided against containerising it, and the four arguments above are what the
+decision cost instead. Each is load-bearing:
+
+- `--project` rather than `--directory`, because `--directory` chdirs and `find_current_session`
+  derives the project slug from the working directory (`session.py:275`). A chdir would make every
+  tool report a different project than the one Claude Code is in.
+- `--extra mcp`, which is where `fastmcp` is declared. That extra was introduced as an interim in
+  phase 2 on the assumption that phase 4 would move it into an image's dependencies; it is now the
+  permanent home, and `pyproject.toml` says so.
+- `--frozen`, so `uv run` does not re-resolve the lock against the index before handing over to the
+  interpreter. Without it the "no network at spawn" claim is only usually true.
+- `${CLAUDE_PLUGIN_ROOT}/..` rather than an absolute path, so the invocation is not tied to where the
+  repository is checked out. The cost is that `plugin/` cannot be copied away from its checkout; the
+  plugin README says so.
+
+What does not change: it still needs `uv` on `PATH` — one entry point out of the whole plugin, and
+`/usr/local/bin/uv` here, but a machine without `uv` gets the hooks and skills and no MCP tools. The
+README states the requirement rather than assuming it. And the answer to "may I enable the vendored
+`plugin/`" is still no, for the reasons §8.5 lists, none of which is this one any more.
+
+`tests/test_plugin_mcp_server.py` is the regression test: it reads `.mcp.json` as data and fails on a
+reintroduced `--with`, a missing `--frozen`, a `--directory`, or a transport key that is not stdio.
+The other half of that file drives the five tools through fastmcp's in-memory client, which exercises
+the server in-process without spawning anything §6 forbids.
 
 ### 1.10 Global state is shared across concurrent runs and with the host. Not in the brief.
 
@@ -710,9 +740,40 @@ copied and filtered**, so anything upstream adds is excluded by default rather t
 
 Kept: `PreCompact` and `PostCompact`, pointed at `winnow safe checkpoint` and `winnow safe
 post-compact`. Dropped: `SessionStart` (starts the guard; it upgraded from PyPI too until phase 2
-deleted that), `PostToolUse`,
-`Stop`, and the `.mcp.json`, `servers/` and `skills/` paths — §1.9's MCP server would run a PyPI copy
-of the tool rather than the vendored tree, and the skills are instructions to the model.
+deleted that), `PostToolUse`, `Stop`, and the `.mcp.json`, `servers/`, `skills/` and `README.md`
+paths.
+
+**The MCP server, re-decided at phase 4.** The reason for dropping `.mcp.json` and `servers/` used to
+be §1.9: the server ran a PyPI copy of the tool rather than this tree, so shipping it inside a
+generated directory would have shipped somebody else's program. Phase 4 fixed that — the invocation
+now runs this checkout with nothing fetched at spawn — which retires the reason and puts the question
+back open. **Decision: they stay dropped, on three reasons the fix does not touch.**
+
+- `treat_session(execute=True)` rewrites the live transcript in place. That is the one operation this
+  mode exists to withhold, and here it is reachable by the model deciding to call it. The dry run is
+  harmless and is not separable: they are one tool with a boolean.
+- The argv gate (§8.3) is the mechanism that refuses `treat`, and an MCP tool call does not go through
+  argv. Every refusal the gate is trusted for is bypassed, not enforced by a second path.
+- The server is a **separate process**. `_SAFE_ENV_SPEC` and `redirect_home_writes()` are applied in
+  the process the gate ran in; `uv run` spawns a new interpreter that inherits neither, so the
+  session sidecar and anything else the tools write land wherever the unpatched code puts them —
+  inside the bind mount, which is invariant 4. Making the server safe would mean applying the overlay
+  at its entry point too, i.e. a second implementation of the mode maintained in the plugin.
+
+A gentler option was available and rejected: ship `.mcp.json` with a server exposing only
+`diagnose_current`, `estimate_tokens`, `list_sessions` and `list_strategies`. It fails the third
+reason on its own — those four still read `~/.claude` and write the active-session sidecar from an
+unpatched process — and it would mean a second server module in the tree whose only difference from
+the first is an omission, which is the kind of near-duplicate that drifts. Diagnosis is not what an
+orchestrated run needs from this directory; checkpointing across compaction is.
+
+`skills/` stays dropped for the reason it always was, restated because the rename changed the string:
+every skill now declares `allowed-tools: Bash(winnow *)` and calls the binary directly, which is
+outside both the gate and the overlay, and two of them (`guard`, `reload`) instruct the agent to run
+exactly the commands the gate refuses. `README.md` describes the plugin that was not materialised
+here. All four reasons are the strings in `DROPPED_PLUGIN_PATHS`
+(`orchestrator_safe.py:450`), so they are written into every generated
+`winnow-safe-manifest.json` rather than living only here.
 
 The generated hook commands **bake `WINNOW_ORCHESTRATOR=1` in** rather than inheriting it. The
 directory only exists because the mode materialised it, so a hook inside it is running under the mode
@@ -730,8 +791,11 @@ what was dropped and why, and what the directory was derived from.
 cozempic's `description`, `version` `1.8.39`, `author` and `repository`. That is the manifest
 UsageFoundry reads and displays: `plugins.ts:107-114` takes `name` and `description` straight out of it
 for the plugin list, so the directory an operator would enable presented itself as Cozempic's, under
-Cozempic's name, describing pruning — which is the one thing this mode does not do. The manifest is now
-written from scratch like the hooks manifest, and holds two keys:
+Cozempic's name, describing pruning — which is the one thing this mode does not do. The rename does
+not retire that argument, it only changes which sentence would be wrong: a copy of the phase-4
+manifest would now carry winnow's own description, which opens by promising a guard daemon, five
+pruning skills and an MCP server. Right about the vendored plugin, false about this directory. The
+manifest is written from scratch like the hooks manifest, and holds two keys:
 
 ```json
 {
@@ -752,40 +816,48 @@ what was dropped and why, as a `derived_from` object naming upstream's `name`, `
   "copyright": "2026 Ruya AI",
   "license": "MIT",
   "name": "cozempic",
-  "notice": "Vendored prior art, MIT, retained verbatim as LICENSE at the root of the winnow repository (DECISIONS.md §0). Neither file in this directory is a copy of it: both are generated by winnow, which has not versioned itself and so declares no version.",
+  "notice": "Derived from the named upstream under the MIT licence, whose terms and copyright are at the root of the winnow repository as LICENSE and NOTICE (DECISIONS.md §0). Neither file in this directory is a copy of upstream's: both are generated by winnow.",
   "version": "1.8.39"
 }
 ```
 
-Those three fields are read out of the source manifest rather than hardcoded, so a vendored tree moved
-to another release says so here without an edit. MIT's notice requirement is met by the repository's
-own `LICENSE`, which DECISIONS §0 keeps verbatim: the generated directory contains no upstream bytes at
-all, because both files in it are written by winnow. A test reads that `LICENSE` and fails if the
-recorded copyright line is no longer in it, so the attribution cannot drift away from the file it
-names. (Verified 2026-08-23: `tests/test_orchestrator_safe.py:503`,
-`test_the_recorded_notice_matches_the_licence_it_points_at`, asserting the substrings `2026 Ruya AI`
-and `MIT License`.)
+Those four fields used to be **read out of the source manifest** rather than hardcoded, on the
+grounds that a vendored tree moved to another release would then say so here without an edit. Phase 4
+ended that: `plugin/.claude-plugin/plugin.json` is now winnow's own manifest, so reading it records
+winnow as its own upstream and the `derived_from` block silently stops being provenance. There is no
+vendored tree left to move, either — the import is a fixed historical fact — so the four values are
+`UPSTREAM_NAME`, `UPSTREAM_VERSION`, `UPSTREAM_LICENSE` and `_UPSTREAM_COPYRIGHT`
+(`orchestrator_safe.py:96`), pinned to the `NOTICE` that states them by a test that fails if any of
+the four is no longer in that file. Two tests hold the pair of failure modes: one that the constants
+match `NOTICE`, and one that a source manifest claiming `{"name": "winnow", "version": "9.9.9"}`
+still produces upstream's values
+(`tests/test_orchestrator_safe.py`, `test_the_provenance_matches_the_notice_that_records_it` and
+`test_the_generated_provenance_ignores_the_source_manifest`).
 
-> **Two sentences here the fork falsifies, 2026-08-23.** Both are prose *and* strings baked into
-> `src/winnow/orchestrator_safe.py`, so the code has to move with the document and the test at :503
-> will not catch either of them: it checks that the copyright line is still in `LICENSE`, which it
-> is, not that the claim about `LICENSE` is still true.
+MIT's notice requirement is met by the repository's own `LICENSE` and `NOTICE`: the generated
+directory contains no upstream bytes at all, because both files in it are written by winnow.
+
+> **The two sentences the fork falsified, resolved 2026-08-23.** Both were prose *and* strings baked
+> into `src/winnow/orchestrator_safe.py`, so the code had to move with the document, and the
+> `LICENSE` test could not catch either: it checks that the copyright line is still in `LICENSE`,
+> which it is, not that the claim *about* `LICENSE` is still true.
 >
-> **"which DECISIONS §0 keeps verbatim"** is no longer true. §0.6 adds a second copyright line, so
-> `LICENSE` becomes winnow's MIT with both notices over one unmodified permission notice. The
-> requirement is still met, by both notices being present rather than by the file being untouched.
-> The same claim is a literal in `upstream_provenance()` (`orchestrator_safe.py:571-575`): "Vendored
-> prior art, MIT, retained verbatim as LICENSE at the root of the winnow repository (DECISIONS.md
-> §0)". That string is wrong in two ways after the fork, "vendored prior art" and "retained
-> verbatim", and phase 1 of [FORK.md](FORK.md) rewrites it to point at `NOTICE`.
+> **"which DECISIONS §0 keeps verbatim"** was falsified by §0.6 adding a second copyright line:
+> `LICENSE` is winnow's MIT with both notices over one unmodified permission notice, so the
+> requirement is met by both notices being present rather than by the file being untouched. Fixed in
+> both places — the paragraph above, and the notice string in `upstream_provenance()`, which now
+> points at `LICENSE` **and** `NOTICE` and no longer says "vendored prior art" or "retained
+> verbatim".
 >
-> **"Winnow has not versioned itself"** stops being true at phase 1. §8.5 was right to refuse to
-> invent a number and the refusal is not being overturned: what changed is that a fork with a
-> container image to tag has to have a version, so [FORK.md](FORK.md) gives winnow **`0.1.0`**,
-> chosen precisely so it cannot be mistaken for a continuation of `1.8.39`. The manifest gains a
-> `version` key at phase 1, and the sentence in `upstream_provenance()`'s notice string, "both are
-> generated by winnow, which has not versioned itself and so declares no version", goes with it. The
-> `derived_from` block is unaffected: upstream's `1.8.39` stays exactly where it is, as provenance.
+> **"Winnow has not versioned itself"** is still true, and the reason it was expected to stop being
+> true is gone. It was going to stop because a container image needs a tag; the operator has since
+> decided against containerising, so nothing forces a number. `pyproject.toml` still carries the
+> inherited `1.8.39` and [FORK.md](FORK.md) §4's `0.1.0` is unapplied, which means an invented
+> version in either manifest would be the false claim §8.5 refused. So both manifests declare none:
+> the generated one, and — new at phase 4 — the vendored `plugin/.claude-plugin/plugin.json`, which
+> until then declared cozempic's `1.8.39`. When `0.1.0` lands, the version question is worth
+> reopening for both. The `derived_from` block is unaffected either way: upstream's `1.8.39` stays
+> exactly where it is, as provenance.
 
 **Where to write it.** `--out` defaults to `<repository root>/winnow-plugin`, which is gitignored.
 It used to default to `~/.winnow/plugin`, and that path can never be enabled: `discoverPlugins`
@@ -803,11 +875,20 @@ it in the checkout the app has mounted and enable it from the plugin list; pass 
 else.
 
 Two consequences worth stating rather than discovering. The vendored `plugin/` is itself a plugin
-directory inside the mount, so the app already lists it as `cozempic` with upstream's description —
-enabling *that* is the thing this mode exists to prevent, and the two are now told apart by name in
-the list rather than by path. And a directory generated inside a `.uf-worktrees/` worktree is not
-discoverable, by the same rule that skips dot-directories; the file is still written, and `--out` or a
-generate-in-the-checkout step is the answer.
+directory inside the mount, so the app lists it too, and enabling *that* is the thing this mode exists
+to prevent. Phase 4 renamed it to `winnow`, which means the two are **no longer told apart by name**:
+both rows read `winnow`. That is a real cost of the rename and it was accepted rather than overlooked.
+Identity in the app is the path, not the name — `discoverPlugins` keys by path (`plugins.ts:244-315`)
+and `name` is used for display and sort only — and the plugin list already prints the mount label and
+relative path beside every row (`settings/page.tsx:3137`), so `winnow / plugin` and `winnow /
+winnow-plugin` are distinguishable on screen. The alternative was to name the vendored plugin
+something other than what the program is called, which trades a distinction the UI already draws for a
+name that is wrong everywhere else. What carries the warning instead is the description, which is the
+other field the list displays: the vendored manifest's says in its second sentence that enabling it
+starts a background process and lets the model rewrite transcripts, and names `winnow safe plugin-dir`
+as the subset that does neither. Second consequence: a directory generated inside a `.uf-worktrees/`
+worktree is not discoverable, by the same rule that skips dot-directories; the file is still written,
+and `--out` or a generate-in-the-checkout step is the answer.
 
 **Every hook action says one line.** `checkpoint` used to print `winnow: team state checkpointed to
 <path>` when there was team state and exit 2 in silence when there was none, and `post-compact` either

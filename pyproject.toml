@@ -26,6 +26,29 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
     "Topic :: Utilities",
 ]
+# psutil is the only backend that can read a process start time on a platform
+# whose /proc and `ps -o lstart=` both fail, and the start time is what stops
+# the guard SIGKILLing a recycled PID. It was a lazy import with a fail-open
+# fallback, so a machine without it lost the check silently. The fallback now
+# fails closed (guard.py `_pid_identity_match`); declaring it here is what keeps
+# the closed path from being the normal one. docs/FORK.md §9.
+dependencies = [
+    "psutil>=5.9",
+]
+
+[project.optional-dependencies]
+# pytest is what the suite is written against. It was undeclared, so every run
+# needed `uv run --with pytest`.
+dev = [
+    "pytest>=7.0",
+]
+# fastmcp is imported by plugin/servers/cozempic_mcp.py, and by nothing the CLI
+# reaches. An extra rather than a hard dependency for that reason: `winnow list`
+# should not pull an MCP framework. Phase 4 moves the server into an image and
+# this becomes the image's dependency (docs/FORK.md §7).
+mcp = [
+    "fastmcp>=2.0",
+]
 
 [project.scripts]
 winnow = "winnow.cli:main"

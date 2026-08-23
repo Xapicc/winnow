@@ -46,6 +46,7 @@ in-process prescription exclusion, and a filtered plugin directory.
 
 from __future__ import annotations
 
+import importlib
 import json
 import os
 import shutil
@@ -204,15 +205,20 @@ def data_dir(env: dict[str, str] | None = None) -> Path:
 
 # ── The argv gate ────────────────────────────────────────────────────────────
 
-# A frozen mirror of cozempic.cli._SUBCOMMANDS. Frozen rather than imported so
-# that the policy does not depend on importing the CLI to make a decision, and
-# so that an upstream tree with a new subcommand fails a test here instead of
-# silently defaulting that subcommand to allowed.
+# A frozen mirror of the subcommands cozempic's argparse parser accepts. Frozen
+# rather than imported so that the policy does not depend on importing the CLI
+# to make a decision, and so that an upstream tree with a new subcommand fails a
+# test here instead of silently defaulting that subcommand to allowed.
+#
+# Mirrors the parser, not cli._SUBCOMMANDS: the two disagree, and the parser is
+# the set that can actually be invoked. `nudge` is in the parser and not in
+# _SUBCOMMANDS, so a gate built on that constant would not see the one command
+# that writes into ~/.claude/cozempic-metrics/.
 COZEMPIC_SUBCOMMANDS = frozenset({
     "list", "current", "diagnose", "treat", "strategy", "reload",
     "checkpoint", "post-compact", "guard", "init", "doctor", "formulary",
     "completions", "digest", "self-update", "remind", "guard-watchdog",
-    "dashboard", "uninstall",
+    "dashboard", "uninstall", "nudge",
 })
 
 # Refused whatever the arguments, keyed by subcommand.
@@ -245,6 +251,18 @@ _REFUSED_SUBCOMMANDS: dict[str, str] = {
         "writes team-checkpoint.md into ~/.claude/projects/<slug>/ "
         "(guard.py:389-390). Use `winnow safe checkpoint`, which writes the "
         "same file into winnow's data directory. USAGEFOUNDRY §1.7"
+    ),
+    # The two commands that build a home-directory path inside the function
+    # rather than at module level, so `redirect_home_writes` cannot reach them.
+    "nudge": (
+        "writes ~/.claude/cozempic-metrics/nudge-state.json (cli.py:1482), "
+        "inside the bind mount. It is the Stop hook's command and this mode "
+        "does not install the Stop hook. USAGEFOUNDRY §1.7"
+    ),
+    "remind": (
+        "writes ~/.cozempic_remind_counter (cli.py:1567) to decide when to "
+        "ask an interactive user to run init. There is no interactive user "
+        "and init is refused. USAGEFOUNDRY §1.7"
     ),
 }
 
@@ -693,6 +711,7 @@ def check(env: dict[str, str] | None = None) -> list[Finding]:
     findings.append(_check_global_hooks(environ))
     findings.append(_check_digest_memories(environ))
     findings.append(_check_strategy_exclusion())
+    findings.append(_check_home_state())
     findings.append(_check_live_session())
     return findings
 
@@ -796,6 +815,29 @@ def _check_strategy_exclusion() -> Finding:
     )
 
 
+def _check_home_state(home: Path | None = None) -> Finding:
+    """Has the vendored tree left state in $HOME, outside any redirect?
+
+    A violation, and a useful one: these files can only have been written by a
+    cozempic run that did not go through this mode, so the finding says the
+    mode was bypassed rather than that it failed.
+    """
+    root = Path.home() if home is None else Path(home)
+    found = sorted(
+        entry.name
+        for entry in root.iterdir()
+        if entry.name.startswith(".cozempic")
+    )
+    if found:
+        return Finding(
+            "home-state",
+            False,
+            "the vendored tree has state in $HOME, so something ran it outside "
+            "this mode: " + ", ".join(found),
+        )
+    return Finding("home-state", True, f"no .cozempic* state in {root}")
+
+
 def _check_live_session() -> Finding:
     """Is a prune allowed at this moment?"""
     try:
@@ -845,6 +887,66 @@ def resolve_session_path(payload: dict, cwd: str | None = None) -> Path | None:
     return Path(session["path"]) if session else None
 
 
+# ── The home-directory state ─────────────────────────────────────────────────
+
+# Where the vendored tree keeps state outside ~/.claude, and where this mode
+# keeps it instead. Every entry is a module-level constant computed from
+# `Path.home()` at import time and read only through its own module's global, so
+# rebinding it here reaches every use. Checked by a test, because a constant
+# that a second module imported by value would silently keep the old path.
+#
+# The reason for redirecting rather than refusing: none of this state is
+# dangerous, it is just in the wrong place. A cycle's savings tally and update
+# sentinel belong to the cycle, and $HOME in this container outlives it.
+_HOME_WRITE_REDIRECTS: tuple[tuple[str, str, str], ...] = (
+    ("cozempic.updater", "_CACHE_FILE", "cozempic-update-check"),
+    ("cozempic.updater", "_INSTALL_SENTINEL", "cozempic-installed"),
+    ("cozempic.config", "_CONFIG_FILE_PATH", "cozempic/config.json"),
+    ("cozempic.digest", "DIGEST_DIR", "cozempic"),
+    ("cozempic.digest", "DIGEST_FILE", "cozempic/behavioral-digest.json"),
+    ("cozempic.digest", "DIGEST_MD_FILE", "cozempic/behavioral-digest.md"),
+    ("cozempic.helpers", "_SAVINGS_FILE", "cozempic-savings.json"),
+    ("cozempic.cli", "_GLOBAL_INIT_MARKER", "cozempic-global-initialized"),
+    ("cozempic.init", "_GLOBAL_INIT_MARKER", "cozempic-global-initialized"),
+    ("cozempic.init", "_REMIND_COUNTER", "cozempic-remind-counter"),
+)
+
+
+def home_write_targets(target_dir: Path) -> dict[tuple[str, str], Path]:
+    """The redirect table resolved against `target_dir`. Pure."""
+    return {
+        (module, attribute): Path(target_dir) / relative
+        for module, attribute, relative in _HOME_WRITE_REDIRECTS
+    }
+
+
+def redirect_home_writes(target_dir: Path) -> dict[str, Path]:
+    """Point the vendored tree's home-directory state at `target_dir`.
+
+    `cozempic.cli.main` calls `ping_install_if_new()` before it parses argv
+    (cli.py:2398), and that writes ~/.cozempic_installed with no env switch in
+    front of it — `COZEMPIC_NO_TELEMETRY` stops the network ping, one line
+    later, not the write (updater.py:186). So the refusal table cannot cover
+    this and the environment overlay cannot either: the only lever left is the
+    path itself.
+
+    Returns the redirects applied, keyed `module.attribute`.
+    """
+    applied: dict[str, Path] = {}
+    for (module_name, attribute), destination in home_write_targets(target_dir).items():
+        module = importlib.import_module(module_name)
+        if not hasattr(module, attribute):
+            raise AttributeError(
+                f"{module_name}.{attribute} is gone from the vendored tree. It "
+                "held a $HOME path this mode redirects; find where that state "
+                "goes now before assuming it is safe."
+            )
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        setattr(module, attribute, destination)
+        applied[f"{module_name}.{attribute}"] = destination
+    return applied
+
+
 def run_cozempic(argv: list[str]) -> int:
     """Run the vendored CLI in this process, under the mode.
 
@@ -855,6 +957,7 @@ def run_cozempic(argv: list[str]) -> int:
     """
     apply_safe_environment()
     apply_strategy_exclusions()
+    redirect_home_writes(data_dir())
 
     from cozempic.cli import main as cozempic_main
 

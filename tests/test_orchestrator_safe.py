@@ -123,12 +123,31 @@ class TestDataDirectory(unittest.TestCase):
 
 
 class TestSubcommandMirror(unittest.TestCase):
-    def test_the_mirror_matches_the_vendored_tree(self):
+    @staticmethod
+    def _parser_subcommands() -> set[str]:
+        import argparse
+
+        from cozempic.cli import build_parser
+
+        for action in build_parser()._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                return set(action.choices)
+        raise AssertionError("cozempic's parser has no subparsers any more")
+
+    def test_the_mirror_matches_the_vendored_parser(self):
         # If upstream adds a subcommand, this fails and somebody classifies it.
         # The alternative is a new subcommand defaulting to allowed, silently.
+        self.assertEqual(set(safe.COZEMPIC_SUBCOMMANDS), self._parser_subcommands())
+
+    def test_the_mirror_covers_what_cli_subcommands_misses(self):
+        # cli._SUBCOMMANDS is missing `nudge`, so a gate mirroring that constant
+        # would let through the one command that writes into the bind mount.
+        # Asserted rather than worked around, so the day upstream reconciles the
+        # two this stops being a special case and says so.
         from cozempic.cli import _SUBCOMMANDS
 
-        self.assertEqual(set(safe.COZEMPIC_SUBCOMMANDS), set(_SUBCOMMANDS))
+        self.assertEqual(self._parser_subcommands() - set(_SUBCOMMANDS), {"nudge"})
+        self.assertIn("nudge", safe.COZEMPIC_SUBCOMMANDS)
 
     def test_finds_the_subcommand_the_way_cozempic_does(self):
         self.assertEqual(safe.subcommand_of(["treat", "abc", "--execute"]), "treat")
@@ -174,6 +193,12 @@ class TestArgvGate(unittest.TestCase):
         # Invariant 6: MEMORY.md is loaded into every session's context.
         self.assert_refused(["digest", "inject"], naming="MEMORY.md")
         self.assert_allowed(["digest", "show"])
+
+    def test_the_two_commands_that_write_home_paths_in_function_are_refused(self):
+        # redirect_home_writes reaches module-level constants only; these two
+        # build the path inside the function, so refusal is the only closure.
+        self.assert_refused(["nudge"], naming="cozempic-metrics")
+        self.assert_refused(["remind"], naming="cozempic_remind_counter")
 
     def test_the_watchdog_is_refused_only_when_it_would_signal(self):
         self.assert_refused(["guard-watchdog", "--fix"], naming="SIGTERM")
@@ -245,6 +270,124 @@ class TestStrategyExclusion(unittest.TestCase):
         finally:
             for name, strategies in original.items():
                 registry.PRESCRIPTIONS[name][:] = strategies
+
+
+class TestHomeStateRedirect(unittest.TestCase):
+    def setUp(self):
+        # redirect_home_writes rebinds module globals in the vendored tree, and
+        # a leak from one test into the next would look like a passing mirror.
+        import importlib
+
+        self._saved = {
+            (module_name, attribute): getattr(
+                importlib.import_module(module_name), attribute
+            )
+            for module_name, attribute, _ in safe._HOME_WRITE_REDIRECTS
+        }
+
+    def tearDown(self):
+        import importlib
+
+        for (module_name, attribute), value in self._saved.items():
+            setattr(importlib.import_module(module_name), attribute, value)
+
+    def test_every_redirected_constant_still_exists_and_still_points_at_home(self):
+        # The premise. If upstream moves one of these the redirect is silently
+        # aimed at nothing, so this fails instead.
+        import importlib
+
+        for module_name, attribute, _ in safe._HOME_WRITE_REDIRECTS:
+            module = importlib.import_module(module_name)
+            self.assertTrue(hasattr(module, attribute), f"{module_name}.{attribute}")
+            current = Path(getattr(module, attribute))
+            self.assertIn(
+                Path.home(),
+                [current, *current.parents],
+                f"{module_name}.{attribute} = {current} is not under $HOME",
+            )
+
+    def test_no_redirected_constant_is_imported_by_value_elsewhere(self):
+        # Rebinding cozempic.digest.DIGEST_DIR only works because every read
+        # goes through that module's global. A `from .digest import DIGEST_DIR`
+        # in a second module would keep the old path, silently.
+        import re
+
+        source_root = REPO_ROOT / "src" / "cozempic"
+        for module_name, attribute, _ in safe._HOME_WRITE_REDIRECTS:
+            owner = module_name.split(".")[-1]
+            pattern = re.compile(
+                rf"^from\s+\.\w*\s+import\s+.*\b{re.escape(attribute)}\b", re.M
+            )
+            for path in sorted(source_root.glob("*.py")):
+                if path.stem == owner:
+                    continue
+                self.assertIsNone(
+                    pattern.search(path.read_text(encoding="utf-8")),
+                    f"{path.name} imports {attribute} by value",
+                )
+
+    def test_the_paths_are_resolved_under_the_target_directory(self):
+        targets = safe.home_write_targets(Path("/data/winnow"))
+        self.assertEqual(
+            targets[("cozempic.updater", "_INSTALL_SENTINEL")],
+            Path("/data/winnow/cozempic-installed"),
+        )
+        for destination in targets.values():
+            self.assertIn(Path("/data/winnow"), destination.parents)
+
+    def test_the_digest_file_paths_stay_under_the_redirected_digest_dir(self):
+        # digest.py derives DIGEST_FILE from DIGEST_DIR at import time, so both
+        # have to move or the pair disagrees.
+        targets = safe.home_write_targets(Path("/data/winnow"))
+        digest_dir = targets[("cozempic.digest", "DIGEST_DIR")]
+        for attribute in ("DIGEST_FILE", "DIGEST_MD_FILE"):
+            self.assertEqual(
+                targets[("cozempic.digest", attribute)].parent, digest_dir
+            )
+
+    def test_applying_it_moves_the_install_sentinel_off_home(self):
+        import cozempic.updater
+
+        with _temp_dir() as tmp:
+            applied = safe.redirect_home_writes(tmp)
+            self.assertEqual(
+                cozempic.updater._INSTALL_SENTINEL, tmp / "cozempic-installed"
+            )
+            self.assertEqual(
+                applied["cozempic.updater._INSTALL_SENTINEL"],
+                tmp / "cozempic-installed",
+            )
+            # ping_install_if_new writes the sentinel before it looks at
+            # COZEMPIC_NO_TELEMETRY (updater.py:186), so the write is the thing
+            # to relocate, not the network call one line after it.
+            with mock.patch.dict(os.environ, {"COZEMPIC_NO_TELEMETRY": "1"}):
+                cozempic.updater.ping_install_if_new()
+            self.assertTrue((tmp / "cozempic-installed").is_file())
+
+    def test_it_creates_the_parents_so_a_write_cannot_fall_back(self):
+        with _temp_dir() as tmp:
+            for destination in safe.redirect_home_writes(tmp).values():
+                self.assertTrue(destination.parent.is_dir(), destination)
+
+    def test_a_vanished_constant_is_an_error_not_a_new_attribute(self):
+        import cozempic.helpers
+
+        del cozempic.helpers._SAVINGS_FILE
+        with _temp_dir() as tmp:
+            with self.assertRaises(AttributeError):
+                safe.redirect_home_writes(tmp)
+
+    def test_cozempic_state_in_home_is_reported_as_a_bypass(self):
+        with _temp_dir() as tmp:
+            (tmp / ".cozempic_installed").write_text("1.8.39", encoding="utf-8")
+            finding = safe._check_home_state(tmp)
+            self.assertFalse(finding.ok)
+            self.assertIn(".cozempic_installed", finding.detail)
+
+    def test_a_clean_home_is_not_a_violation(self):
+        with _temp_dir() as tmp:
+            (tmp / ".bashrc").write_text("", encoding="utf-8")
+            self.assertTrue(safe._check_home_state(tmp).ok)
 
 
 class TestPluginDirectory(unittest.TestCase):

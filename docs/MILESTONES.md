@@ -3,12 +3,13 @@
 > **Status of this document, 2026-08-23.** Restored verbatim after the Cozempic merge (`210b026`)
 > deleted it. The plan below is unchanged and still the plan, with one correction it cannot make
 > itself: **milestone 1 is now cheaper and milestone 3 is now dearer than it says.** Cheaper,
-> because `cozempic diagnose` already reads `usage` off disk and reports occupancy and a cache
-> hit rate ([COZEMPIC.md](COZEMPIC.md) §2), so the instrument has a working precedent to copy
-> rather than invent. Dearer, because the vendored tool supplies a fourth arm the plan did not
-> budget for — a shipped pruner to measure against, which is more informative than the synthetic
-> recency arm and costs another cell. Neither changes the kill criteria, and the kill criteria are
-> the part of this document that matters.
+> because `cozempic diagnose` already reads `usage` off disk, so the instrument has a working
+> precedent to copy rather than invent, and because milestone 3's mandatory recency arm exists as
+> code (`tool-result-age`, [COZEMPIC.md](COZEMPIC.md) §1) rather than needing to be written.
+> Dearer, because the vendored tool supplies an arm the plan did not budget for: a shipped pruner
+> to measure against, which is a more informative comparison than a synthetic one and costs
+> another cell. Neither changes the kill criteria, and the kill criteria are the part of this
+> document that matters.
 >
 > One acceptance criterion is now blocked outright rather than merely unwritten: nothing in this
 > container can run the test suite. See [USAGEFOUNDRY.md](USAGEFOUNDRY.md) §7.

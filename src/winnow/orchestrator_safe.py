@@ -449,14 +449,18 @@ KEPT_HOOK_REASON = (
 
 DROPPED_PLUGIN_PATHS: dict[str, str] = {
     ".mcp.json": (
-        "starts the MCP server with `uv run --with cozempic` — the fork has "
-        "not reached this file (FORK.md §7) — which fetches a package from "
-        "PyPI, so the plugin would run a downloaded copy rather than this "
-        "tree, and needs `uv` and network at spawn. USAGEFOUNDRY §1.9"
+        "the server it starts now runs this tree and fetches no package at "
+        "spawn, so USAGEFOUNDRY §1.9's PyPI-copy objection no longer applies. "
+        "Dropped for three that still do: `treat_session(execute=True)` "
+        "rewrites the live transcript, an MCP tool call never passes the argv "
+        "gate that refuses `treat`, and the server is a separate process that "
+        "gets neither the environment overlay nor `redirect_home_writes()`, so "
+        "its session sidecar lands in the bind mount. Invariants 4 and 5, "
+        "USAGEFOUNDRY §8.5"
     ),
     "servers": "only reachable from the .mcp.json above",
     "skills": (
-        "every skill declares `allowed-tools: Bash(cozempic *)` and calls the "
+        "every skill declares `allowed-tools: Bash(winnow *)` and calls the "
         "binary directly, which bypasses this mode's gate and its environment "
         "overlay. Two of them (guard, reload) instruct the agent to run "
         "exactly the refused commands"

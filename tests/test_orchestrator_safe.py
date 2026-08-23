@@ -855,12 +855,15 @@ class TestHookLines(unittest.TestCase):
     def test_a_message_longer_than_the_bound_is_cut_not_emitted_whole(self):
         # The orchestrator stores each stderr line as a database row, so a path
         # or a session name arriving from outside cannot be trusted for length.
-        code, _out, err = _run_cli(
-            ["safe", "run", "--", "diagnose", "x" * 20_000],
-            env={safe.ENV_SWITCH: "0"},
+        stream = io.StringIO()
+        with contextlib.redirect_stderr(stream):
+            winnow_cli._say("x" * 20_000)
+        line = stream.getvalue().rstrip("\n")
+        self.assertEqual(
+            len(line), winnow_cli._MAX_LINE_CHARS + len("winnow: ")
         )
-        self.assertEqual(code, 3)
-        self.assertLessEqual(len(err.strip()), 600)
+        self.assertTrue(line.endswith("..."))
+        self.assertEqual(stream.getvalue().count("\n"), 1)
 
     def test_the_line_is_one_line_even_when_the_message_is_not(self):
         stream = io.StringIO()

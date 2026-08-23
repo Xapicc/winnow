@@ -5,10 +5,15 @@ Written 2026-08-23. UsageFoundry is the orchestrator at `/workspace/UsageFoundry
 and bills every run from the transcripts. This repository contains a tool that also does four of
 those five things. This document is the integration spec, and its scope is the overlap.
 
-**It is a specification, not a change.** Nothing in `src/cozempic/`, `plugin/`, `npm/` or
-`packaging/` was modified to produce it, and `/workspace/UsageFoundry` is read-only here: every
-citation into it is a read. The implementation is the next run's job, and this is what it should
-read first.
+**§1 to §7 are a specification, not a change.** Nothing in `src/cozempic/`, `plugin/`, `npm/` or
+`packaging/` was modified to produce them, and `/workspace/UsageFoundry` is read-only here: every
+citation into it is a read.
+
+**§8 is the implementation**, added by a later run against the sections above. It is orchestrator-safe
+mode: one switch, `WINNOW_ORCHESTRATOR=1`, and `src/winnow/orchestrator_safe.py` behind it. Read §8
+last, and read it as a record of what was built and what was verified rather than as further design.
+Where §8 and an earlier section disagree, §8 is what the code does and the earlier section is what
+was intended; both readings are kept because the difference is usually the interesting part.
 
 Two facts to hold throughout, because most of §1 follows from them. **Every orchestrated session is
 headless**, spawned as `claude -p --output-format stream-json --verbose`
@@ -308,6 +313,9 @@ does not prune; it writes a team checkpoint before the summariser runs
 against an irreversible operation and costs one file write. `PostCompact` reads it back. Those two
 are compatible with the rule above, because neither changes the transcript the model is holding.
 
+§8.3 implements the rule as an argv gate — a mutating prune is refused while any Claude process is
+live — and §8.7 keeps both hooks, pointed at a checkpoint that does not land in the bind mount.
+
 ---
 
 ## 3. The integration path
@@ -331,6 +339,10 @@ Note also §1.9: the plugin's MCP server would run a PyPI copy of Cozempic, not 
 the point of the exercise is to measure the vendored tree, the MCP server must be excluded from the
 plugin directory that gets registered.
 
+`winnow safe plugin-dir` is that directory, and §8.5 is what it contains. It is built rather than
+filtered, which is the difference that matters here: an upstream release adding a sixth hook is
+excluded by default instead of needing to be noticed.
+
 ---
 
 ## 4. Off by default under an orchestrator
@@ -352,6 +364,11 @@ The two bold rows are the finding of this section: **the two features with the l
 are the two with no off switch.** Both need a mechanism that does not exist yet, which makes them the
 first implementation task rather than a configuration note. The tool has 28 `COZEMPIC_*` variables
 and none of them is `COZEMPIC_NO_GUARD`.
+
+Both now have one, out of tree, and neither is an environment variable. §8.3 refuses the argv that
+starts the daemon and §8.4 removes `metadata-strip` from the prescription dict both importers already
+hold. One row of this table also turned out to be incomplete: `COZEMPIC_NO_TELEMETRY=1` stops the
+outbound counter requests but not the file the same function writes one line earlier, which is §8.6.
 
 Turning that around: adding `COZEMPIC_NO_GUARD` and a strategy-exclusion list is a small,
 self-contained contribution upstream, and it is the shape of contribution
@@ -388,6 +405,10 @@ for it is a document beside `proposals/ContextControl/`, written and left for th
 Do not enable the guard to see what happens. §1.2's exposure is a live editor process and §1.3's
 consequence is a run recorded as an unexplained crash. If it must be observed, it should be observed
 against a throwaway session in a container with nothing else in it.
+
+All three held in the run that produced §8. The tree is untouched, `/workspace/UsageFoundry` was only
+read, and the guard was never started — which is why "the daemon would have killed this session" is
+still an inference there rather than an observation (§8.9).
 
 ---
 
@@ -486,3 +507,201 @@ hermeticity fixture holds only under pytest, so a bare `unittest` run may write 
 Cannot: claim the suite passes without running it. A documentation pass such as this one touches no
 code and needs no run; the next run changes behaviour and does need one. That asymmetry is the reason
 this section is here.
+
+### What the §8 run measured
+
+The wheel bootstrap works exactly as described above. pytest 9.1.1, pluggy 1.6.0, iniconfig 2.3.0,
+packaging 26.3 and pygments 2.21.0 fetched as `py3-none-any` wheels and unzipped into a scratch
+directory:
+
+```
+COZEMPIC_NO_RECEIPTS=1 PYTHONPATH=$S/site:src python3 -m pytest -q -p no:cacheprovider \
+    --ignore=tests/test_hook_idempotency_shell.py
+# 1 failed, 1957 passed, 17 skipped, 1 warning, 281 subtests passed in 35.38s
+COZEMPIC_NO_RECEIPTS=1 PYTHONPATH=$S/site:src python3 -m pytest -q -p no:cacheprovider \
+    tests/test_hook_idempotency_shell.py
+# 3 passed
+```
+
+So **1960 passed, 1 failed, 17 skipped**, against the baseline's 1882 passed, 2 failed, 17 skipped.
+The 78 extra passes are the 77 tests in `tests/test_orchestrator_safe.py` plus one of the two
+pre-existing failures, which passed this time. Confirmed by running the suite with the new file
+excluded: **1 failed, 1880 passed, 17 skipped** — the same 1881 non-skipped tests as the baseline's
+1879 + 2, with one flake flipped.
+
+The flake is the pair this section already flagged, and the §8 run has one more piece of evidence
+about it: **which of the two fails alternates between runs.** The full run failed
+`test_concurrent_starts_only_one_spawn_wins`; the run with the new file excluded, minutes later on
+the same tree, failed `test_final_pidfile_contains_only_winning_pid` instead. That is consistent with
+the shared-`/tmp` suspicion and it rules out anything about the change: neither test imports
+`src/winnow/`. It also means the honest pass criterion is **at most one of that pair fails**, not
+"exactly these two fail".
+
+The run left 23 `cozempic_*` files in the shared `/tmp` and they were removed.
+
+---
+
+## 8. The mode, as implemented
+
+One switch, one module, no edit to `src/cozempic/`.
+
+```
+WINNOW_ORCHESTRATOR=1        # the only mechanism. Nothing is auto-detected
+WINNOW_DATA_DIR=<path>       # optional; default ~/.winnow
+python -m winnow safe {check,env,plugin-dir,run,checkpoint,post-compact}
+```
+
+`check` and `env` read state and work with the mode off. The other four exit 3 without the switch,
+because a mode that silently declines to protect anything cannot be told apart from one that is off.
+
+### 8.1 Why one variable and not detection
+
+There is no harness marker to detect. `childEnv()` (`orchestrator.ts:5902-5917`) strips `UF_*`,
+`OTEL_*`, `ANTHROPIC_ADMIN_KEY`, `CLAUDE_CODE_ENABLE_TELEMETRY`, `DATA_DIR` and `NODE_OPTIONS` from
+the child, so nothing inside the session can see that a harness spawned it. Any other variable set on
+the server does reach the agent, so `WINNOW_ORCHESTRATOR=1` passes through — and it is the operator's
+statement of intent rather than an inference, which is the right shape for a switch that decides
+whether a daemon may `SIGKILL` the session.
+
+`is_enabled` raises on a value it does not recognise instead of reading it as off. A typo in the
+compose file should stop the invocation, not silently disarm the mode.
+
+### 8.2 Where the mode lives, and why not in the vendored tree
+
+§6 rules out patching `src/cozempic/`, so every closure is reachable from outside it:
+
+| Invariant | Closure | Where |
+| --- | --- | --- |
+| 1. Never terminate this session | refuse the argv that starts the daemon or signals one | §8.3 |
+| 2. Never resume a session | refuse `reload`, which spawns a `claude --resume` watcher | §8.3 |
+| 3. No update, no PyPI check, no drift | `COZEMPIC_NO_AUTO_UPDATE=1` + `COZEMPIC_PIN=1.8.39`, refuse `self-update`, and relocate the sentinel the switches do not cover | §8.6 |
+| 4. No writes to `~/.claude`, no global hooks, no foreign `settings.json` | refuse `init`/`uninstall`/`nudge`, a `--plugin-dir` built from scratch, a redirected checkpoint | §8.5, §8.7 |
+| 5. Do not compete with the harness's context and cost controls | refuse a mutating prune while a Claude process is live | §8.3 |
+| 6. Nothing important written into the model's memory | refuse `digest inject`, drop the skills and the MCP server | §8.3, §8.5 |
+
+### 8.3 The argv gate
+
+`refusal_for(argv, live_pid=...)` returns the reason a command will not run, or None. Three classes:
+
+- **Refused whatever the arguments**: `guard`, `reload`, `self-update`, `init`, `uninstall`, `checkpoint`, `nudge`, `remind`.
+- **Refused in a particular shape**: `guard-watchdog --fix` (sends `SIGTERM`, `cli.py:1129`), `digest inject` (writes into `~/.claude/projects/*/memory/` and edits `MEMORY.md`, `digest.py:954-996`). Both commands are allowed without those arguments.
+- **Refused only while a session is live**: `treat --execute`, `strategy --execute`, `digest update|clear|flush|recover`. This is §2's precedence rule and nothing else: the harness's autocompaction is authoritative, so the tool may not act to prevent compaction, may not act because of it, and may not act while a session is live. `live_claude_pid()` answers "is one live" by delegating to the vendored `find_claude_pid`; it is passed in rather than probed inside the gate so the decision is testable without arranging a process tree.
+
+Every reason names what refused and cites the section it comes from, on stderr, which the orchestrator
+already records per cycle. Nothing writes a log file (SPEC §10).
+
+One thing the gate had to get right that the spec did not anticipate: **it mirrors cozempic's argparse
+parser, not `cli._SUBCOMMANDS`.** The two disagree. `nudge` is in the parser and not in that constant,
+and `nudge` is the one subcommand that writes into `~/.claude/cozempic-metrics/` (`cli.py:1482`). A
+gate built on `_SUBCOMMANDS` would not have seen it. The mirror is frozen in winnow's own source and a
+test compares it against the live parser, so an upstream tree with a new subcommand fails a test here
+instead of defaulting that subcommand to allowed.
+
+### 8.4 The `metadata-strip` exclusion
+
+`apply_strategy_exclusions()` removes it from every prescription **in place**: `cli.py:24` and
+`guard.py:203` bind `registry.PRESCRIPTIONS` at import time, so rebinding the module attribute would
+leave both holding the original dict. This is also why `winnow safe run` calls `cozempic.cli.main()`
+in this process rather than spawning it — a subprocess would import a fresh, unexcluded copy.
+
+### 8.5 The plugin directory
+
+`winnow safe plugin-dir` writes a directory to pass to `--plugin-dir`. It is **built from scratch, not
+copied and filtered**, so anything upstream adds is excluded by default rather than by classification.
+
+Kept: `PreCompact` and `PostCompact`, pointed at `winnow safe checkpoint` and `winnow safe
+post-compact`. Dropped: `SessionStart` (upgrades from PyPI and starts the guard), `PostToolUse`,
+`Stop`, and the `.mcp.json`, `servers/` and `skills/` paths — §1.9's MCP server would run a PyPI copy
+of the tool rather than the vendored tree, and the skills are instructions to the model.
+
+The generated hook commands **bake `WINNOW_ORCHESTRATOR=1` in** rather than inheriting it. The
+directory only exists because the mode materialised it, so a hook inside it is running under the mode
+by construction, and a hook that silently did nothing because compose forgot a variable is exactly the
+failure `orchestrator.ts:5051-5057` describes. The commands end in `|| true` for the reason the
+vendored hooks do: a non-zero exit is fed back to the model, and "no team state to checkpoint" is not
+something to tell the model about.
+
+The output is byte-deterministic given the same source and command, so a diff between two runs is
+empty and any difference in it is a difference somebody made. A `winnow-safe-manifest.json` records
+what was dropped and why.
+
+### 8.6 The state the environment overlay could not reach
+
+Found while snapshotting the filesystem for §8.8, not by reading: this container already held
+`~/.cozempic_installed`, `~/.cozempic_update_check` and `~/.cozempic/behavioral-digest.md`.
+
+`cozempic.cli.main` calls `ping_install_if_new()` before it parses argv (`cli.py:2398`), and that
+function writes `~/.cozempic_installed` at `updater.py:186` and consults `COZEMPIC_NO_TELEMETRY` at
+`updater.py:187`. **The switch stops the network ping, not the write one line before it.** No
+environment variable covers this, and §6 rules out the patch, so the mode works on the path instead:
+`redirect_home_writes()` rebinds the ten module-level constants in the vendored tree that are computed
+from `Path.home()` at import time, pointing them into winnow's data directory.
+
+That only works because every one of those constants is read through its own module's global. A
+`from .digest import DIGEST_DIR` somewhere else would keep the old path silently, so a test asserts
+the absence of any such import rather than trusting it, and a second asserts the constants still exist
+and still point at `$HOME` before the redirect.
+
+`nudge` and `remind` build their `$HOME` paths inside the function, out of the redirect's reach. They
+are refused instead.
+
+`winnow safe check` reports leftover `.cozempic*` state in `$HOME` as a violation, because the only
+thing that can write it is a cozempic run that did not go through this mode.
+
+### 8.7 The checkpoint
+
+`PreCompact` is the one hook worth keeping (§2), but the vendored `checkpoint` writes
+`team-checkpoint.md` into `~/.claude/projects/<slug>/` (`guard.py:389-390`), inside the bind mount. So
+`winnow safe checkpoint` composes the same three vendored steps — `load_messages_incremental`,
+`extract_team_state`, `write_team_checkpoint` — with a directory that is not.
+
+`write_team_checkpoint` falls back to `get_claude_dir()/team-checkpoint.md` when the directory it is
+handed does not exist (`team.py:1339-1344`), and that fallback is the bind-mount write this exists to
+avoid, so the target is created and checked first and the returned path is asserted to be inside it.
+`read_checkpoint` passes `include_global=False`: the `~/.claude/team-checkpoint.md` fallback holds the
+last-written checkpoint of any project, which `cli.py:1014` calls a cross-project read vector.
+
+`data_dir()` refuses a `WINNOW_DATA_DIR` inside the Claude config directory outright.
+
+### 8.8 What was verified, and how
+
+**The suite**: above. 1960 passed, 1 failed, 17 skipped; the one failure is the pre-existing flake and
+neither test in that pair imports `src/winnow/`.
+
+**The new logic, both directions.** `tests/test_orchestrator_safe.py` is 77 `unittest.TestCase` tests
+that run under `PYTHONPATH=src python3 -m unittest tests.test_orchestrator_safe` with no pytest, and
+under pytest unchanged. Twenty targeted mutations were applied to
+`src/winnow/orchestrator_safe.py` one at a time — the switch reading a typo as off, the gate ignoring
+the live session, the exclusion rebinding instead of mutating in place, `SessionStart` treated as an
+event worth keeping, the checkpoint's target directory not created, the redirect dropping the install
+sentinel, and fifteen more. **All 20 were caught**, and the suite passed again after each revert. Both
+directions are confirmed for every behaviour the tests claim.
+
+**End to end.** Every action the mode offers was run between two full filesystem snapshots of `$HOME`
+(including the `~/.claude` bind mount) and `/tmp`, with the process table captured either side. All
+eleven refusals exited 3 with a reason naming the section; `list`, `doctor`, `digest show`,
+`guard-watchdog`, `diagnose` and a dry-run `treat` exited 0; `treat --execute` was refused because a
+live Claude process (pid 6977) was above it; the mode off, everything that acts exited 3.
+
+Between the two snapshots, **nothing under `/home/node` changed at all** — not `~/.claude`, not
+`~/.cozempic*`. Everything that changed was winnow's own data directory, the scratch directory holding
+the snapshots, and `/tmp/claude-1000/.../tasks/*.output`, which is Claude Code's own scratch. A
+control pair of snapshots with winnow doing nothing changes the same task-output file and the session
+transcript, which is how those two were attributed rather than assumed. The process table differed
+only by the snapshot's own transient `sh`/`ps`/`sort`; the `claude` process the session runs inside
+(pid 6977, started 13:25:52) was alive before and after, and no guard pidfile appeared in `/tmp`.
+
+`~/.claude` being a bind mount was confirmed directly rather than taken from `plugins.ts`:
+`findmnt -T /home/node/.claude` reports source
+`/run/host_mark/Users[/hendrikkuehnel/.claude]`, and it is a different device from `/home/node`
+(44 against 63), which is also why a naive `find -xdev` snapshot misses it.
+
+### 8.9 What is still unverified
+
+Named individually, with what would settle each.
+
+- **The mode has never run inside a real orchestrated cycle.** Everything above was run by hand in this container. What is untested is the composition: `--plugin-dir <winnow's directory>` passed by `buildArgs`, the `PreCompact` hook firing during the harness's own autocompaction, and the checkpoint surviving into the next cycle. Settled by one run of the harness against this branch with `WINNOW_ORCHESTRATOR=1` in the child environment, then reading the cycle's stderr for winnow lines.
+- **No network call was proved absent.** `COZEMPIC_NO_TELEMETRY=1` and `COZEMPIC_NO_AUTO_UPDATE=1` are in the overlay and `self-update` is refused, but nothing here observed the syscalls. No packet-level tool is available in this container. Settled by `strace -f -e trace=connect` or an egress-denied network namespace around the same end-to-end run.
+- **The guard was never enabled**, deliberately: §6 forbids it. So "the daemon would have killed this session" is read from `guard.py:2377-2400` and from the harness's exit handling, not observed. Settled only in a throwaway container with nothing else in it, and it is not worth doing.
+- **The `/tmp` flake was not root-caused.** The alternation between the two tests is new evidence for the shared-`/tmp` theory and still not proof. Settled by running that one class with `TMPDIR` pointed somewhere private, which the guard's hardcoded path (`guard.py:2636-2650`) currently prevents.
+- **`prescriptions_without` is not exercised through a real prune.** The exclusion is asserted on the dict, and a dry-run `treat` was run, but no `--execute` prune has been run under the mode, because a live session refuses one and that is the correct behaviour. Settled between cycles, where the mode is designed to allow it.

@@ -23,7 +23,7 @@ intends to replace, which is why the package path below has the word `legacy` in
 | --- | --- | --- |
 | 0 | This document, [DECISIONS.md](DECISIONS.md) §0, `LICENSE`, `NOTICE` | Done, 2026-08-23 |
 | 1 | The rename. Tree moves, imports rewrite, one CLI, one distribution, licence applied, CI stood up | An importable `winnow` with no `cozempic` module in it |
-| 2 | Delete what is not being maintained: telemetry, self-update and personal scripts. Declare the dependencies. Done, less the packaging channels, `npm/` and the release process, which the run's brief moved to their own run (§3, §9) | A tree with no network egress and no undeclared imports |
+| 2 | Delete what is not being maintained: telemetry, self-update and personal scripts. Declare the dependencies. Done, including the packaging channels, `npm/` and the release process, which a separate run deleted on 2026-08-23 (§3, §9) | A tree with no network egress and no undeclared imports |
 | 3 | Runtime surface: `COZEMPIC_*` to `WINNOW_*`, `/tmp` and `$HOME` state paths, the hook schema marker, `winnow migrate` | Nothing on disk named `cozempic` |
 | 4 | The MCP server, self-hosted in its own container | An image that serves the tools without fetching anything |
 
@@ -217,12 +217,19 @@ files are upstream's author's personal tooling, with hardcoded paths into
 account. Done: `scripts/` is gone, and `stats-summary.sh` was reading the same Cloudflare counters
 phase 2 stopped writing, so it was dead on arrival either way.
 
-`packaging/` and `npm/` are **not** gone. Phase 2's brief moved the six channels, `npm/` and the
-publish workflow to their own run, on the grounds that they are a distribution decision rather than a
-dependency one. They still contain the only remaining outbound calls in the tree
-(`npm/install.js` pip-installs `cozempic` and pings `api.counterapi.dev`; `packaging/ci/publish.yml`
-uploads to PyPI under Ruya-AI's trusted-publisher registration), and none of it is reachable from
-`winnow` — no import, no subprocess, no hook.
+**Done, 2026-08-23.** Phase 2's brief moved the six channels, `npm/` and the publish workflow to
+their own run, on the grounds that they are a distribution decision rather than a dependency one.
+That run deleted all nine files, plus the root `claude-opus-1m.sh` that had been missed when
+`scripts/` went. `npm/` is gone; `packaging/` retains only `packaging/README.md`, rewritten as the
+record of what was deleted, the commit it is recoverable from (`d114fc8`) and what publishing later
+would take. Renaming was not an option and not attempted: with no free distribution name, a rename
+produces six recipes that look ready to publish something nobody built.
+
+That removes the last outbound calls outside the MCP transport (`npm/install.js` pip-installed
+`cozempic` and pinged `api.counterapi.dev`; `packaging/ci/publish.yml` uploaded to PyPI under
+Ruya-AI's trusted-publisher registration). None of it had ever been reachable from `winnow` — no
+import, no subprocess, no hook — and `publish.yml` had never been an active workflow here, since this
+repository has no `.github/`.
 
 **If a later run reverses this**, it needs a distribution name that is free, and these were free on
 2026-08-23: `winnow-cli`, `winnowctl`, `winnow-context`, `winnow-claude`, `nms-winnow`. (`winnowing`
@@ -260,7 +267,7 @@ Five places carry `1.8.39` today and split three ways at phase 1:
 | `pyproject.toml:7` | `0.1.0` |
 | `src/cozempic/__init__.py:3` `__version__` | deleted; `src/winnow/__init__.py` gains `__version__ = "0.1.0"` |
 | `src/cozempic/cli.py:1767` (a hardcoded literal in the `--version` action, not read from `__init__`) | read from `winnow.__version__`, not re-hardcoded |
-| `plugin/.claude-plugin/plugin.json:3`, `npm/package.json:3` | deleted with `npm/` and rewritten with the plugin at phase 4 |
+| `plugin/.claude-plugin/plugin.json:3` | rewritten with the plugin at phase 4. `npm/package.json:3` carried the fifth copy and went with `npm/` (§3) |
 | `src/winnow/orchestrator_safe.py:90` `VENDORED_COZEMPIC_VERSION = "1.8.39"` | **stays**, renamed to `UPSTREAM_VERSION`. It is provenance, and `winnow-safe-manifest.json`'s `derived_from` block is the right home for it |
 
 The generated plugin manifest gains a `version` key at phase 1, and the string in
@@ -538,8 +545,10 @@ Things a reader would reasonably expect to be in scope and which are deliberatel
   [DECISIONS.md](DECISIONS.md) §0.4 already warns that an arm reachable only by `git show` is an arm
   that quietly does not get run. Named here so it is a known cost rather than a discovery.
 - **Rewriting the four inherited documents.** `docs/behavioral-digest-design.md`, `docs/qa-fleet.md`,
-  `plugin/README.md` and `packaging/README.md` are upstream's prose. Phases 2 and 4 delete two of
-  them along with their directories; the other two get a provenance header, not a rewrite.
+  `plugin/README.md` and `packaging/README.md` are upstream's prose. `packaging/README.md` was the
+  exception in the end: phase 2 replaced it outright with the record of the channels it documented,
+  because a deletion this large needs somewhere to be written down (§3). `plugin/README.md` goes with
+  its directory at phase 4; the two `docs/` files get a provenance header, not a rewrite.
 
 ---
 
@@ -596,9 +605,9 @@ The whole tree moves and nothing changes behaviour. Large diff, no new logic.
       nothing.
 - [x] Given the tree, when `grep -rn 'pip install --upgrade\|uv tool upgrade' src/ plugin/` runs, then
       it prints nothing. `updater.py` is deleted, not neutered.
-- [~] `packaging/`, `npm/` and `scripts/` are deleted. `README.md` says the only supported install is
-      from source. **`scripts/` only.** The run's brief moved the six channels, `npm/` and the publish
-      workflow to their own run (§3).
+- [x] `packaging/`, `npm/` and `scripts/` are deleted. `README.md` says the only supported install is
+      from source. `scripts/` first; the six channels, `npm/` and the publish workflow followed in
+      their own run (§3), which left `packaging/README.md` behind as the deletion record.
 - [x] `pyproject.toml` declares `psutil` and a `dev` extra containing `pytest`. Given a fresh
       environment built from those declarations only, when the suite runs, then it collects with no
       `ModuleNotFoundError`.
@@ -608,9 +617,9 @@ The whole tree moves and nothing changes behaviour. Large diff, no new logic.
       the phase and the only one that touches the kill path.
 - [x] `_SAFE_ENV_SPEC` has shrunk to the surviving variables, and the tests that verify the overlay
       have shrunk with it. Six, not five — see §5.1.
-- [~] Given the tree, when a run greps for any outbound network call outside `winnow bench`, then the
-      only hits are in the MCP server's own transport. **`src/` and `plugin/` are clean**; the
-      remaining hits are in `npm/` and `packaging/`, deferred with the row above, plus
+- [x] Given the tree, when a run greps for any outbound network call outside `winnow bench`, then the
+      only hits are in the MCP server's own transport. `src/` and `plugin/` were cleared first; `npm/`
+      and `packaging/` followed with the row above. The single remaining hit is
       `plugin/.mcp.json`'s `--with cozempic`, which is the MCP transport and is phase 4's.
 
 Two decisions the criteria above did not fix, settled here.

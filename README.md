@@ -61,7 +61,8 @@ mistake the measurement exists to catch.
 | [docs/USAGEFOUNDRY.md](docs/USAGEFOUNDRY.md) | Eleven collisions between the vendored tool and the orchestrator that would run it, with evidence on both sides; §8 is orchestrator-safe mode as built, including what it does not yet prove |
 | [docs/behavioral-digest-design.md](docs/behavioral-digest-design.md) | Cozempic's own design note, arrived with the merge |
 | `src/winnow/` | `cli.py` and orchestrator-safe mode, about 1,200 lines with its tests |
-| `src/winnow/legacy/`, `plugin/`, `npm/`, `packaging/`, `tests/` | The tree inherited from Cozempic 1.8.39, about 21,700 lines. Renamed into winnow by [docs/FORK.md](docs/FORK.md) phase 1; still not installed and not started |
+| `src/winnow/legacy/`, `plugin/`, `tests/` | The tree inherited from Cozempic 1.8.39, about 21,700 lines. Renamed into winnow by [docs/FORK.md](docs/FORK.md) phase 1; still not installed and not started |
+| `packaging/README.md` | The record of the six package channels, the npm shim and the PyPI release workflow that phase 2 deleted. **Winnow publishes to no channel**; installing means a checkout |
 
 **No `winnow inspect`, no cache readout, no `winnow bench`.** The numbers the documents cite as
 measured were produced by analysis scripts in earlier work and are recorded with their sample sizes;

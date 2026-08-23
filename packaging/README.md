@@ -1,91 +1,71 @@
-# Packaging
+# Packaging: deleted, and how to get it back
 
-Distribution packages for Cozempic across ecosystems. Each directory is self-contained.
+**Winnow publishes to no package channel.** The only supported install is from source; the container
+image is [docs/FORK.md](../docs/FORK.md) phase 4's. This directory holds no recipes, and this file is
+the record of the ones that were removed — deleting another project's release process is worth being
+explicit about.
 
-On every version bump, refresh the `version`, URL, and `sha256` fields with:
+The decision is [docs/FORK.md](../docs/FORK.md) §3, not a preference formed here. Its three reasons,
+shortest first: PyPI `winnow` and npm `winnow` are both taken by unrelated projects, so there is no
+name to rename these recipes *to*; every recipe pinned a sha256 of an upstream sdist that winnow will
+never produce; and the release workflow published under a PyPI trusted-publisher registration held by
+a GitHub repository winnow does not control.
 
-```bash
-VERSION=X.Y.Z
-curl -sL "https://files.pythonhosted.org/packages/source/c/cozempic/cozempic-${VERSION}.tar.gz" -o /tmp/cozempic.tgz
-echo "size: $(wc -c < /tmp/cozempic.tgz)"
-echo "sha256: $(shasum -a 256 /tmp/cozempic.tgz | awk '{print $1}')"
-echo "rmd160: $(openssl dgst -rmd160 /tmp/cozempic.tgz | awk '{print $NF}')"
-python3 -c "import base64; print('nix-sri: sha256-' + base64.b64encode(bytes.fromhex('<sha256>')).decode())"
-```
+## What was deleted, and from where to recover it
 
-## Homebrew (`homebrew/cozempic.rb`)
+Everything below is recoverable from **`d114fc8`**, the last commit that contained it. Retrieve a
+single file with `git show d114fc8:packaging/homebrew/cozempic.rb`, or the whole set with
+`git checkout d114fc8 -- packaging npm claude-opus-1m.sh`.
 
-Published via the self-hosted tap at `Ruya-AI/homebrew-cozempic`.
+| Path | Channel | Declared |
+| --- | --- | --- |
+| `packaging/homebrew/cozempic.rb` | Homebrew, via the tap `Ruya-AI/homebrew-cozempic` | 1.8.39, sha256 `4c6a73…`, of a PyPI tarball URL |
+| `packaging/aur/PKGBUILD` | AUR | `pkgver=1.8.19`, sha256 `14ff2a…` |
+| `packaging/aur/.SRCINFO` | AUR | `pkgver = 1.8.18`, sha256 `da2c37…`, source line pinning **1.7.1** |
+| `packaging/macports/Portfile` | MacPorts, `python/py-cozempic` | 1.8.34, rmd160 + sha256 + size |
+| `packaging/nix/default.nix` | nixpkgs `pkgs/by-name/co/cozempic` | 1.8.34, SRI hash `sha256-WhzGI5…` |
+| `packaging/nix/flake.nix` | Nix flake, `nix run github:Ruya-AI/cozempic?dir=packaging/nix` | wrapper over `default.nix` |
+| `packaging/ci/publish.yml` | PyPI, on GitHub Release | trusted publisher, owner `Ruya-AI`, repository `cozempic`, environment `pypi` |
+| `npm/package.json`, `npm/bin/cozempic.js`, `npm/install.js` | npm | package and binary `cozempic` 1.8.39, `postinstall: node install.js` |
+| `claude-opus-1m.sh` | not a channel | upstream author's launcher; deleted with the same reasoning as `scripts/` |
 
-To release a new version:
+Four different versions across five channels, and three sha256 values that disagree with each other,
+is the state they were inherited in. None of them ever published anything from this repository:
+`publish.yml` was never installed as a workflow — there is no `.github/` here — and no tap, AUR repo,
+port or nixpkgs entry exists under winnow's name.
 
-```bash
-cd /tmp && git clone https://github.com/Ruya-AI/homebrew-cozempic.git
-cp <this-repo>/packaging/homebrew/cozempic.rb homebrew-cozempic/Formula/cozempic.rb
-cd homebrew-cozempic && git add Formula/cozempic.rb
-git commit -m "cozempic X.Y.Z" && git push
-```
+`npm/install.js` was the one file here that was executable code rather than metadata, and it is the
+reason this run existed at all. As a `postinstall` hook it pip-installed the `cozempic` distribution
+through a five-way ladder (`uv`/`pip`/`pip3`/`python3 -m pip`/`python -m pip`), pinged
+`https://api.counterapi.dev/v1/cozempic/installs/up`, appended a global `SessionStart` hook running
+`cozempic guard --daemon` into `~/.claude/settings.json`, and ran `cozempic init --quiet` in any
+directory containing `.claude` — each step wrapped in a bare `catch {}`. The install ping is the same
+class of outbound call the phase-2 run removed from the runtime.
 
-## AUR (`aur/PKGBUILD`, `aur/.SRCINFO`)
+## What publishing later would take
 
-Requires an AUR account with an SSH key registered at https://aur.archlinux.org/account/.
+Restoring the files is the small part. In order:
 
-First-time submission:
+1. **Choose a distribution name that is free.** `winnow` is not. Free on 2026-08-23, checked against
+   the live registries: `winnow-cli`, `winnowctl`, `winnow-context`, `winnow-claude`, `nms-winnow`.
+   Re-check before relying on any of them. The Python import name can stay `winnow` either way, at
+   the cost documented in [docs/FORK.md](../docs/FORK.md) §3: a machine with both this project and
+   the existing PyPI `winnow` installed gets one of them and a broken one.
+2. **Set `[project.name]` in `pyproject.toml` to that name**, and the console script with it. It is
+   `winnow` today, which is the name PyPI has already given to somebody else.
+3. **Publish an artefact first, then write the recipes against it.** Every field these recipes got
+   wrong is downstream of pinning a hash for a tarball that did not exist. Per channel that means:
+   `url`/`source` pointing at the real sdist, a `sha256` computed from the file that was actually
+   uploaded (MacPorts also wants `rmd160` and `size`; Nix wants the SRI form), `homepage`,
+   `repository` and `changelog` at `github.com/Xapicc/winnow`, `license` matching `LICENSE`, and a
+   maintainer who has agreed to be one — the deleted recipes named upstream's author in three
+   different formats.
+4. **Register the publisher yourself.** A trusted-publisher registration names an owner and a
+   repository. Winnow's would have to be created against `Xapicc/winnow` on the PyPI project it
+   actually owns; the deleted workflow's registration cannot be inherited, borrowed or pointed at
+   this repository.
+5. **Decide separately whether an npm shim should exist at all.** If one does, it publishes nothing
+   in a `postinstall`: no cross-ecosystem install, no counter, no writes to `~/.claude`.
 
-```bash
-git clone ssh://aur@aur.archlinux.org/cozempic.git /tmp/aur-cozempic
-cp packaging/aur/PKGBUILD packaging/aur/.SRCINFO /tmp/aur-cozempic/
-cd /tmp/aur-cozempic && git add PKGBUILD .SRCINFO
-git commit -m "Initial import, cozempic 1.7.1" && git push
-```
-
-Subsequent bumps:
-
-```bash
-# On an Arch box (or docker run -it archlinux):
-cd /tmp/aur-cozempic
-# update pkgver in PKGBUILD, then:
-makepkg --printsrcinfo > .SRCINFO
-git commit -am "cozempic X.Y.Z" && git push
-```
-
-## Nixpkgs (`nix/default.nix`, `nix/flake.nix`)
-
-### Local use (flake)
-
-```bash
-nix run github:Ruya-AI/cozempic?dir=packaging/nix -- --help
-# or
-nix profile install github:Ruya-AI/cozempic?dir=packaging/nix
-```
-
-### Upstream PR to nixpkgs
-
-Copy `default.nix` into `nixpkgs` and register it:
-
-```bash
-git clone https://github.com/NixOS/nixpkgs ~/nixpkgs
-mkdir -p ~/nixpkgs/pkgs/by-name/co/cozempic
-cp packaging/nix/default.nix ~/nixpkgs/pkgs/by-name/co/cozempic/package.nix
-cd ~/nixpkgs && git checkout -b cozempic-init
-# by-name auto-registers; no all-packages.nix edit needed.
-nix-build -A cozempic   # sanity check
-git add pkgs/by-name/co/cozempic && git commit -m "cozempic: init at 1.7.1"
-git push origin cozempic-init
-gh pr create --repo NixOS/nixpkgs --title "cozempic: init at 1.7.1"
-```
-
-## MacPorts (`macports/Portfile`)
-
-Fork https://github.com/macports/macports-ports, then:
-
-```bash
-mkdir -p python/py-cozempic
-cp packaging/macports/Portfile python/py-cozempic/Portfile
-# From a Mac with MacPorts installed:
-cd python/py-cozempic && port lint
-sudo port -v install subport=py312-cozempic  # test build
-git checkout -b py-cozempic-init && git add python/py-cozempic
-git commit -m "py-cozempic: new port, version 1.7.1" && git push
-gh pr create --repo macports/macports-ports --title "py-cozempic: new port, version 1.7.1"
-```
+A restored recipe with a hash left as a placeholder is fine and honest. A restored recipe carrying
+one of the hashes in the table above is not — those checksums belong to somebody else's artefacts.

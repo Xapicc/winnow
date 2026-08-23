@@ -9,12 +9,15 @@ each test that touches the environment isolates its own.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import unittest
 from pathlib import Path
 from unittest import mock
 
+from winnow import cli as winnow_cli
 from winnow import orchestrator_safe as safe
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -675,6 +678,143 @@ class TestCheckReport(unittest.TestCase):
             finding = safe._check_guard_daemons()
         self.assertTrue(finding.ok)
         self.assertIn("stale", finding.detail)
+
+
+class TestHookLines(unittest.TestCase):
+    """One bounded ``winnow: `` line per hook-invoked action, whatever happened.
+
+    The mode is only visible in a run's log through stderr, so a cycle where
+    there was nothing to checkpoint has to read differently from one where the
+    plugin was never loaded (USAGEFOUNDRY §8.5). Silence cannot do that, and
+    silence is what the two commands used to emit on their commonest outcome.
+    """
+
+    fixture = REPO_ROOT / "tests" / "fixtures" / "sessions" / "team_two_subagents.jsonl"
+
+    def _the_one_line(self, stderr: str) -> str:
+        lines = [line for line in stderr.splitlines() if line.strip()]
+        self.assertEqual(len(lines), 1, f"expected one line, got: {stderr!r}")
+        line = lines[0]
+        self.assertTrue(line.startswith("winnow: "), line)
+        self.assertLessEqual(
+            len(line), winnow_cli._MAX_LINE_CHARS + len("winnow: ")
+        )
+        return line
+
+    def test_a_checkpoint_that_wrote_something_says_where(self):
+        with _temp_dir() as tmp:
+            code, out, err = _run_cli(
+                ["safe", "checkpoint"],
+                stdin=json.dumps({"transcript_path": str(self.fixture)}),
+                env={safe.DATA_DIR_ENV: str(tmp / "data")},
+            )
+            self.assertEqual(code, 0)
+            self.assertEqual(out, "")
+            self.assertIn("team state checkpointed to", self._the_one_line(err))
+
+    def test_nothing_to_checkpoint_is_reported_rather_than_passed_over(self):
+        with _temp_dir() as tmp:
+            solo = tmp / "solo.jsonl"
+            solo.write_text(
+                json.dumps({
+                    "type": "user",
+                    "message": {"role": "user", "content": "hello"},
+                }) + "\n",
+                encoding="utf-8",
+            )
+            code, _out, err = _run_cli(
+                ["safe", "checkpoint"],
+                stdin=json.dumps({"transcript_path": str(solo)}),
+                env={safe.DATA_DIR_ENV: str(tmp / "data")},
+            )
+            self.assertEqual(code, 2)
+            line = self._the_one_line(err)
+            self.assertIn("nothing to checkpoint", line)
+            self.assertIn("solo.jsonl", line)
+
+    def test_no_session_to_checkpoint_at_all_still_says_one_line(self):
+        with _temp_dir() as tmp:
+            with mock.patch("cozempic.session.find_current_session",
+                            return_value=None):
+                code, _out, err = _run_cli(
+                    ["safe", "checkpoint"],
+                    env={safe.DATA_DIR_ENV: str(tmp / "data")},
+                )
+            self.assertEqual(code, 2)
+            self.assertIn("no session to checkpoint", self._the_one_line(err))
+
+    def test_post_compact_with_nothing_stored_says_so(self):
+        with _temp_dir() as tmp:
+            code, out, err = _run_cli(
+                ["safe", "post-compact"],
+                env={safe.DATA_DIR_ENV: str(tmp / "data")},
+            )
+            self.assertEqual(code, 2)
+            self.assertEqual(out, "")
+            self.assertIn("no checkpoint to restore", self._the_one_line(err))
+
+    def test_post_compact_prints_the_checkpoint_and_logs_the_fact(self):
+        with _temp_dir() as tmp:
+            data = tmp / "data"
+            safe.write_checkpoint(self.fixture, data)
+            code, out, err = _run_cli(
+                ["safe", "post-compact"], env={safe.DATA_DIR_ENV: str(data)}
+            )
+            self.assertEqual(code, 0)
+            self.assertIn("Agent Team Checkpoint", out)
+            self.assertIn("checkpoint restored", self._the_one_line(err))
+
+    def test_the_mode_being_off_is_one_prefixed_line_per_action(self):
+        for action in (["safe", "checkpoint"], ["safe", "post-compact"]):
+            with self.subTest(action=action):
+                code, out, err = _run_cli(action, env={safe.ENV_SWITCH: "0"})
+                self.assertEqual(code, 3)
+                self.assertEqual(out, "")
+                self.assertIn(safe.ENV_SWITCH, self._the_one_line(err))
+
+    def test_no_refusal_reason_is_long_enough_to_be_truncated(self):
+        # The bound must never cut the citation a refusal carries (§8.3).
+        reasons = [
+            *safe._REFUSED_SUBCOMMANDS.values(),
+            *(reason for _, _, reason in safe._REFUSED_ARGV),
+            safe._LIVE_SESSION_REASON,
+        ]
+        self.assertLessEqual(
+            max(len(reason) for reason in reasons), winnow_cli._MAX_LINE_CHARS
+        )
+
+    def test_a_message_longer_than_the_bound_is_cut_not_emitted_whole(self):
+        # The orchestrator stores each stderr line as a database row, so a path
+        # or a session name arriving from outside cannot be trusted for length.
+        code, _out, err = _run_cli(
+            ["safe", "run", "--", "diagnose", "x" * 20_000],
+            env={safe.ENV_SWITCH: "0"},
+        )
+        self.assertEqual(code, 3)
+        self.assertLessEqual(len(err.strip()), 600)
+
+    def test_the_line_is_one_line_even_when_the_message_is_not(self):
+        stream = io.StringIO()
+        with contextlib.redirect_stderr(stream):
+            winnow_cli._say("first\nsecond\n\nthird")
+        self.assertEqual(stream.getvalue(), "winnow: first second third\n")
+
+
+def _run_cli(argv, *, stdin: str = "", env: dict[str, str] | None = None):
+    """Run `winnow …` in this process. Returns (exit code, stdout, stderr).
+
+    The mode is on unless the caller overrides the switch: these are the
+    hook-invoked paths, and a hook inside the materialised directory has the
+    switch baked into its command.
+    """
+    overlay = {safe.ENV_SWITCH: "1"}
+    overlay.update(env or {})
+    out, err = io.StringIO(), io.StringIO()
+    with mock.patch.dict(os.environ, overlay), \
+            mock.patch("sys.stdin", io.StringIO(stdin)), \
+            contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        code = winnow_cli.main(argv)
+    return code, out.getvalue(), err.getvalue()
 
 
 def _snapshot(root) -> dict[str, str]:

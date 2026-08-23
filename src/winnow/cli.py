@@ -2,7 +2,10 @@
 
 Exit codes follow SPEC §8: 0 success, 1 usage error, 2 nothing to do, 3 refused.
 A refusal is loud and names what refused, because a mode that silently declines
-to protect anything is indistinguishable from one that is not on.
+to protect anything is indistinguishable from one that is not on. So is every
+other outcome: each action a hook can invoke ends in exactly one bounded
+``winnow: `` line on stderr, including "nothing to checkpoint", which is a
+result and not an absence.
 
 Nothing here writes a log file. SPEC §10 forbids one by default, and under this
 harness stderr is a pipe the orchestrator already records per cycle, so a
@@ -24,6 +27,29 @@ EXIT_NOTHING = 2
 EXIT_REFUSED = 3
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+
+# Long enough that no refusal reason is ever cut — the longest is 272 characters
+# and a test holds that — and far below the 8,000 the orchestrator stores per
+# stderr line (logLine.ts). The bound exists so that a path or a session name
+# arriving from outside cannot turn one hook line into a large database row.
+_MAX_LINE_CHARS = 500
+
+
+def _say(message: str) -> None:
+    """Emit one bounded ``winnow: `` line on stderr.
+
+    Every action a hook can invoke ends in exactly one of these, whatever the
+    outcome, because stderr is the only channel a hook has and the orchestrator
+    records it per cycle. A cycle where there was nothing to checkpoint has to
+    be distinguishable from one where the plugin never loaded, and silence
+    cannot do that (docs/USAGEFOUNDRY.md §8.5).
+    """
+    line = " ".join(message.split())
+    if len(line) > _MAX_LINE_CHARS:
+        # ASCII, because a hook's stderr may be an ASCII-only stream and a
+        # UnicodeEncodeError here would lose the line the bound exists to keep.
+        line = line[: _MAX_LINE_CHARS - 3] + "..."
+    print(f"winnow: {line}", file=sys.stderr)
 
 
 def _require_mode() -> str | None:
@@ -76,7 +102,7 @@ def cmd_env(args: argparse.Namespace) -> int:
 def cmd_plugin_dir(args: argparse.Namespace) -> int:
     reason = _require_mode()
     if reason:
-        print(reason, file=sys.stderr)
+        _say(reason)
         return EXIT_REFUSED
     source = Path(args.source) if args.source else _REPO_ROOT / "plugin"
     dest = Path(args.out) if args.out else safe.data_dir() / "plugin"
@@ -95,19 +121,19 @@ def cmd_plugin_dir(args: argparse.Namespace) -> int:
 def cmd_run(args: argparse.Namespace) -> int:
     reason = _require_mode()
     if reason:
-        print(reason, file=sys.stderr)
+        _say(reason)
         return EXIT_REFUSED
     # argparse.REMAINDER keeps the `--` that separated our flags from cozempic's,
     # and cozempic's own prescan would carry it into argparse as a token.
     argv = args.argv[1:] if args.argv[:1] == ["--"] else list(args.argv)
     if not argv:
-        print("winnow safe run needs a cozempic command: "
-              "winnow safe run -- diagnose <session>", file=sys.stderr)
+        _say("safe run needs a cozempic command: "
+             "winnow safe run -- diagnose <session>")
         return EXIT_USAGE
 
     refusal = safe.refusal_for(argv, live_pid=safe.live_claude_pid())
     if refusal:
-        print(f"winnow: {refusal}", file=sys.stderr)
+        _say(refusal)
         return EXIT_REFUSED
     return safe.run_cozempic(argv)
 
@@ -115,29 +141,38 @@ def cmd_run(args: argparse.Namespace) -> int:
 def cmd_checkpoint(args: argparse.Namespace) -> int:
     reason = _require_mode()
     if reason:
-        print(reason, file=sys.stderr)
+        _say(reason)
         return EXIT_REFUSED
     payload = safe.hook_payload("" if sys.stdin.isatty() else sys.stdin.read())
     session_path = safe.resolve_session_path(payload, args.cwd)
     if session_path is None:
-        print("winnow: no session to checkpoint", file=sys.stderr)
+        _say("no session to checkpoint")
         return EXIT_NOTHING
     written = safe.write_checkpoint(session_path, safe.data_dir())
     if written is None:
+        # A result, not an absence: this is the outcome on every cycle of a
+        # session that never spawned a subagent, and it is the one the old
+        # silence made indistinguishable from an unloaded plugin.
+        _say(f"nothing to checkpoint: no team state in {session_path.name}")
         return EXIT_NOTHING
-    print(f"winnow: team state checkpointed to {written}", file=sys.stderr)
+    _say(f"team state checkpointed to {written}")
     return EXIT_OK
 
 
 def cmd_post_compact(args: argparse.Namespace) -> int:
     reason = _require_mode()
     if reason:
-        print(reason, file=sys.stderr)
+        _say(reason)
         return EXIT_REFUSED
     content = safe.read_checkpoint(safe.data_dir())
     if not content:
+        _say("no checkpoint to restore")
         return EXIT_NOTHING
+    # stdout is the hook's output and goes to the model; the line about it goes
+    # to stderr, which is the run's log. Its length rather than its content,
+    # because the content is the transcript's and can be any size.
     print(content)
+    _say(f"checkpoint restored, {len(content)} characters")
     return EXIT_OK
 
 

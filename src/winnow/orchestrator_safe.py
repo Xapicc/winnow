@@ -485,6 +485,15 @@ _SAFE_PLUGIN_DESCRIPTION = (
 # tree's — is recorded as provenance instead.
 _UPSTREAM_COPYRIGHT = "2026 Ruya AI"
 
+# The directory has to sit inside one of UsageFoundry's workspace mounts to be
+# discoverable at all: `discoverPlugins` walks the mounts and nothing else
+# (plugins.ts:244-315), so a directory under $HOME can be built and never
+# enabled. The walk skips any path component starting with `.` and the names in
+# plugins.ts:48-58 (node_modules, .git, .uf-worktrees, .next, dist, build,
+# vendor, target, __pycache__), which is why this is a plain name beside the
+# vendored `plugin/` rather than something tidier like `.winnow/plugin`.
+PLUGIN_DEST_DIRNAME = "winnow-plugin"
+
 
 def safe_hooks_manifest(winnow_command: str) -> dict:
     """The hooks.json for the materialised directory.

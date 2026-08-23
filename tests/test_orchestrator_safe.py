@@ -526,6 +526,24 @@ class TestPluginDirectory(unittest.TestCase):
             report = safe.materialise_plugin_dir(source, tmp / "out")
         self.assertEqual(report["derived_from"]["version"], "9.9.9")
 
+    def test_the_default_destination_is_one_the_plugin_scan_can_reach(self):
+        # UsageFoundry walks its workspace mounts and skips dot-directories and
+        # the names in plugins.ts:48-58. A destination it skips is a directory
+        # that can be generated and never enabled, which is what
+        # ~/.winnow/plugin was.
+        skipped = {"node_modules", ".git", ".uf-worktrees", ".next", "dist",
+                   "build", "vendor", "target", "__pycache__"}
+        name = safe.PLUGIN_DEST_DIRNAME
+        self.assertFalse(name.startswith("."), name)
+        self.assertNotIn(name, skipped)
+        self.assertEqual(Path(name).name, name)  # one path component, no parents
+
+    def test_the_default_destination_is_not_inside_the_vendored_plugin(self):
+        # plugins.ts stops walking at the first plugin it finds ("a plugin does
+        # not nest inside another plugin"), and PLUGIN_DIR is already one.
+        self.assertFalse((PLUGIN_DIR / safe.PLUGIN_DEST_DIRNAME).exists())
+        self.assertNotEqual(safe.PLUGIN_DEST_DIRNAME, PLUGIN_DIR.name)
+
     def test_the_output_is_deterministic(self):
         # SPEC §10. Also what makes the directory reviewable: a diff between two
         # runs should be empty, so a change in it is a change somebody made.

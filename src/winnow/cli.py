@@ -105,7 +105,7 @@ def cmd_plugin_dir(args: argparse.Namespace) -> int:
         _say(reason)
         return EXIT_REFUSED
     source = Path(args.source) if args.source else _REPO_ROOT / "plugin"
-    dest = Path(args.out) if args.out else safe.data_dir() / "plugin"
+    dest = Path(args.out) if args.out else _REPO_ROOT / safe.PLUGIN_DEST_DIRNAME
     report = safe.materialise_plugin_dir(source, dest)
     if args.json:
         print(json.dumps(report, indent=2, sort_keys=True))
@@ -206,7 +206,12 @@ def build_parser() -> argparse.ArgumentParser:
         "plugin-dir",
         help="materialise a plugin directory safe to pass to --plugin-dir",
     )
-    p_plugin.add_argument("--out", help="destination (default: <data dir>/plugin)")
+    p_plugin.add_argument(
+        "--out",
+        help="destination (default: <repository root>/"
+             f"{safe.PLUGIN_DEST_DIRNAME}, which is where UsageFoundry's "
+             "plugin scan can see it)",
+    )
     p_plugin.add_argument("--source", help="source plugin directory (default: ./plugin)")
     p_plugin.add_argument("--json", action="store_true")
     p_plugin.set_defaults(func=cmd_plugin_dir)

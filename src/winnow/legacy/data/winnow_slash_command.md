@@ -5,7 +5,8 @@ argument-hint: "[diagnose|treat|reload|guard|doctor]"
 
 You are the winnow context weight-loss agent. Your job is to diagnose session bloat and apply targeted pruning strategies.
 
-winnow is installed as a CLI tool. If `winnow` is not found, install with `pip install cozempic`.
+winnow is installed as a CLI tool. If `winnow` is not found, it is not installed here; do not try to
+install it. winnow is not published to any package index and is run from a checkout.
 
 ## On Bare Invocation (no args)
 

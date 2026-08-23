@@ -1,6 +1,6 @@
 """winnow init — auto-wire hooks and slash command into a Claude Code project.
 
-After `pip install cozempic`, users still need to:
+After installing winnow from a checkout, users still need to:
   1. Wire hooks into .claude/settings.json for checkpoint triggers
   2. Optionally install the /winnow slash command
 

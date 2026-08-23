@@ -77,7 +77,7 @@ Two mitigations that are real and that narrow the exposure, both worth recording
 rather than a patch:
 
 - `guard.py:1084`, `# Headless sessions are unchanged (reload immediately).` The kill-and-resume path is for terminals; an orchestrated session takes the headless branch.
-- Three identity gates run before the kill: liveness (`guard.py:2261`), a start-time comparison against the pid recorded at guard startup (`guard.py:2269`), and an argv check (`guard.py:2274`). The start-time gate works in this container without `psutil` because `/proc/<pid>/stat` is readable (`guard.py:3943-3964`), which I confirmed. It fails **open** only when all three backends fail (`guard.py:3953`).
+- Three identity gates run before the kill: liveness (`guard.py:2261`), a start-time comparison against the pid recorded at guard startup (`guard.py:2269`), and an argv check (`guard.py:2274`). The start-time gate works in this container without `psutil` because `/proc/<pid>/stat` is readable (`guard.py:3943-3964`), which I confirmed. It failed **open** when all three backends failed, which was the wrong direction and is the one behavioural change phase 2 made to the guard: it now fails **closed**, and `psutil` is a declared dependency so the closed path stays abnormal ([FORK.md](FORK.md) §9).
 
 A claim in an earlier draft of my own analysis that must not be repeated: I expected
 `session.py:300` `find_claude_pid()`, which walks up ten generations matching `comm` for "node" or
@@ -217,6 +217,10 @@ repository has no `.claude/` directory today, which is bail-out 2 of `_maybe_aut
 
 ### 1.8 The tool upgrades itself from PyPI, by two independent paths.
 
+**Both paths are deleted as of phase 2** ([FORK.md](FORK.md) §9), along with the `self-update`
+subcommand and the two switches this section named. The evidence below is what was there; the
+paragraph after the table is what happened to it.
+
 | Side | Evidence |
 | --- | --- |
 | Tool | `plugin/hooks/hooks.json`, SessionStart: under `flock -n`, `uv pip install --upgrade cozempic` falling back to `pip install --upgrade cozempic`, then `cozempic guard --reload-self` if the version changed, then the guard daemon, with the whole subshell backgrounded |
@@ -226,9 +230,14 @@ repository has no `.claude/` directory today, which is bail-out 2 of `_maybe_aut
 **What changes: both paths off.** Two reasons, and the second is the one that matters here. A
 session start that mutates its own runtime is not reproducible, so no run's result can be attributed
 to a version. And [DECISIONS.md](DECISIONS.md) §0 turns on this: it is why the tree is vendored at a
-recorded sha rather than pinned as a dependency. `COZEMPIC_NO_AUTO_UPDATE=1` or
-`COZEMPIC_PIN=1.8.39` stops both (`updater.py:239`, `:217`, and the hook's own
-`[ -z "$COZEMPIC_NO_AUTO_UPDATE" ] && [ -z "$COZEMPIC_PIN" ]` guard).
+recorded sha rather than pinned as a dependency. When this was written the answer was
+`COZEMPIC_NO_AUTO_UPDATE=1` or `COZEMPIC_PIN=1.8.39`, which stopped both (`updater.py:239`, `:217`,
+and the hook's own `[ -z "$COZEMPIC_NO_AUTO_UPDATE" ] && [ -z "$COZEMPIC_PIN" ]` guard).
+
+Phase 2 removed the paths rather than the switches: `updater.py` is deleted, the hook's upgrade
+subshell is gone, and no `WINNOW_NO_AUTO_UPDATE` or `WINNOW_PIN` exists to set. A report-only version
+check was considered and rejected — it would still have to ask pypi.org what version exists, and
+nothing in the tool needs the answer.
 
 ### 1.9 The plugin's MCP server does not run the vendored tree. Not in the brief.
 
@@ -237,7 +246,8 @@ ${CLAUDE_PLUGIN_ROOT}/servers/cozempic_mcp.py`. Three consequences: it needs `uv
 at spawn; and `--with cozempic` **fetches Cozempic from PyPI**, so `--plugin-dir plugin/` would run a
 downloaded copy rather than `src/cozempic/`. Anyone measuring the vendored tree through the plugin
 would be measuring something else. `fastmcp` is therefore a real dependency of the plugin, though not
-of the runtime ([COZEMPIC.md](COZEMPIC.md) §1.1).
+of the runtime ([COZEMPIC.md](COZEMPIC.md) §1.1); phase 2 declared it as the `mcp` extra in
+`pyproject.toml` for that reason, rather than as a dependency every CLI install pulls.
 
 Two corrections to that paragraph, neither of them the fork's doing.
 
@@ -347,8 +357,10 @@ same reason (`:5190-5192`).
 So the shape is: the plugin directory is registered with the app, the app passes it on every spawn,
 and nothing is ever installed into `~/.claude`. That is the whole of §1.7's mitigation and it already
 exists. What it does *not* do is make the plugin's contents safe: the `SessionStart` hook inside
-`plugin/hooks/hooks.json` still upgrades from PyPI and still spawns the guard daemon. §4 is that
-list, and §4 is a precondition of using `--plugin-dir` at all rather than an optimisation of it.
+`plugin/hooks/hooks.json` still spawns the guard daemon. §4 is that list, and §4 is a precondition of
+using `--plugin-dir` at all rather than an optimisation of it. (It also upgraded from PyPI when this
+was written. Phase 2 deleted that subshell; the guard spawn is untouched and is the reason this
+paragraph still stands.)
 
 Note also §1.9: the plugin's MCP server would run a PyPI copy of Cozempic, not the vendored tree. If
 the point of the exercise is to measure the vendored tree, the MCP server must be excluded from the
@@ -369,12 +381,17 @@ The switches were `COZEMPIC_*` when this section was measured and are `WINNOW_*`
 ([FORK.md](FORK.md) §5.1). The names below are the ones this tree reads; an upstream Cozempic
 installed beside it still reads the old ones, and neither reads the other's.
 
+Three rows have since lost their switch, because phase 2 removed the behaviour instead of gating it.
+They are kept in the table, marked, so a reader who arrives from §1.8 or from an upstream Cozempic
+does not go looking for a variable that is not there. Removed rather than accepted-and-ignored: a
+variable the tool still parses and does nothing with reads as a promise it is not keeping.
+
 | Feature | Switch | If left on |
 | --- | --- | --- |
 | Global init into `~/.claude/settings.json` | `WINNOW_NO_GLOBAL_INIT=1` (`cli.py:2076`) | Writes hooks onto the operator's host machine, silently, because headless skips the prompt. §1.7 |
 | Project init into `./.claude/settings.json` | `WINNOW_NO_AUTO_INIT=1` (`cli.py:2269`) | A settings file appears in the agent's worktree. Inert today: this repository has no `.claude/`, which is its own bail-out |
-| PyPI self-upgrade, both paths | `WINNOW_NO_AUTO_UPDATE=1`, or `WINNOW_PIN=1.8.39` to hold a reviewed version | The measured artefact changes between runs and no result can name its version. §1.8 |
-| Telemetry counters | `WINNOW_NO_TELEMETRY=1` (`helpers.py:236`) | Three outbound requests per prune to a third party's Cloudflare Worker. Counters only, but SPEC §10 says no network |
+| ~~PyPI self-upgrade, both paths~~ | **gone.** `WINNOW_NO_AUTO_UPDATE` and `WINNOW_PIN` no longer exist; phase 2 deleted `updater.py` and the hook's upgrade subshell | nothing — there is no path left to leave on. §1.8 |
+| ~~Telemetry counters~~ | **gone.** `WINNOW_NO_TELEMETRY` no longer exists; phase 2 deleted the three requests `record_savings` made | nothing. The local savings ledger stays and never left the machine |
 | Receipts into `~/.winnow` | `WINNOW_NO_RECEIPTS=1` | Container-local, so this is hygiene rather than a collision. On by default in the tool's own test suite for the same reason |
 | **The guard daemon** | **no environment variable exists.** The only way off is not to install the hook: exclude `SessionStart` from any registered `--plugin-dir`, and keep `WINNOW_NO_GLOBAL_INIT=1` so nothing wires it globally | The session can be `SIGKILL`ed mid-cycle, the harness files it as exit -1, and in this container it is not resumed. §1.1, §1.2, §1.3 |
 | **`metadata-strip`** | **no environment variable exists**, and it is gentle-tier so every prescription includes it. Requires a config-file strategy exclusion, or a patch | Spend accounting silently under-reports, killed cycles bill as zero, and the budget ceiling rises to match. §1.4 |
@@ -386,8 +403,10 @@ and none of them is `WINNOW_NO_GUARD`.
 
 Both now have one, out of tree, and neither is an environment variable. §8.3 refuses the argv that
 starts the daemon and §8.4 removes `metadata-strip` from the prescription dict both importers already
-hold. One row of this table also turned out to be incomplete: `WINNOW_NO_TELEMETRY=1` stops the
-outbound counter requests but not the file the same function writes one line earlier, which is §8.6.
+hold. One row of this table also turned out to be incomplete: `WINNOW_NO_TELEMETRY=1` stopped the
+outbound counter requests but not the file the same function wrote one line earlier, which is §8.6.
+That incompleteness is now moot in the direction that matters — the requests are deleted, so there is
+nothing for a switch to be incomplete about.
 
 Turning that around: adding `WINNOW_NO_GUARD` and a strategy-exclusion list is a small,
 self-contained contribution upstream, and it is the shape of contribution
@@ -654,7 +673,7 @@ compose file should stop the invocation, not silently disarm the mode.
 | --- | --- | --- |
 | 1. Never terminate this session | refuse the argv that starts the daemon or signals one | §8.3 |
 | 2. Never resume a session | refuse `reload`, which spawns a `claude --resume` watcher | §8.3 |
-| 3. No update, no PyPI check, no drift | `WINNOW_NO_AUTO_UPDATE=1` + `WINNOW_PIN=1.8.39`, refuse `self-update`, and relocate the sentinel the switches do not cover | §8.6 |
+| 3. No update, no PyPI check, no drift | nothing, since phase 2. The two switches, the `self-update` refusal and the sentinel relocation all pointed at code that no longer exists | §8.6 |
 | 4. No writes to `~/.claude`, no global hooks, no foreign `settings.json` | refuse `init`/`uninstall`/`nudge`, a `--plugin-dir` built from scratch, a redirected checkpoint | §8.5, §8.7 |
 | 5. Do not compete with the harness's context and cost controls | refuse a mutating prune while a Claude process is live | §8.3 |
 | 6. Nothing important written into the model's memory | refuse `digest inject`, drop the skills and the MCP server | §8.3, §8.5 |
@@ -663,7 +682,7 @@ compose file should stop the invocation, not silently disarm the mode.
 
 `refusal_for(argv, live_pid=...)` returns the reason a command will not run, or None. Three classes:
 
-- **Refused whatever the arguments**: `guard`, `reload`, `self-update`, `init`, `uninstall`, `checkpoint`, `nudge`, `remind`.
+- **Refused whatever the arguments**: `guard`, `reload`, `init`, `uninstall`, `checkpoint`, `nudge`, `remind`. (`self-update` was on this list until phase 2 deleted the subcommand.)
 - **Refused in a particular shape**: `guard-watchdog --fix` (sends `SIGTERM`, `cli.py:1129`), `digest inject` (writes into `~/.claude/projects/*/memory/` and edits `MEMORY.md`, `digest.py:954-996`). Both commands are allowed without those arguments.
 - **Refused only while a session is live**: `treat --execute`, `strategy --execute`, `digest update|clear|flush|recover`. This is §2's precedence rule and nothing else: the harness's autocompaction is authoritative, so the tool may not act to prevent compaction, may not act because of it, and may not act while a session is live. `live_claude_pid()` answers "is one live" by delegating to the vendored `find_claude_pid`; it is passed in rather than probed inside the gate so the decision is testable without arranging a process tree.
 
@@ -690,7 +709,8 @@ in this process rather than spawning it — a subprocess would import a fresh, u
 copied and filtered**, so anything upstream adds is excluded by default rather than by classification.
 
 Kept: `PreCompact` and `PostCompact`, pointed at `winnow safe checkpoint` and `winnow safe
-post-compact`. Dropped: `SessionStart` (upgrades from PyPI and starts the guard), `PostToolUse`,
+post-compact`. Dropped: `SessionStart` (starts the guard; it upgraded from PyPI too until phase 2
+deleted that), `PostToolUse`,
 `Stop`, and the `.mcp.json`, `servers/` and `skills/` paths — §1.9's MCP server would run a PyPI copy
 of the tool rather than the vendored tree, and the skills are instructions to the model.
 
@@ -822,12 +842,20 @@ Found while snapshotting the filesystem for §8.8, not by reading: this containe
 point here is only that they existed, and that no environment variable would have stopped the first
 of them.
 
-`cozempic.cli.main` calls `ping_install_if_new()` before it parses argv (`cli.py:2398`), and that
-function writes `~/.cozempic_installed` at `updater.py:186` and consults `COZEMPIC_NO_TELEMETRY` at
-`updater.py:187`. **The switch stops the network ping, not the write one line before it.** No
-environment variable covers this, and §6 rules out the patch, so the mode works on the path instead:
-`redirect_home_writes()` rebinds the ten module-level constants in the vendored tree that are computed
+`cozempic.cli.main` called `ping_install_if_new()` before it parsed argv (`cli.py:2398`), and that
+function wrote `~/.cozempic_installed` at `updater.py:186` and consulted `COZEMPIC_NO_TELEMETRY` at
+`updater.py:187`. **The switch stopped the network ping, not the write one line before it.** No
+environment variable covered this, and §6 rules out the patch, so the mode worked on the path instead:
+`redirect_home_writes()` rebinds the module-level constants in the vendored tree that are computed
 from `Path.home()` at import time, pointing them into winnow's data directory.
+
+That particular write is gone: phase 2 deleted `updater.py`, so `~/.cozempic_installed` and
+`~/.cozempic_update_check` have no writer and their two redirect entries went with them. Eight
+constants remain, none of them written ahead of an argv parse, and the redirect stays because being
+ordinary state in the wrong place was always the reason for it. The finding this section records is
+unchanged in the part that generalises: an opt-out that sits one line after the side effect is not an
+opt-out, which is also why the test that replaced the telemetry tests asserts on the syscall rather
+than on the variable.
 
 That only works because every one of those constants is read through its own module's global. A
 `from .digest import DIGEST_DIR` somewhere else would keep the old path silently, so a test asserts
@@ -910,7 +938,7 @@ only by the snapshot's own transient `sh`/`ps`/`sort`; the `claude` process the 
 Named individually, with what would settle each.
 
 - **The mode has never run inside a real orchestrated cycle.** Everything above was run by hand in this container. What is untested is the composition: `--plugin-dir <winnow's directory>` passed by `buildArgs`, the `PreCompact` hook firing during the harness's own autocompaction, and the checkpoint surviving into the next cycle. Settled by one run of the harness against this branch with `WINNOW_ORCHESTRATOR=1` in the child environment, then reading the cycle's stderr for winnow lines. Two things that stood in the way of that run are now gone (§8.5): the directory can be generated somewhere the app's plugin scan will find it, so it can be enabled from the list rather than only passed by hand, and every hook action says one line whatever happens, so "reading the cycle's stderr for winnow lines" distinguishes a loaded plugin with nothing to do from a plugin that never loaded. Neither has been observed in a real cycle, which is why this bullet stays here.
-- **No network call was proved absent.** `COZEMPIC_NO_TELEMETRY=1` and `COZEMPIC_NO_AUTO_UPDATE=1` are in the overlay and `self-update` is refused, but nothing here observed the syscalls. No packet-level tool is available in this container. Settled by `strace -f -e trace=connect` or an egress-denied network namespace around the same end-to-end run.
+- **No network call was proved absent at the syscall level.** This bullet is weaker than it was. The overlay used to hold `COZEMPIC_NO_TELEMETRY=1` and `COZEMPIC_NO_AUTO_UPDATE=1` and the gate refused `self-update`; phase 2 deleted the code all three pointed at, so the claim now rests on absence in the source (`grep -rn 'urlopen\|urllib\|import requests\|http\.client\|socket\.socket\|pypi\.org\|workers\.dev' src/ plugin/` returns nothing) and on one test that spies on `urllib.request.urlopen` across a prune. Neither observes a syscall. Still settled properly only by `strace -f -e trace=connect` or an egress-denied network namespace around an end-to-end run.
 - **The guard was never enabled**, deliberately: §6 forbids it. So "the daemon would have killed this session" is read from `guard.py:2377-2400` and from the harness's exit handling, not observed. Settled only in a throwaway container with nothing else in it, and it is not worth doing.
 - **The `/tmp` flake was not root-caused.** The alternation between the two tests is new evidence for the shared-`/tmp` theory and still not proof. Settled by running that one class with `TMPDIR` pointed somewhere private, which the guard's hardcoded path (`guard.py:2636-2650`) currently prevents.
 - **`prescriptions_without` is not exercised through a real prune.** The exclusion is asserted on the dict, and a dry-run `treat` was run, but no `--execute` prune has been run under the mode, because a live session refuses one and that is the correct behaviour. Settled between cycles, where the mode is designed to allow it.

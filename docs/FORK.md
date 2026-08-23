@@ -23,7 +23,7 @@ intends to replace, which is why the package path below has the word `legacy` in
 | --- | --- | --- |
 | 0 | This document, [DECISIONS.md](DECISIONS.md) §0, `LICENSE`, `NOTICE` | Done, 2026-08-23 |
 | 1 | The rename. Tree moves, imports rewrite, one CLI, one distribution, licence applied, CI stood up | An importable `winnow` with no `cozempic` module in it |
-| 2 | Delete what is not being maintained: telemetry, self-update, all six packaging channels, `npm/`, upstream's release process and personal scripts. Declare the dependencies | A tree with no network egress and no undeclared imports |
+| 2 | Delete what is not being maintained: telemetry, self-update and personal scripts. Declare the dependencies. Done, less the packaging channels, `npm/` and the release process, which the run's brief moved to their own run (§3, §9) | A tree with no network egress and no undeclared imports |
 | 3 | Runtime surface: `COZEMPIC_*` to `WINNOW_*`, `/tmp` and `$HOME` state paths, the hook schema marker, `winnow migrate` | Nothing on disk named `cozempic` |
 | 4 | The MCP server, self-hosted in its own container | An image that serves the tools without fetching anything |
 
@@ -214,7 +214,15 @@ those on its own.
 **Also deleted in phase 2**, for the same reason and not separately argued: `scripts/`. All three
 files are upstream's author's personal tooling, with hardcoded paths into
 `~/.claude/projects/-Users-ruya-Documents-Advisor-Cozempic/memory` and a different person's GitHub
-account.
+account. Done: `scripts/` is gone, and `stats-summary.sh` was reading the same Cloudflare counters
+phase 2 stopped writing, so it was dead on arrival either way.
+
+`packaging/` and `npm/` are **not** gone. Phase 2's brief moved the six channels, `npm/` and the
+publish workflow to their own run, on the grounds that they are a distribution decision rather than a
+dependency one. They still contain the only remaining outbound calls in the tree
+(`npm/install.js` pip-installs `cozempic` and pings `api.counterapi.dev`; `packaging/ci/publish.yml`
+uploads to PyPI under Ruya-AI's trusted-publisher registration), and none of it is reachable from
+`winnow` — no import, no subprocess, no hook.
 
 **If a later run reverses this**, it needs a distribution name that is free, and these were free on
 2026-08-23: `winnow-cli`, `winnowctl`, `winnow-context`, `winnow-claude`, `nms-winnow`. (`winnowing`
@@ -297,12 +305,21 @@ go in phase 2, in the same commit as the code they switch off.
 | `COZEMPIC_NO_RECEIPTS` | `receipts.py:34`, `:64` | the receipts writer, if phase 2 removes it. **Open: see §9 Q2** |
 
 Knock-on, and it is load-bearing: `_SAFE_ENV_SPEC` (`orchestrator_safe.py:92-152`) forces nine
-variables, four of which are these. The overlay shrinks to five in the same commit, and four tests
-assert on it and shrink with it: `tests/test_orchestrator_safe.py:50`
-(`test_every_switch_usagefoundry_names_is_in_the_overlay`), `:84`, `:89`
-(`test_apply_puts_it_in_the_process_environment`) and `:665`. A phase 2
-that deletes the features without shrinking the overlay leaves winnow setting variables nothing
-reads, which is the quiet kind of wrong.
+variables, four of which are these. The overlay shrinks in the same commit, and the tests that assert
+on it shrink with it. A phase 2 that deletes the features without shrinking the overlay leaves winnow
+setting variables nothing reads, which is the quiet kind of wrong.
+
+**Done, phase 2, with one correction to the arithmetic above.** Three went, not four: §10 Q2's
+default keeps receipts, so `WINNOW_NO_RECEIPTS` survives and the overlay shrank to **six**, not five.
+Each was deleted in the same commit as its last reader, as planned.
+
+**Removed, not accepted-and-ignored.** The alternative was to keep parsing the three names and do
+nothing with them, so an operator's existing `WINNOW_NO_AUTO_UPDATE=1` would not become an error.
+Rejected: a tool that accepts `WINNOW_NO_TELEMETRY` is a tool that has telemetry to switch off, and
+the point of the phase is that it does not. Nothing errors on an unknown `WINNOW_*` variable, so
+setting one that is gone is inert rather than fatal — an operator who has it set loses nothing but the
+belief that it is doing something. The reachable consumers are this repository's own overlay and
+[USAGEFOUNDRY.md](USAGEFOUNDRY.md) §4, both updated in the same commits.
 
 ### 5.2 Renamed
 
@@ -465,17 +482,18 @@ winnow's own code, from an image winnow builds, fetching nothing at spawn.
 Today, `plugin/.mcp.json` is `uv run --with fastmcp --with cozempic python
 ${CLAUDE_PLUGIN_ROOT}/servers/cozempic_mcp.py`. `--with cozempic` fetches from PyPI at spawn, so the
 server runs a downloaded copy and not this tree at all ([USAGEFOUNDRY.md](USAGEFOUNDRY.md) §1.9).
-`plugin/servers/cozempic_mcp.py` is 255 lines exposing five tools (`diagnose_current`,
-`estimate_tokens`, `list_sessions`, `treat_session`, `list_strategies`) and, at import, starting a
-daemon thread that calls `ping_install_if_new()` and `maybe_auto_update(force=True, silent=True)`
-(`_startup_maintenance` at `:16-27`, started at `:30`).
+`plugin/servers/cozempic_mcp.py` exposes five tools (`diagnose_current`, `estimate_tokens`,
+`list_sessions`, `treat_session`, `list_strategies`). It also started a daemon thread at import that
+called `ping_install_if_new()` and `maybe_auto_update(force=True, silent=True)`; phase 2 deleted that
+thread along with the module it called, rather than leaving the file importing something that no
+longer exists.
 
 What phase 4 does:
 
-- `plugin/servers/cozempic_mcp.py` becomes `plugin/servers/winnow_mcp.py`, `FastMCP("Cozempic")`
-  becomes `FastMCP("winnow")`, and the `_startup_maintenance` thread is **deleted, not disabled**. It
-  is telemetry and self-update, both of which phase 2 has already removed underneath it, so by phase
-  4 it is calling functions that no longer exist.
+- `plugin/servers/cozempic_mcp.py` becomes `plugin/servers/winnow_mcp.py` and `FastMCP("Cozempic")`
+  becomes `FastMCP("winnow")`. The `_startup_maintenance` thread was to be **deleted, not disabled**;
+  phase 2 did it early, because leaving a file importing a module that same phase deleted is a defect
+  rather than a deferral.
 - A `Dockerfile` at the repository root: the image contains the winnow package and `fastmcp`, and
   nothing resolves at runtime. Pinned base image by digest, non-root user, no network in the final
   stage.
@@ -489,7 +507,9 @@ What phase 4 does:
   access to the operator's session directory by default is the same class of decision
   [USAGEFOUNDRY.md](USAGEFOUNDRY.md) §5 reserves to the operator.
 - `fastmcp` becomes a declared dependency of the image, not of the package. It is not a runtime
-  dependency of the CLI (`COZEMPIC.md` §1.1).
+  dependency of the CLI (`COZEMPIC.md` §1.1). Phase 2 declared it as the `mcp` extra in
+  `pyproject.toml` as an interim, so the import is not undeclared while the image does not exist;
+  phase 4 moves it.
 
 ---
 
@@ -572,23 +592,42 @@ The whole tree moves and nothing changes behaviour. Large diff, no new logic.
 
 ### Phase 2: delete what is not being maintained
 
-- [ ] Given the tree, when `grep -rn 'workers\.dev\|counterapi' src/ plugin/` runs, then it prints
+- [x] Given the tree, when `grep -rn 'workers\.dev\|counterapi' src/ plugin/` runs, then it prints
       nothing.
-- [ ] Given the tree, when `grep -rn 'pip install --upgrade\|uv tool upgrade' src/ plugin/` runs, then
+- [x] Given the tree, when `grep -rn 'pip install --upgrade\|uv tool upgrade' src/ plugin/` runs, then
       it prints nothing. `updater.py` is deleted, not neutered.
-- [ ] `packaging/`, `npm/` and `scripts/` are deleted. `README.md` says the only supported install is
-      from source.
-- [ ] `pyproject.toml` declares `psutil` and a `dev` extra containing `pytest`. Given a fresh
+- [~] `packaging/`, `npm/` and `scripts/` are deleted. `README.md` says the only supported install is
+      from source. **`scripts/` only.** The run's brief moved the six channels, `npm/` and the publish
+      workflow to their own run (§3).
+- [x] `pyproject.toml` declares `psutil` and a `dev` extra containing `pytest`. Given a fresh
       environment built from those declarations only, when the suite runs, then it collects with no
       `ModuleNotFoundError`.
-- [ ] `guard.py`'s PID-identity check **fails closed**: given `psutil` unavailable, when
+- [x] `guard.py`'s PID-identity check **fails closed**: given `psutil` unavailable, when
       `_pid_identity_match` is called, then it returns false and the terminate path is skipped. A test
       simulates the absence and asserts no signal is sent. This is the single highest-value change in
       the phase and the only one that touches the kill path.
-- [ ] `_SAFE_ENV_SPEC` has shrunk to the five surviving variables, and the test that verifies the
-      overlay has shrunk with it.
-- [ ] Given the tree, when a run greps for any outbound network call outside `winnow bench`, then the
-      only hits are in the MCP server's own transport.
+- [x] `_SAFE_ENV_SPEC` has shrunk to the surviving variables, and the tests that verify the overlay
+      have shrunk with it. Six, not five — see §5.1.
+- [~] Given the tree, when a run greps for any outbound network call outside `winnow bench`, then the
+      only hits are in the MCP server's own transport. **`src/` and `plugin/` are clean**; the
+      remaining hits are in `npm/` and `packaging/`, deferred with the row above, plus
+      `plugin/.mcp.json`'s `--with cozempic`, which is the MCP transport and is phase 4's.
+
+Two decisions the criteria above did not fix, settled here.
+
+**The self-update is deleted, not replaced with a report-only version check.** A check that only
+reports still has to ask pypi.org what version exists, which is a third party's endpoint on a session
+start, and nothing in the tool consumes the answer: there is no notification surface, no changelog
+command, and §0's reproducibility argument wants the measured artefact to be the tree in `src/` and
+not a moving comparison against a release of somebody else's program. The version is already recorded
+as provenance (`UPSTREAM_VERSION`, §4); a network call cannot add to that.
+
+**`psutil` is both declared and made fail-closed, not one or the other.** The brief allowed either.
+Declaring alone leaves the kill path licensed by a library that a broken install can be missing.
+Failing closed alone makes the abnormal path the normal one on any machine that did not happen to
+have psutil, which would mean a guard that never reloads and never says why. Together they are
+coherent: the check has a backend on every supported install, and the case where it does not is
+treated as the unknown it is (§9's kill-path criterion above, `guard.py:_pid_identity_match`).
 
 ### Phase 3: the runtime surface
 

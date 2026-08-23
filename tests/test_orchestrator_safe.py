@@ -1,0 +1,541 @@
+"""Tests for winnow's orchestrator-safe mode (src/winnow/orchestrator_safe.py).
+
+Written as ``unittest.TestCase`` classes on purpose. pytest collects them like
+any other test file, and they also run under bare ``python3 -m unittest`` — the
+only thing available in the harness container, which has no pip, no venv and no
+pytest (docs/USAGEFOUNDRY.md §7). Nothing here depends on a pytest fixture, so
+each test that touches the environment isolates its own.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import unittest
+from pathlib import Path
+from unittest import mock
+
+from winnow import orchestrator_safe as safe
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+PLUGIN_DIR = REPO_ROOT / "plugin"
+
+
+class TestTheSwitch(unittest.TestCase):
+    def test_truthy_values_enable_the_mode(self):
+        for raw in ("1", "true", "TRUE", "yes", "on", " 1 "):
+            self.assertTrue(safe.is_enabled({safe.ENV_SWITCH: raw}), raw)
+
+    def test_falsey_values_and_absence_leave_it_off(self):
+        for raw in ("0", "false", "no", "off", ""):
+            self.assertFalse(safe.is_enabled({safe.ENV_SWITCH: raw}), raw)
+        self.assertFalse(safe.is_enabled({}))
+
+    def test_an_unrecognised_value_raises_rather_than_reading_as_off(self):
+        # The switch decides whether a daemon that can SIGKILL the session may
+        # start. A typo must stop the invocation, not silently disarm the mode.
+        with self.assertRaises(ValueError) as caught:
+            safe.is_enabled({safe.ENV_SWITCH: "yeah"})
+        self.assertIn(safe.ENV_SWITCH, str(caught.exception))
+
+    def test_reads_the_process_environment_by_default(self):
+        with mock.patch.dict(os.environ, {safe.ENV_SWITCH: "1"}, clear=False):
+            self.assertTrue(safe.is_enabled())
+
+
+class TestEnvironmentOverlay(unittest.TestCase):
+    def test_every_switch_usagefoundry_names_is_in_the_overlay(self):
+        for name in (
+            "COZEMPIC_NO_GLOBAL_INIT",
+            "COZEMPIC_NO_AUTO_INIT",
+            "COZEMPIC_NO_AUTO_UPDATE",
+            "COZEMPIC_PIN",
+            "COZEMPIC_NO_TELEMETRY",
+            "COZEMPIC_NO_RECEIPTS",
+        ):
+            self.assertIn(name, safe.SAFE_ENV)
+
+    def test_the_pin_names_the_vendored_version(self):
+        pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        self.assertIn(
+            f'version = "{safe.SAFE_ENV["COZEMPIC_PIN"]}"',
+            pyproject,
+            "COZEMPIC_PIN must name the tree in src/, or the pin points at a "
+            "version that is not the one being measured",
+        )
+
+    def test_interactive_is_forced_on_not_off(self):
+        # guard.py:1410 — interactive mode only ever makes the guard MORE
+        # conservative about reloading. `off` would be the wrong direction.
+        self.assertEqual(safe.SAFE_ENV["COZEMPIC_INTERACTIVE"], "on")
+
+    def test_the_mid_turn_force_line_is_disabled(self):
+        # guard.py:1479 — 0 disables the force that overrides the deferral.
+        self.assertEqual(safe.SAFE_ENV["COZEMPIC_FORCE_RELOAD_PCT"], "0")
+
+    def test_every_overlay_entry_carries_a_reason(self):
+        self.assertEqual(set(safe.SAFE_ENV), set(safe.SAFE_ENV_REASONS))
+        for name, why in safe.SAFE_ENV_REASONS.items():
+            self.assertTrue(why.strip(), name)
+
+    def test_overlay_wins_and_nothing_is_removed(self):
+        merged = safe.safe_environment({"PATH": "/bin", "COZEMPIC_PIN": "0.0.1"})
+        self.assertEqual(merged["PATH"], "/bin")
+        self.assertEqual(merged["COZEMPIC_PIN"], safe.SAFE_ENV["COZEMPIC_PIN"])
+
+    def test_apply_puts_it_in_the_process_environment(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("COZEMPIC_NO_GLOBAL_INIT", None)
+            safe.apply_safe_environment()
+            self.assertEqual(os.environ["COZEMPIC_NO_GLOBAL_INIT"], "1")
+
+
+class TestDataDirectory(unittest.TestCase):
+    def test_default_is_a_sibling_of_the_cozempic_state_dir(self):
+        self.assertEqual(safe.data_dir({}), (Path.home() / ".winnow").resolve())
+
+    def test_honours_the_override(self):
+        with _temp_dir() as tmp:
+            self.assertEqual(
+                safe.data_dir({safe.DATA_DIR_ENV: str(tmp)}), tmp.resolve()
+            )
+
+    def test_refuses_a_data_dir_inside_the_bind_mounted_claude_dir(self):
+        with _temp_dir() as tmp:
+            claude = tmp / "claude"
+            claude.mkdir()
+            with self.assertRaises(ValueError) as caught:
+                safe.data_dir({
+                    "CLAUDE_CONFIG_DIR": str(claude),
+                    safe.DATA_DIR_ENV: str(claude / "winnow"),
+                })
+            self.assertIn("bind mount", str(caught.exception))
+
+    def test_refuses_the_claude_dir_itself(self):
+        with _temp_dir() as tmp:
+            claude = tmp / "claude"
+            claude.mkdir()
+            with self.assertRaises(ValueError):
+                safe.data_dir({
+                    "CLAUDE_CONFIG_DIR": str(claude),
+                    safe.DATA_DIR_ENV: str(claude),
+                })
+
+
+class TestSubcommandMirror(unittest.TestCase):
+    def test_the_mirror_matches_the_vendored_tree(self):
+        # If upstream adds a subcommand, this fails and somebody classifies it.
+        # The alternative is a new subcommand defaulting to allowed, silently.
+        from cozempic.cli import _SUBCOMMANDS
+
+        self.assertEqual(set(safe.COZEMPIC_SUBCOMMANDS), set(_SUBCOMMANDS))
+
+    def test_finds_the_subcommand_the_way_cozempic_does(self):
+        self.assertEqual(safe.subcommand_of(["treat", "abc", "--execute"]), "treat")
+        self.assertEqual(safe.subcommand_of(["--context-window", "1", "list"]), "list")
+        self.assertIsNone(safe.subcommand_of(["--version"]))
+        self.assertIsNone(safe.subcommand_of([]))
+
+
+class TestArgvGate(unittest.TestCase):
+    def assert_refused(self, argv, *, live_pid=None, naming=None):
+        reason = safe.refusal_for(argv, live_pid=live_pid)
+        self.assertIsNotNone(reason, f"{argv} should be refused")
+        self.assertIn("refused", reason)
+        if naming:
+            self.assertIn(naming, reason)
+        return reason
+
+    def assert_allowed(self, argv, *, live_pid=None):
+        self.assertIsNone(
+            safe.refusal_for(argv, live_pid=live_pid), f"{argv} should be allowed"
+        )
+
+    def test_the_guard_daemon_is_refused(self):
+        # Invariant 1: the daemon SIGKILLs the process holding the session.
+        for argv in (["guard"], ["guard", "--daemon"], ["guard", "--reload-self"]):
+            self.assert_refused(argv, naming="SIGKILL")
+
+    def test_reload_is_refused_and_the_reason_names_resume(self):
+        # Invariant 2: --resume belongs to the harness.
+        self.assert_refused(["reload", "-rx", "gentle"], naming="--resume")
+
+    def test_self_update_is_refused(self):
+        self.assert_refused(["self-update"], naming="PyPI")
+
+    def test_commands_that_write_settings_json_are_refused(self):
+        self.assert_refused(["init", "--global"], naming="settings.json")
+        self.assert_refused(["uninstall"], naming="settings.json")
+
+    def test_cozempics_own_checkpoint_is_refused_in_favour_of_winnows(self):
+        self.assert_refused(["checkpoint"], naming="winnow safe checkpoint")
+
+    def test_digest_inject_is_refused_but_reading_the_digest_is_not(self):
+        # Invariant 6: MEMORY.md is loaded into every session's context.
+        self.assert_refused(["digest", "inject"], naming="MEMORY.md")
+        self.assert_allowed(["digest", "show"])
+
+    def test_the_watchdog_is_refused_only_when_it_would_signal(self):
+        self.assert_refused(["guard-watchdog", "--fix"], naming="SIGTERM")
+        self.assert_allowed(["guard-watchdog"])
+
+    def test_refusals_do_not_depend_on_a_live_session(self):
+        self.assert_refused(["guard", "--daemon"], live_pid=4242)
+        self.assert_refused(["reload"], live_pid=None)
+
+    def test_a_prune_is_allowed_between_cycles_and_refused_during_one(self):
+        # USAGEFOUNDRY §2: pruning happens between cycles, on a transcript
+        # nobody is holding, or it does not happen.
+        self.assert_allowed(["treat", "abc", "--execute"], live_pid=None)
+        reason = self.assert_refused(["treat", "abc", "--execute"], live_pid=4242)
+        self.assertIn("4242", reason)
+        self.assert_refused(["strategy", "stale-reads", "abc", "--execute"], live_pid=1)
+        self.assert_refused(["digest", "flush"], live_pid=1)
+
+    def test_a_dry_run_is_allowed_even_during_a_cycle(self):
+        self.assert_allowed(["treat", "abc"], live_pid=4242)
+        self.assert_allowed(["diagnose", "abc"], live_pid=4242)
+        self.assert_allowed(["list"], live_pid=4242)
+
+    def test_an_argv_with_no_subcommand_is_not_refused(self):
+        self.assert_allowed(["--version"])
+
+
+class TestStrategyExclusion(unittest.TestCase):
+    def test_metadata_strip_is_the_excluded_strategy(self):
+        self.assertIn("metadata-strip", safe.EXCLUDED_STRATEGIES)
+
+    def test_pure_form_removes_it_from_every_prescription(self):
+        before = {"gentle": ["progress-collapse", "metadata-strip"]}
+        after = safe.prescriptions_without(before)
+        self.assertEqual(after, {"gentle": ["progress-collapse"]})
+        self.assertEqual(before["gentle"], ["progress-collapse", "metadata-strip"])
+
+    def test_apply_mutates_in_place_so_importers_see_it(self):
+        # cli.py:24 and guard.py:203 bind the dict at import time; rebinding the
+        # module attribute would leave both holding the original.
+        prescriptions = {"gentle": ["progress-collapse", "metadata-strip"]}
+        held_elsewhere = prescriptions["gentle"]
+        removed = safe.apply_strategy_exclusions(prescriptions)
+        self.assertEqual(removed, {"gentle": ["metadata-strip"]})
+        self.assertEqual(held_elsewhere, ["progress-collapse"])
+
+    def test_apply_is_idempotent(self):
+        prescriptions = {"gentle": ["metadata-strip"]}
+        safe.apply_strategy_exclusions(prescriptions)
+        self.assertEqual(safe.apply_strategy_exclusions(prescriptions), {})
+
+    def test_the_vendored_registry_ships_it_in_every_prescription(self):
+        # The premise of the exclusion. If this stops being true the exclusion
+        # is dead code and should go.
+        from cozempic.registry import PRESCRIPTIONS
+
+        for name, strategies in PRESCRIPTIONS.items():
+            self.assertIn("metadata-strip", strategies, name)
+
+    def test_applying_to_the_real_registry_clears_it_everywhere(self):
+        from cozempic import registry
+
+        original = {name: list(v) for name, v in registry.PRESCRIPTIONS.items()}
+        try:
+            removed = safe.apply_strategy_exclusions()
+            self.assertEqual(set(removed), set(original))
+            for name, strategies in registry.PRESCRIPTIONS.items():
+                self.assertNotIn("metadata-strip", strategies, name)
+        finally:
+            for name, strategies in original.items():
+                registry.PRESCRIPTIONS[name][:] = strategies
+
+
+class TestPluginDirectory(unittest.TestCase):
+    def test_the_vendored_manifest_declares_the_events_we_classified(self):
+        manifest = json.loads(
+            (PLUGIN_DIR / "hooks" / "hooks.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            sorted(safe.dropped_hook_events(manifest)),
+            ["PostToolUse", "SessionStart", "Stop"],
+        )
+
+    def test_an_unclassified_event_is_dropped_not_carried_over(self):
+        dropped = safe.dropped_hook_events({"hooks": {"SomethingNew": []}})
+        self.assertEqual(dropped, ["SomethingNew"])
+
+    def test_a_manifest_with_no_hooks_object_fails_loudly(self):
+        with self.assertRaises(ValueError):
+            safe.dropped_hook_events({"hooks": []})
+
+    def test_materialised_directory_contains_no_session_start_hook(self):
+        with _temp_dir() as tmp:
+            report = safe.materialise_plugin_dir(PLUGIN_DIR, tmp / "plugin")
+            hooks = json.loads(
+                (tmp / "plugin" / "hooks" / "hooks.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                sorted(hooks["hooks"]), ["PostCompact", "PreCompact"]
+            )
+            self.assertIn("SessionStart", report["dropped_hook_events"])
+
+    def test_no_hook_command_can_update_start_a_daemon_or_call_cozempic(self):
+        with _temp_dir() as tmp:
+            safe.materialise_plugin_dir(PLUGIN_DIR, tmp / "plugin")
+            text = (tmp / "plugin" / "hooks" / "hooks.json").read_text(
+                encoding="utf-8"
+            )
+            for forbidden in ("pip install", "uv pip", "uv tool", "guard --daemon",
+                              "--reload-self", "cozempic "):
+                self.assertNotIn(forbidden, text, forbidden)
+
+    def test_the_hooks_carry_the_switch_so_they_cannot_silently_no_op(self):
+        with _temp_dir() as tmp:
+            safe.materialise_plugin_dir(PLUGIN_DIR, tmp / "plugin")
+            text = (tmp / "plugin" / "hooks" / "hooks.json").read_text(
+                encoding="utf-8"
+            )
+            self.assertEqual(text.count(f"{safe.ENV_SWITCH}=1"), 2)
+
+    def test_the_mcp_server_and_the_skills_are_excluded(self):
+        with _temp_dir() as tmp:
+            report = safe.materialise_plugin_dir(PLUGIN_DIR, tmp / "plugin")
+            dest = tmp / "plugin"
+            self.assertFalse((dest / ".mcp.json").exists())
+            self.assertFalse((dest / "servers").exists())
+            self.assertFalse((dest / "skills").exists())
+            for name in (".mcp.json", "servers", "skills"):
+                self.assertIn(name, report["dropped_paths"])
+                self.assertTrue(report["reasons"][name])
+
+    def test_every_path_upstream_ships_is_either_rebuilt_or_named_as_dropped(self):
+        # The directory is built from scratch rather than copied and filtered,
+        # so a path upstream adds is excluded whether or not anyone classified
+        # it. This is what turns that silence into a failure.
+        rebuilt = {"hooks", ".claude-plugin"}
+        unaccounted = sorted(
+            entry.name
+            for entry in PLUGIN_DIR.iterdir()
+            if entry.name not in rebuilt and entry.name not in safe.DROPPED_PLUGIN_PATHS
+        )
+        self.assertEqual(unaccounted, [])
+
+    def test_it_is_renamed_but_keeps_upstreams_licence_and_author(self):
+        with _temp_dir() as tmp:
+            safe.materialise_plugin_dir(PLUGIN_DIR, tmp / "plugin")
+            plugin = json.loads(
+                (tmp / "plugin" / ".claude-plugin" / "plugin.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(plugin["name"], "cozempic-orchestrator-safe")
+            self.assertEqual(plugin["license"], "MIT")
+            self.assertEqual(plugin["author"]["name"], "Ruya AI")
+
+    def test_the_output_is_deterministic(self):
+        # SPEC §10. Also what makes the directory reviewable: a diff between two
+        # runs should be empty, so a change in it is a change somebody made.
+        with _temp_dir() as tmp:
+            command = "PYTHONPATH=/x /usr/bin/python3 -m winnow"
+            first = _snapshot(
+                safe.materialise_plugin_dir(
+                    PLUGIN_DIR, tmp / "a", command=command
+                )["dest"]
+            )
+            second = _snapshot(
+                safe.materialise_plugin_dir(
+                    PLUGIN_DIR, tmp / "b", command=command
+                )["dest"]
+            )
+            self.assertEqual(first, second)
+
+    def test_it_replaces_an_existing_directory(self):
+        with _temp_dir() as tmp:
+            dest = tmp / "plugin"
+            dest.mkdir()
+            (dest / "stale.json").write_text("{}", encoding="utf-8")
+            safe.materialise_plugin_dir(PLUGIN_DIR, dest)
+            self.assertFalse((dest / "stale.json").exists())
+
+    def test_a_source_without_a_hooks_manifest_fails_loudly(self):
+        with _temp_dir() as tmp:
+            with self.assertRaises(FileNotFoundError):
+                safe.materialise_plugin_dir(tmp / "nothing", tmp / "out")
+
+
+class TestRedirectedCheckpoint(unittest.TestCase):
+    fixture = REPO_ROOT / "tests" / "fixtures" / "sessions" / "team_two_subagents.jsonl"
+
+    def test_the_checkpoint_lands_in_the_directory_it_was_given(self):
+        with _temp_dir() as tmp:
+            target = tmp / "data"
+            written = safe.write_checkpoint(self.fixture, target)
+            self.assertEqual(written, target / "team-checkpoint.md")
+            self.assertIn("Agent Team Checkpoint", written.read_text(encoding="utf-8"))
+
+    def test_nothing_reaches_the_claude_config_dir(self):
+        # The vendored writer falls back to get_claude_dir()/team-checkpoint.md
+        # when the directory it is handed does not exist (team.py:1339-1344),
+        # and that fallback is the bind-mount write invariant 4 forbids.
+        with _temp_dir() as tmp:
+            claude = tmp / "claude"
+            claude.mkdir()
+            with mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(claude)}):
+                safe.write_checkpoint(self.fixture, tmp / "does-not-exist-yet")
+            self.assertEqual(list(claude.iterdir()), [])
+            self.assertTrue((tmp / "does-not-exist-yet" / "team-checkpoint.md").is_file())
+
+    def test_a_session_with_no_team_state_writes_nothing(self):
+        with _temp_dir() as tmp:
+            solo = tmp / "solo.jsonl"
+            solo.write_text(
+                json.dumps({
+                    "type": "user",
+                    "message": {"role": "user", "content": "hello"},
+                }) + "\n",
+                encoding="utf-8",
+            )
+            target = tmp / "data"
+            self.assertIsNone(safe.write_checkpoint(solo, target))
+            self.assertEqual(list(target.iterdir()), [])
+
+    def test_round_trip_through_read_checkpoint(self):
+        with _temp_dir() as tmp:
+            target = tmp / "data"
+            safe.write_checkpoint(self.fixture, target)
+            content = safe.read_checkpoint(target)
+            self.assertIn("task-aaa-0001", content)
+
+    def test_read_checkpoint_never_falls_back_to_the_global_file(self):
+        with _temp_dir() as tmp:
+            claude = tmp / "claude"
+            claude.mkdir()
+            (claude / "team-checkpoint.md").write_text(
+                "# another project's checkpoint", encoding="utf-8"
+            )
+            with mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(claude)}):
+                self.assertIsNone(safe.read_checkpoint(tmp / "empty"))
+
+
+class TestHookPayload(unittest.TestCase):
+    def test_a_hook_payload_is_parsed(self):
+        payload = safe.hook_payload('{"transcript_path": "/tmp/x.jsonl"}')
+        self.assertEqual(payload["transcript_path"], "/tmp/x.jsonl")
+
+    def test_no_stdin_or_garbage_is_not_an_error(self):
+        # Run by hand rather than by a hook. The caller falls back to detecting
+        # the session from the working directory.
+        for raw in ("", "   ", "not json", "[1, 2]", "null"):
+            self.assertEqual(safe.hook_payload(raw), {})
+
+    def test_the_payloads_transcript_path_wins(self):
+        path = safe.resolve_session_path({"transcript_path": "/tmp/given.jsonl"})
+        self.assertEqual(path, Path("/tmp/given.jsonl"))
+
+    def test_an_empty_payload_falls_through_to_detection(self):
+        with mock.patch("cozempic.session.find_current_session", return_value=None):
+            self.assertIsNone(safe.resolve_session_path({}, cwd="/tmp"))
+
+
+class TestCheckReport(unittest.TestCase):
+    def _by_name(self, findings):
+        return {f.name: f for f in findings}
+
+    def test_mode_off_is_reported_as_a_violation(self):
+        findings = self._by_name(safe.check({}))
+        self.assertFalse(findings["mode"].ok)
+
+    def test_a_garbled_switch_reports_only_that(self):
+        findings = safe.check({safe.ENV_SWITCH: "maybe"})
+        self.assertEqual([f.name for f in findings], ["mode"])
+        self.assertFalse(findings[0].ok)
+
+    def test_the_full_overlay_satisfies_every_env_finding(self):
+        env = dict(safe.SAFE_ENV)
+        env[safe.ENV_SWITCH] = "1"
+        findings = self._by_name(safe.check(env))
+        self.assertTrue(findings["mode"].ok)
+        for name in safe.SAFE_ENV:
+            self.assertTrue(findings[f"env:{name}"].ok, name)
+
+    def test_a_missing_overlay_entry_is_named(self):
+        env = dict(safe.SAFE_ENV)
+        env[safe.ENV_SWITCH] = "1"
+        del env["COZEMPIC_NO_AUTO_UPDATE"]
+        findings = self._by_name(safe.check(env))
+        self.assertFalse(findings["env:COZEMPIC_NO_AUTO_UPDATE"].ok)
+
+    def test_a_digest_in_the_memory_index_is_a_violation(self):
+        with _temp_dir() as tmp:
+            memory = tmp / "projects" / "-some-project" / "memory"
+            memory.mkdir(parents=True)
+            (memory / "cozempic_digest.md").write_text("rules", encoding="utf-8")
+            findings = self._by_name(
+                safe.check({safe.ENV_SWITCH: "1", "CLAUDE_CONFIG_DIR": str(tmp)})
+            )
+            self.assertFalse(findings["digest-memory"].ok)
+
+    def test_cozempic_hooks_in_the_bind_mounted_settings_are_a_violation(self):
+        with _temp_dir() as tmp:
+            (tmp / "settings.json").write_text(
+                json.dumps({"hooks": {"SessionStart": ["cozempic guard --daemon"]}}),
+                encoding="utf-8",
+            )
+            findings = self._by_name(
+                safe.check({safe.ENV_SWITCH: "1", "CLAUDE_CONFIG_DIR": str(tmp)})
+            )
+            self.assertFalse(findings["global-hooks"].ok)
+
+    def test_a_clean_settings_file_is_not_a_violation(self):
+        with _temp_dir() as tmp:
+            (tmp / "settings.json").write_text('{"model": "opus"}', encoding="utf-8")
+            findings = self._by_name(
+                safe.check({safe.ENV_SWITCH: "1", "CLAUDE_CONFIG_DIR": str(tmp)})
+            )
+            self.assertTrue(findings["global-hooks"].ok)
+
+    def test_a_live_guard_daemon_pidfile_is_a_violation(self):
+        # The pidfile path is hardcoded to /tmp (guard.py:2636-2650), so the
+        # glob is patched rather than a file planted in a shared directory.
+        fake = Path("/tmp/cozempic_guard_deadbeef.pid")
+        with mock.patch.object(safe.Path, "glob", return_value=[fake]), \
+                mock.patch.object(safe.Path, "read_text", return_value=f"{os.getpid()}\n"), \
+                mock.patch.object(safe.os, "kill", return_value=None):
+            finding = safe._check_guard_daemons()
+        self.assertFalse(finding.ok)
+        self.assertIn("SIGKILL", finding.detail)
+
+    def test_a_stale_pidfile_is_not_a_violation(self):
+        fake = Path("/tmp/cozempic_guard_deadbeef.pid")
+        with mock.patch.object(safe.Path, "glob", return_value=[fake]), \
+                mock.patch.object(safe.Path, "read_text", return_value="999999999\n"), \
+                mock.patch.object(safe.os, "kill", side_effect=OSError):
+            finding = safe._check_guard_daemons()
+        self.assertTrue(finding.ok)
+        self.assertIn("stale", finding.detail)
+
+
+def _snapshot(root) -> dict[str, str]:
+    """Every file under `root`, keyed by relative path."""
+    root = Path(root)
+    return {
+        str(p.relative_to(root)): p.read_text(encoding="utf-8")
+        for p in sorted(root.rglob("*"))
+        if p.is_file()
+    }
+
+
+def _temp_dir():
+    import tempfile
+
+    class _Ctx:
+        def __enter__(self):
+            self._tmp = tempfile.TemporaryDirectory()
+            return Path(self._tmp.name)
+
+        def __exit__(self, *exc):
+            self._tmp.cleanup()
+            return False
+
+    return _Ctx()
+
+
+if __name__ == "__main__":
+    unittest.main()

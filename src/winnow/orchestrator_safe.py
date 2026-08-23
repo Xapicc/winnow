@@ -695,17 +695,7 @@ def check(env: dict[str, str] | None = None) -> list[Finding]:
         )
     )
 
-    for name, expected in SAFE_ENV.items():
-        actual = environ.get(name)
-        findings.append(
-            Finding(
-                f"env:{name}",
-                actual == expected,
-                f"{actual!r}, expected {expected!r}"
-                if actual != expected
-                else f"{actual!r}",
-            )
-        )
+    findings.extend(_check_env(environ))
 
     findings.append(_check_guard_daemons())
     findings.append(_check_global_hooks(environ))
@@ -713,6 +703,34 @@ def check(env: dict[str, str] | None = None) -> list[Finding]:
     findings.append(_check_strategy_exclusion())
     findings.append(_check_home_state())
     findings.append(_check_live_session())
+    return findings
+
+
+def _check_env(env: dict[str, str]) -> list[Finding]:
+    """One finding per overlay variable.
+
+    Unset is not a violation: `safe_environment` supplies the whole overlay to
+    every `winnow safe run`, and that is the only path this mode opens to the
+    vendored tree. What a set value tells you is whether a cozempic invocation
+    that bypassed winnow entirely would also be covered.
+
+    A conflicting value is a violation, because somebody configured something
+    this mode is about to override and will not otherwise be told.
+    """
+    findings = []
+    for name, expected in SAFE_ENV.items():
+        actual = env.get(name)
+        if actual == expected:
+            detail = f"{actual!r}, set in this environment"
+        elif actual is None:
+            detail = f"unset here; the overlay supplies {expected!r} to every run"
+        else:
+            detail = (
+                f"{actual!r} conflicts with the overlay's {expected!r}, which "
+                "wins. Remove it, or the harness is configuring something that "
+                "has no effect"
+            )
+        findings.append(Finding(f"env:{name}", actual is None or actual == expected, detail))
     return findings
 
 

@@ -598,12 +598,34 @@ class TestCheckReport(unittest.TestCase):
         for name in safe.SAFE_ENV:
             self.assertTrue(findings[f"env:{name}"].ok, name)
 
-    def test_a_missing_overlay_entry_is_named(self):
-        env = dict(safe.SAFE_ENV)
-        env[safe.ENV_SWITCH] = "1"
-        del env["COZEMPIC_NO_AUTO_UPDATE"]
-        findings = self._by_name(safe.check(env))
-        self.assertFalse(findings["env:COZEMPIC_NO_AUTO_UPDATE"].ok)
+    def test_an_unset_overlay_variable_is_not_a_violation(self):
+        # The overlay supplies it to every `winnow safe run`, which is the only
+        # path this mode opens to the vendored tree.
+        findings = self._by_name(safe.check({safe.ENV_SWITCH: "1"}))
+        finding = findings["env:COZEMPIC_NO_AUTO_UPDATE"]
+        self.assertTrue(finding.ok)
+        self.assertIn("overlay supplies", finding.detail)
+
+    def test_a_conflicting_overlay_variable_is_a_violation(self):
+        env = {safe.ENV_SWITCH: "1", "COZEMPIC_NO_AUTO_UPDATE": "0"}
+        finding = self._by_name(safe.check(env))["env:COZEMPIC_NO_AUTO_UPDATE"]
+        self.assertFalse(finding.ok)
+        self.assertIn("conflicts", finding.detail)
+
+    def test_a_correctly_configured_harness_has_nothing_to_report(self):
+        # A check that fails in the intended configuration is a check nobody
+        # reads. The two findings that read the filesystem are pinned to an
+        # empty directory so this asserts the mode's own state, not the box's.
+        with _temp_dir() as tmp:
+            env = dict(safe.SAFE_ENV)
+            env[safe.ENV_SWITCH] = "1"
+            env["CLAUDE_CONFIG_DIR"] = str(tmp)
+            with mock.patch.object(safe, "_check_home_state",
+                                   return_value=safe.Finding("home-state", True, "")), \
+                    mock.patch.object(safe, "_check_guard_daemons",
+                                      return_value=safe.Finding("guard-daemon", True, "")):
+                violations = [f.name for f in safe.check(env) if not f.ok]
+            self.assertEqual(violations, [])
 
     def test_a_digest_in_the_memory_index_is_a_violation(self):
         with _temp_dir() as tmp:

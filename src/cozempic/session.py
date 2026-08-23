@@ -1,0 +1,1248 @@
+"""Session discovery and I/O for Claude Code JSONL files."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import threading
+import time
+from collections import OrderedDict
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+from typing import Literal
+
+from .helpers import _pid_is_alive as _pid_alive
+from .types import Message
+
+
+# ─── Concurrent-write safety primitives ──────────────────────────────────────
+
+class PruneConflictError(Exception):
+    """The session file's original bytes changed during pruning.
+
+    Raised by save_messages() when a snapshot is provided and the file's
+    prefix was mutated (re-written or truncated) between snapshot time and
+    replace time.  The caller should discard the pruned output and retry
+    from a fresh load on the next cycle.
+    """
+
+
+class PruneLockError(Exception):
+    """The prune lock is held by another process or guard cycle."""
+
+
+class _FileSnapshot:
+    """Immutable point-in-time identity of a JSONL file.
+
+    Captures inode, size, and an MD5 of the full content so that save_messages()
+    can classify what happened to the file while pruning was in progress:
+
+    - "unchanged"  — byte-for-byte identical; safe to replace normally.
+    - "appended"   — file grew; all original bytes are intact as prefix.
+                     Delta lines can be appended to the pruned output.
+    - "conflict"   — inode changed, file shrank, or prefix was mutated.
+                     Caller must abort and retry.
+    """
+    __slots__ = ("inode", "size", "content_hash")
+
+    def __init__(self, path: Path) -> None:
+        st = path.stat()
+        self.inode: int = st.st_ino
+        self.size: int = st.st_size
+        self.content_hash: str = hashlib.md5(path.read_bytes()).hexdigest()
+
+    @classmethod
+    def from_bytes(cls, path: Path, raw: bytes) -> "_FileSnapshot":
+        """Build a snapshot whose size/hash describe `raw` exactly (the bytes the
+        caller actually loaded), with the inode from `path`. Pairing this with a
+        SINGLE read of the file (see load_messages_and_snapshot) closes the TOCTOU
+        where a line appended between snapshot() and a later load() landed in BOTH
+        the loaded messages AND the delta — duplicating it on append-merge."""
+        self = cls.__new__(cls)
+        try:
+            self.inode = path.stat().st_ino
+        except OSError:
+            self.inode = -1
+        self.size = len(raw)
+        self.content_hash = hashlib.md5(raw).hexdigest()
+        return self
+
+    def classify(self, path: Path) -> Literal["unchanged", "appended", "conflict"]:
+        """Classify what happened to the file since this snapshot was taken."""
+        try:
+            st = path.stat()
+        except OSError:
+            return "conflict"
+        if st.st_ino != self.inode:
+            return "conflict"
+        if st.st_size == self.size:
+            # Equal SIZE is not equal CONTENT: Claude Code can rewrite a line in
+            # place to an equal-length value (e.g. an edited JSONL field, an
+            # injected equal-size marker). Re-hash before declaring "unchanged" —
+            # otherwise save_messages() would os.replace() over a live rewrite and
+            # silently lose it (data loss). A same-size content change is a conflict.
+            try:
+                if hashlib.md5(path.read_bytes()).hexdigest() == self.content_hash:
+                    return "unchanged"
+            except OSError:
+                return "conflict"
+            return "conflict"
+        if st.st_size > self.size:
+            data = path.read_bytes()
+            if hashlib.md5(data[: self.size]).hexdigest() == self.content_hash:
+                return "appended"
+        return "conflict"
+
+    def read_delta(self, path: Path) -> bytes:
+        """Return bytes appended since snapshot. Caller must verify 'appended' first."""
+        return path.read_bytes()[self.size :]
+
+    def classify_and_delta(self, path: Path) -> tuple[Literal["unchanged", "appended", "conflict"], bytes]:
+        """Classify AND return the append-delta from a SINGLE read of the file.
+
+        classify() + read_delta() are two separate reads, so a concurrent rewrite
+        landing between them could merge a tail the prefix-check never validated
+        (TOCTOU; Claude Code is not under our _PruneLock). Reading once and deriving
+        both the prefix-hash decision and the delta from the same bytes closes that
+        window. Returns (state, delta_bytes); delta is non-empty only for "appended".
+        """
+        try:
+            st = path.stat()
+            if st.st_ino != self.inode:
+                return "conflict", b""
+            data = path.read_bytes()
+        except OSError:
+            return "conflict", b""
+        cur = len(data)
+        if cur == self.size:
+            return ("unchanged" if hashlib.md5(data).hexdigest() == self.content_hash
+                    else "conflict"), b""
+        if cur > self.size:
+            if hashlib.md5(data[: self.size]).hexdigest() == self.content_hash:
+                return "appended", data[self.size:]
+            return "conflict", b""
+        return "conflict", b""
+
+
+def snapshot_session(path: Path) -> _FileSnapshot:
+    """Snapshot a session file's identity before loading, for append-safe writes."""
+    return _FileSnapshot(path)
+
+
+def _parse_delta_lines(delta: bytes) -> list[str]:
+    """Parse appended bytes into validated JSONL lines.
+
+    Raises ValueError if the delta does not end on a newline boundary (Claude
+    mid-write), if the bytes are not valid UTF-8 (UnicodeDecodeError, a ValueError
+    subclass), or json.JSONDecodeError if any line is not valid JSON.
+    Returns a list of raw JSON line strings (no trailing newline per element).
+    """
+    # errors="surrogateescape" mirrors the load/save decode: an appended line whose
+    # bytes are not valid UTF-8 (a binary tool_result Claude wrote in the prune
+    # window) maps to reversible surrogates and is re-encoded to the EXACT bytes by
+    # the surrogateescape-opened append file — lossless, never U+FFFD. A
+    # STRUCTURALLY invalid byte still fails the per-line json.loads below and is
+    # handled as "incomplete/conflict — defer", not a corrupting merge.
+    text = delta.decode("utf-8", "surrogateescape")
+    if not text.endswith("\n"):
+        raise ValueError("delta does not end on newline boundary — Claude may be mid-write")
+    lines = []
+    # _split_physical_lines (not str.splitlines) so an appended JSONL line carrying
+    # a raw U+2028/U+2029/U+0085 isn't torn into invalid fragments on append-merge.
+    for raw in _split_physical_lines(text):
+        raw = raw.strip()
+        if not raw:
+            continue
+        json.loads(raw)  # validates; raises json.JSONDecodeError if corrupt
+        lines.append(raw)
+    return lines
+
+
+class _PruneLock:
+    """Advisory lock preventing concurrent prune cycles on the same session file.
+
+    Uses fcntl.LOCK_EX|LOCK_NB on a companion .prune-lock file so two guard
+    instances (or a guard + a manual `cozempic treat --execute`) cannot race
+    each other.  Falls back silently to a no-op on platforms without fcntl
+    (Windows).
+    """
+
+    def __init__(self, session_path: Path) -> None:
+        self._lock_path = session_path.with_suffix(".prune-lock")
+        self._fh = None
+
+    def __enter__(self) -> "_PruneLock":
+        try:
+            import fcntl
+            self._fh = open(self._lock_path, "w", encoding="utf-8")
+            fcntl.flock(self._fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except ImportError:
+            self._fh = None  # Windows — skip locking
+        except OSError as exc:
+            if self._fh is not None:
+                self._fh.close()
+                self._fh = None
+            raise PruneLockError(
+                f"Another prune cycle is active for {self._lock_path.name}"
+            ) from exc
+        return self
+
+    def __exit__(self, *_) -> None:
+        if self._fh is not None:
+            try:
+                import fcntl
+                fcntl.flock(self._fh, fcntl.LOCK_UN)
+            except Exception:
+                pass
+            self._fh.close()
+            self._fh = None
+        self._lock_path.unlink(missing_ok=True)
+
+
+def get_claude_dir() -> Path:
+    import os
+    config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
+    if config_dir:
+        return Path(config_dir)
+    return Path.home() / ".claude"
+
+
+def get_claude_json_path() -> Path:
+    import os
+    config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
+    if config_dir:
+        return Path(config_dir) / ".claude.json"
+    return Path.home() / ".claude.json"
+
+
+def get_projects_dir() -> Path:
+    """Return the Claude projects directory."""
+    return get_claude_dir() / "projects"
+
+
+def find_project_dirs(project_filter: str | None = None) -> list[Path]:
+    """Find project directories, optionally filtered by name."""
+    projects = get_projects_dir()
+    if not projects.exists():
+        return []
+    dirs = sorted(projects.iterdir())
+    if project_filter:
+        dirs = [d for d in dirs if project_filter.lower() in d.name.lower()]
+    return [d for d in dirs if d.is_dir()]
+
+
+def find_sessions(project_filter: str | None = None) -> list[dict]:
+    """Find all JSONL session files with metadata."""
+    sessions = []
+    for proj_dir in find_project_dirs(project_filter):
+        for f in sorted(proj_dir.glob("*.jsonl")):
+            if ".jsonl.bak" in f.name or f.name.endswith(".bak"):
+                continue
+            if f.name.startswith("."):
+                # atomic-write temp orphan (.tmp.*) or any dotfile — never a real
+                # session, and a crash between mkstemp and os.replace can leave one
+                # that the *.jsonl glob would otherwise enumerate as a phantom session.
+                continue
+            size = f.stat().st_size
+            mtime = datetime.fromtimestamp(f.stat().st_mtime)
+            session_id = f.stem
+            line_count = 0
+            # errors="surrogateescape": this only COUNTS lines, but a single stray
+            # non-UTF-8 byte in ANY session file must not crash enumeration for ALL
+            # sessions (R5 completeness finding). load_messages now tolerates such
+            # bytes; the enumerator every CLI command + the guard hot path hits first
+            # must too.
+            with open(f, "r", encoding="utf-8", errors="surrogateescape") as fh:
+                for _ in fh:
+                    line_count += 1
+            sessions.append({
+                "path": f,
+                "project": proj_dir.name,
+                "session_id": session_id,
+                "size": size,
+                "mtime": mtime,
+                "lines": line_count,
+            })
+    return sessions
+
+
+def cwd_to_project_slug(cwd: str | None = None) -> str:
+    """Convert a working directory path to the Claude project slug format.
+
+    Claude stores projects under ~/.claude/projects/ replacing every
+    non-alphanumeric character with a single '-' (1:1, no run collapsing).
+
+    Examples:
+      /Users/foo/topstep_automation -> -Users-foo-topstep-automation
+      /Users/foo/.claude            -> -Users-foo--claude  (dot → dash, double-dash)
+    """
+    if cwd is None:
+        cwd = os.getcwd()
+    cwd = os.path.normpath(cwd)
+    return re.sub(r"[^a-zA-Z0-9]", "-", cwd)
+
+
+def project_slug_to_path(slug: str) -> str:
+    """Convert a Claude project slug back to a directory path.
+
+    e.g. -Users-foo-myproject -> /Users/foo/myproject
+    """
+    # Slug starts with '-' because paths start with '/'
+    return slug.replace("-", "/")
+
+
+def find_claude_pid() -> int | None:
+    """Walk up the process tree to find the Claude Code node process."""
+    try:
+        pid = os.getpid()
+        for _ in range(10):
+            result = subprocess.run(
+                ["ps", "-o", "ppid=,comm=", "-p", str(pid)],
+                capture_output=True, text=True,
+            )
+            parts = result.stdout.strip().split(None, 1)
+            if len(parts) < 2:
+                break
+            ppid, comm = int(parts[0]), parts[1]
+            if "node" in comm.lower() or "claude" in comm.lower():
+                return pid
+            pid = ppid
+            if pid <= 1:
+                break
+    except (ValueError, OSError):
+        pass
+
+    # No Claude ancestor found. Do not fall back to the immediate parent PID:
+    # detached guards can be reparented under systemd --user, and treating that
+    # parent as Claude can terminate the whole desktop session on reload.
+    return None
+
+
+def _session_id_from_process() -> str | None:
+    """Detect the current session ID from Claude's open file descriptors.
+
+    Claude keeps .claude/tasks/<session-id>/ directories open. We can use
+    lsof to find the session UUID from the parent Claude process.
+    """
+    claude_pid = find_claude_pid()
+    if not claude_pid:
+        return None
+
+    try:
+        result = subprocess.run(
+            ["lsof", "-p", str(claude_pid)],
+            capture_output=True, text=True, timeout=5,
+        )
+        import re
+        # Match UUID pattern in .claude/tasks/ paths
+        uuids = re.findall(
+            r'\.claude/tasks/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})',
+            result.stdout,
+        )
+        if uuids:
+            # Return the most common one (in case of duplicates)
+            from collections import Counter
+            return Counter(uuids).most_common(1)[0][0]
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+    return None
+
+
+def _match_session_by_text(sessions: list[dict], match_text: str) -> dict | None:
+    """Find a session by matching text in its last N lines.
+
+    Searches the tail of each session file for the given text snippet.
+    Useful when multiple sessions are active and CWD/process detection fails.
+    """
+    for sess in sorted(sessions, key=lambda s: s["mtime"], reverse=True):
+        try:
+            # errors="surrogateescape": a stray byte must not make a session with the
+            # marker INVISIBLE to text resolution (it would fall through to weaker
+            # cwd/mtime strategies and risk resolving the WRONG session). The old strict
+            # open + catch-and-skip silently dropped the whole session (R6).
+            with open(sess["path"], "r", encoding="utf-8", errors="surrogateescape") as f:
+                # Read last 50 lines efficiently
+                lines = f.readlines()
+                tail = lines[-50:] if len(lines) > 50 else lines
+                tail_text = "".join(tail)
+                if match_text in tail_text:
+                    return sess
+        except OSError:
+            continue
+    return None
+
+
+def find_current_session(
+    cwd: str | None = None,
+    match_text: str | None = None,
+    strict: bool = False,
+) -> dict | None:
+    """Find the current Claude Code session using multiple strategies.
+
+    Detection priority:
+    1. Active transcript: the session Claude Code itself reported to the
+       SessionStart hook, keyed by the live Claude PID (authoritative — follows
+       CC's own active session, immune to cwd/project mismatch).
+    2. Process-based: lsof on parent Claude process to find session UUID
+    3. Text matching: search session files for a unique text snippet
+    4. CWD slug: match working directory against project directory names
+    5. Fallback: most recently modified session (only when strict=False)
+
+    When strict=True, Strategy 5 is disabled — callers that perform
+    destructive writes must not proceed on an ambiguous match.
+    """
+    sessions = find_sessions()
+    if not sessions:
+        return None
+
+    # Strategy 1: Active transcript reported by Claude Code to the SessionStart
+    # hook, keyed by the live Claude PID. This is the ONLY signal that follows
+    # CC's own notion of the active session, so it must win over cwd-inference
+    # (which mis-resolved when the active session lived in a different project
+    # dir than cwd — the f464a40c wrong-session incident).
+    rec = lookup_active_transcript()
+    if rec:
+        tp = rec.get("transcript_path", "")
+        for s in sessions:
+            if str(s["path"]) == tp:
+                return s
+        # The transcript exists (lookup verified it) but wasn't enumerated by
+        # find_sessions() — e.g. a project-dir filter. Build a record from it so
+        # we still follow CC's active session rather than guessing from cwd.
+        p = Path(tp)
+        if p.exists():
+            try:
+                st = p.stat()
+                return {
+                    "path": p,
+                    "project": p.parent.name,
+                    "session_id": p.stem,
+                    "size": st.st_size,
+                    "mtime": datetime.fromtimestamp(st.st_mtime),
+                    # surrogateescape (R5): a stray byte must not crash resolution of
+                    # the live session (UnicodeDecodeError is a ValueError, NOT caught
+                    # by `except OSError` below) — matches _match_session_by_text.
+                    "lines": sum(1 for _ in open(p, "r", encoding="utf-8", errors="surrogateescape")),
+                }
+            except OSError:
+                pass
+
+    # Strategy 2: Process-based detection (open .claude/tasks/ dirs)
+    proc_session_id = _session_id_from_process()
+    if proc_session_id:
+        for s in sessions:
+            if s["session_id"] == proc_session_id:
+                return s
+
+    # Strategy 3: Text matching (for multi-session disambiguation)
+    if match_text:
+        matched = _match_session_by_text(sessions, match_text)
+        if matched:
+            return matched
+
+    # Strategy 4: CWD slug match — exact, not substring.
+    # Substring caused prefix collisions: '-Users-x-foo' IN '-Users-x-foobar'.
+    # Worktrees get their own project dir so exact-match is always correct.
+    slug = cwd_to_project_slug(cwd)
+    matching = [s for s in sessions if s["project"] == slug]
+    if matching:
+        return max(matching, key=lambda s: s["mtime"])
+
+    # Strategy 5: Fallback to most recently modified
+    # Disabled in strict mode — refuse to guess on destructive paths.
+    if strict:
+        return None
+    return max(sessions, key=lambda s: s["mtime"])
+
+
+def resolve_session(
+    session_arg: str,
+    project_filter: str | None = None,
+    strict: bool = False,
+) -> Path:
+    """Resolve a session argument to a JSONL file path.
+
+    Accepts: full path, UUID, UUID prefix, or "current" for auto-detection.
+    When strict=True, auto-detection refuses to fall back to "most recent session".
+    """
+    if session_arg == "current":
+        sess = find_current_session(strict=strict)
+        if sess:
+            return sess["path"]
+        print("Error: Could not auto-detect current session.", file=sys.stderr)
+        if strict:
+            print("Cannot determine session unambiguously — use an explicit session ID.", file=sys.stderr)
+        print("Use 'cozempic list' to find the session ID.", file=sys.stderr)
+        sys.exit(1)
+
+    p = Path(session_arg)
+    if p.exists() and p.suffix == ".jsonl":
+        return p
+
+    for sess in find_sessions(project_filter):
+        if sess["session_id"] == session_arg:
+            return sess["path"]
+        if sess["session_id"].startswith(session_arg):
+            return sess["path"]
+
+    print(f"Error: Cannot find session '{session_arg}'", file=sys.stderr)
+    print("Use 'cozempic list' to see available sessions.", file=sys.stderr)
+    sys.exit(1)
+
+
+# ─── Session sidecar store ────────────────────────────────────────────────────
+#
+# Maps session_id → {cwd, context_window, created_at, last_seen_at}.
+# Populated by the guard daemon at startup and refreshed on each checkpoint.
+# Consumers (reload, guard resume) prefer this over slug reversal, which is
+# ambiguous for paths containing hyphens.
+
+_SIDECAR_FILENAME = "cozempic-sessions.json"
+_SIDECAR_MAX_ENTRIES = 200
+
+
+def get_sidecar_path() -> Path:
+    """Return the path to the session sidecar store."""
+    return get_claude_dir() / _SIDECAR_FILENAME
+
+
+def _load_sidecar() -> dict:
+    """Load the sidecar store. Returns {} on missing, corrupt, or non-dict file
+    (a top-level list/string would otherwise crash the `.get()` callers)."""
+    p = get_sidecar_path()
+    try:
+        if p.exists():
+            data = json.loads(p.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return data
+    except Exception:
+        pass
+    return {}
+
+
+def _save_sidecar(data: dict) -> None:
+    """Atomically write the sidecar store via mkstemp.
+
+    Two concurrent guard daemons calling record_session can no longer
+    collide on a shared `.tmp` filename (the bug that caused
+    `FileNotFoundError: cozempic-sessions.tmp -> cozempic-sessions.json`
+    in production when SessionStart fires twice within the same ms).
+    Use record_session() if you need read-modify-write atomicity — it
+    wraps load+modify+save in a host-wide flock to prevent lost updates.
+    """
+    from .helpers import atomic_write_text
+    atomic_write_text(get_sidecar_path(), json.dumps(data, indent=2))
+
+
+def record_session(
+    session_id: str,
+    cwd: str,
+    context_window: int | None = None,
+    nudge_tiers: "list | tuple | None" = None,
+) -> None:
+    """Record or refresh a session's cwd and context window in the sidecar store.
+
+    Called from the guard daemon at startup and on each checkpoint so the map
+    stays current across long-running sessions. Capped at _SIDECAR_MAX_ENTRIES
+    (oldest last_seen_at evicted first) to prevent unbounded growth.
+
+    ``nudge_tiers`` records the guard's RESOLVED reload-tier fractions (soft/hard1/
+    hard2 as fractions of the window) so the Stop-hook nudge fires at the points
+    the guard actually reloads — even when the user raised the reload threshold.
+    """
+    if not session_id or not cwd:
+        return
+    # Wrap read+modify+write in a host-wide flock so two concurrent guard
+    # daemons don't lose each other's updates. atomic_write_text inside
+    # _save_sidecar handles the tmp-file collision; this lock handles
+    # the lost-update race that atomic-write alone can't fix.
+    from .helpers import _HostFileLock
+    with _HostFileLock(get_sidecar_path()):
+        data = _load_sidecar()
+        existing = data.get(session_id, {})
+        now = datetime.now().isoformat(timespec="seconds")
+        data[session_id] = {
+            "cwd": cwd,
+            "context_window": (
+                context_window if context_window is not None
+                else existing.get("context_window")
+            ),
+            "nudge_tiers": (
+                [round(float(t), 4) for t in nudge_tiers] if nudge_tiers
+                else existing.get("nudge_tiers")
+            ),
+            "created_at": existing.get("created_at", now),
+            "last_seen_at": now,
+        }
+        if len(data) > _SIDECAR_MAX_ENTRIES:
+            by_age = sorted(data, key=lambda k: data[k].get("last_seen_at", ""), reverse=True)
+            data = {k: data[k] for k in by_age[:_SIDECAR_MAX_ENTRIES]}
+        _save_sidecar(data)
+
+
+def get_session_nudge_tiers(session_id: str) -> "list | None":
+    """Return the guard's recorded reload-tier fractions for a session, or None."""
+    if not session_id:
+        return None
+    rec = _load_sidecar().get(session_id)
+    tiers = rec.get("nudge_tiers") if isinstance(rec, dict) else None
+    if isinstance(tiers, (list, tuple)) and tiers:
+        try:
+            vals = sorted(float(t) for t in tiers if 0.0 < float(t) <= 1.0)
+            return vals or None
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+# ─── Active-transcript store (follows Claude Code's own session) ──────────────
+#
+# The MANUAL CLI path (`cozempic current`, `/cozempic reload`) cannot ask Claude
+# Code which session is live, so it historically inferred it from cwd → project
+# slug → most-recent file. That picks the WRONG session whenever the active
+# session lives in a different project dir than cwd (the f464a40c incident:
+# active under -Users-ruya, cwd mapped to the Cozempic dir whose most-recent
+# session was a stale one).
+#
+# Claude Code DOES know the active session: it hands the SessionStart hook a
+# `transcript_path`. We record that path keyed by the LIVE Claude PID — one
+# claude process == exactly one session, which disambiguates precisely where cwd
+# cannot. `find_current_session` consults this FIRST. The record self-expires:
+# dead PIDs are pruned on every write, and a vanished transcript falls through.
+
+_ACTIVE_SESSIONS_FILENAME = "cozempic-active-sessions.json"
+_ACTIVE_SESSIONS_MAX = 64
+
+
+def _active_sessions_path() -> Path:
+    return get_claude_dir() / _ACTIVE_SESSIONS_FILENAME
+
+
+def record_active_transcript(transcript_path: str, claude_pid: int | None = None) -> None:
+    """Record the active session's transcript keyed by the live Claude PID.
+
+    Called from the SessionStart hook path (which receives `transcript_path` and
+    runs as a child of the live claude process). Best-effort: never raises into
+    the hook. Dead PIDs are pruned on write so the store stays small and honest.
+    """
+    try:
+        if not transcript_path:
+            return
+        tp = Path(transcript_path)
+        if not tp.exists() or tp.suffix != ".jsonl":
+            return
+        if claude_pid is None:
+            claude_pid = find_claude_pid()
+        if not claude_pid:
+            return
+        from .helpers import _HostFileLock
+        with _HostFileLock(_active_sessions_path()):
+            try:
+                raw = _active_sessions_path().read_text(encoding="utf-8")
+                data = json.loads(raw)
+                if not isinstance(data, dict):
+                    data = {}
+            except (OSError, ValueError):
+                data = {}
+            # Prune dead pids and the entry we're about to overwrite.
+            data = {k: v for k, v in data.items()
+                    if k != str(claude_pid) and _pid_alive(k)}
+            data[str(claude_pid)] = {
+                "transcript_path": str(tp),
+                "session_id": tp.stem,
+                "recorded_at": datetime.now().isoformat(timespec="seconds"),
+            }
+            if len(data) > _ACTIVE_SESSIONS_MAX:
+                by_age = sorted(data, key=lambda k: data[k].get("recorded_at", ""), reverse=True)
+                data = {k: data[k] for k in by_age[:_ACTIVE_SESSIONS_MAX]}
+            from .helpers import atomic_write_text
+            atomic_write_text(_active_sessions_path(), json.dumps(data, indent=2))
+    except Exception:
+        # The hook must never fail because we couldn't record the active session.
+        pass
+
+
+def lookup_active_transcript(claude_pid: int | None = None) -> dict | None:
+    """Return the active-transcript record for a live Claude PID, or None.
+
+    Honours staleness: a record whose PID is dead, or whose transcript file no
+    longer exists, returns None so the caller falls through to other strategies.
+    """
+    try:
+        if claude_pid is None:
+            claude_pid = find_claude_pid()
+        if not claude_pid:
+            return None
+        try:
+            data = json.loads(_active_sessions_path().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        rec = data.get(str(claude_pid))
+        if not isinstance(rec, dict):
+            return None
+        if not _pid_alive(claude_pid):
+            return None
+        tp = rec.get("transcript_path", "")
+        if not tp or not Path(tp).exists():
+            return None
+        return rec
+    except Exception:
+        return None
+
+
+def get_session_cwd(session_id: str) -> str | None:
+    """Return the recorded cwd for a session from the sidecar store, or None."""
+    if not session_id:
+        return None
+    rec = _load_sidecar().get(session_id)
+    return rec.get("cwd") if isinstance(rec, dict) else None
+
+
+def get_session_context_window(session_id: str) -> int | None:
+    """Return the recorded context window for a session from the sidecar, or None."""
+    if not session_id:
+        return None
+    rec = _load_sidecar().get(session_id)
+    return rec.get("context_window") if isinstance(rec, dict) else None
+
+
+# ─── JSONL I/O ────────────────────────────────────────────────────────────────
+
+MAX_LINE_BYTES = 10 * 1024 * 1024  # 10MB per-line safety limit
+
+
+def _parse_one_line(raw: str, idx: int) -> Message | None:
+    """Parse a single stripped JSONL line into a Message tuple.
+
+    Returns None if the line is empty or oversized (skip). Matches the
+    behaviour shared by load_messages() and _parse_jsonl_chunk() — both
+    full-read and incremental-read paths route through this helper to
+    guarantee identical byte-length accounting and _parse_error shape.
+    """
+    stripped = raw.strip()
+    if not stripped:
+        return None
+    if len(stripped) > MAX_LINE_BYTES:
+        print(
+            f"  Warning: skipping oversized line {idx} ({len(stripped)} bytes)",
+            file=sys.stderr,
+        )
+        return None
+    # surrogateescape: a line decoded with surrogateescape (non-UTF-8 bytes mapped
+    # to surrogates) must re-encode with the SAME handler to recover the true byte
+    # length — strict encode would raise on the surrogate.
+    byte_len = len(stripped.encode("utf-8", "surrogateescape"))
+    try:
+        obj = json.loads(stripped)
+    except json.JSONDecodeError:
+        return (idx, {"_raw": stripped, "_parse_error": True}, byte_len)
+    # ROOT GUARD (mission-critical C4): a line can be VALID JSON yet not an object
+    # — a bare "string", number, true/null, or [array]. Every downstream consumer
+    # (get_msg_type, get_content_blocks, the prune strategies, safety.enforce_floor,
+    # the token estimators) assumes the message element is a dict and would crash
+    # on a non-dict. Wrap it as a _parse_error so it round-trips losslessly on save
+    # (save_messages writes _raw) but no consumer ever sees a non-dict message.
+    if not isinstance(obj, dict):
+        return (idx, {"_raw": stripped, "_parse_error": True}, byte_len)
+    # Also wrap a dict line whose inner "message" is PRESENT but NON-dict (a bare
+    # string/number/array) — many consumers do msg["message"].get(...) / {**inner}
+    # and would crash. Treat it as opaque (preserve verbatim via _raw on save,
+    # never pruned). A line with NO "message" key (summary, file-history-snapshot,
+    # etc.) is normal and left as-is.
+    if "message" in obj and not isinstance(obj["message"], dict):
+        return (idx, {"_raw": stripped, "_parse_error": True}, byte_len)
+    # ROOT GUARD (mission-critical R4 P0): `_raw`/`_parse_error` are RESERVED
+    # loader-internal sentinel keys — the ONLY messages that may legitimately carry
+    # them are the wrappers produced ABOVE (which return before reaching here). A
+    # genuine on-disk dict carrying them is forged/colliding (no real CC message
+    # uses these keys). If we passed it through, save_messages would trust
+    # msg.get("_parse_error") as a control flag and write msg["_raw"] VERBATIM in
+    # place of the real line — silently substituting attacker/tool-authored bytes
+    # for genuine content (data loss + injection), or KeyError/TypeError on a
+    # missing/non-str _raw (crash). Strip the sentinel keys so the save side can
+    # only ever honor a wrapper the loader itself created.
+    if "_raw" in obj or "_parse_error" in obj:
+        obj = {k: v for k, v in obj.items() if k not in ("_raw", "_parse_error")}
+    # ROOT GUARD (R6 unhashable-uuid class): uuid / parentUuid / logicalParentUuid are
+    # STRUCTURAL DAG fields used as set members / dict keys at ~12 sites across
+    # safety.enforce_floor / validate_post_prune, executor._relink_parent_chain, and the
+    # guard — an unhashable (list/dict) value crashes the prune EVERY cycle (respawn
+    # storm). A real CC transcript ALWAYS writes these as a str (or null for a root
+    # parent); a present non-str is malformed. Wrap the whole line as opaque _parse_error
+    # (preserved verbatim via _raw on save, never DAG-linked or pruned) so NO consumer
+    # ever sees a non-str DAG field — the systemic fix, vs per-site coercion.
+    for _dag_key in ("uuid", "parentUuid", "logicalParentUuid"):
+        _dag_val = obj.get(_dag_key)
+        if _dag_val is not None and not isinstance(_dag_val, str):
+            return (idx, {"_raw": stripped, "_parse_error": True}, byte_len)
+    return (idx, obj, byte_len)
+
+
+def _jsonl_line(msg: dict) -> str:
+    """Serialize a message dict to its JSONL line, encodable by the surrogateescape
+    save file in ALL cases.
+
+    ensure_ascii=False is preferred: a non-UTF-8 byte INSIDE a string value decoded
+    to a U+DC80..U+DCFF surrogate re-encodes to the EXACT original byte (byte-exact
+    round-trip), and normal Unicode is written as raw UTF-8 matching CC's own
+    JSON.stringify. BUT a LONE surrogate OUTSIDE U+DC80..U+DCFF — e.g. a JSON-escaped
+    high surrogate `\\ud83d` that CC emits for a sliced astral char — cannot be encoded
+    by the surrogateescape file handler and would raise UnicodeEncodeError mid-save. On
+    the guard path that crash lands AFTER Claude is SIGTERM'd but BEFORE resume = Claude
+    killed-but-not-resumed + daemon death (R6 P0). For such a line, fall back to
+    ensure_ascii=True so every surrogate becomes an ASCII `\\uXXXX` escape (always
+    encodable; still round-trips losslessly on reload). The scan is gated on isascii()
+    so the common path pays nothing."""
+    s = json.dumps(msg, separators=(",", ":"), ensure_ascii=False)
+    if s.isascii():
+        return s
+    # Escape ONLY the out-of-band lone surrogates (anything the surrogateescape file
+    # CAN'T encode), leaving in-band U+DC80..U+DCFF raw so a real non-UTF-8 byte stays
+    # BYTE-EXACT even when it shares a line with a sliced-astral \udXXX escape (R7:
+    # the whole-line ensure_ascii=True fallback drifted the real byte to literal text).
+    # A surrogate char inside a JSON string and its \uXXXX escaped form decode
+    # identically, so this rewrite is JSON-safe and round-trips losslessly.
+    out = []
+    rewrote = False
+    for c in s:
+        o = ord(c)
+        if 0xD800 <= o <= 0xDFFF and not (0xDC80 <= o <= 0xDCFF):
+            out.append("\\u%04x" % o)
+            rewrote = True
+        else:
+            out.append(c)
+    return "".join(out) if rewrote else s
+
+
+def _split_physical_lines(text: str) -> list[str]:
+    """Split JSONL text into physical lines EXACTLY as text-mode open() iterates.
+
+    Critically NOT ``str.splitlines()``: that also breaks on Unicode line
+    separators (U+2028 / U+2029 / U+0085 and the C0 VT/FF/FS/GS/RS) which are
+    LEGAL raw inside JSON strings — JS ``JSON.stringify`` (CC's transcript writer)
+    emits U+2028/U+2029 unescaped — so splitlines() would tear a single valid JSON
+    line into multiple un-parseable fragments and corrupt it on save. open() text
+    mode only universal-newline-splits on \\n / \\r / \\r\\n, which we replicate:
+    normalize \\r\\n and \\r to \\n, split on \\n, drop the trailing-newline artifact.
+    """
+    # Only pay the two full-buffer normalization copies when a CR is actually
+    # present — JSONL is overwhelmingly \n-only, so the common path is a single
+    # split() with no extra copy (C9: cuts the read-once peak-memory multiplier).
+    if "\r" in text:
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+    lines = text.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()  # final newline does not start a new physical line
+    return lines
+
+
+def load_messages(path: Path) -> list[Message]:
+    """Load JSONL file. Returns list of (line_index, message_dict, byte_size)."""
+    messages: list[Message] = []
+    # errors="surrogateescape": a non-UTF-8 byte (binary tool_result, truncated
+    # multibyte) is mapped to a reversible surrogate, NOT silently replaced with
+    # U+FFFD. save_messages re-encodes with the same handler so the exact original
+    # bytes round-trip — lossless, unlike "replace" (corrupts) and unlike strict
+    # (aborts → permanently inert guard, R4 finding non-utf8-inert-forever).
+    with open(path, "r", encoding="utf-8", errors="surrogateescape") as f:
+        for i, line in enumerate(f):
+            parsed = _parse_one_line(line, i)
+            if parsed is not None:
+                messages.append(parsed)
+    return messages
+
+
+def load_messages_and_snapshot(path: Path) -> tuple[list[Message], "_FileSnapshot"]:
+    """Read the file ONCE and return (messages, snapshot) derived from the SAME
+    bytes — so the snapshot's size/hash exactly describe the loaded messages.
+
+    Use this on mutate-then-save paths instead of the two-step
+    ``snapshot_session(path)`` + ``load_messages(path)``: those took the snapshot
+    and then re-read the file, and any line appended in that window was both
+    loaded AND counted in the append delta, duplicating it on save (the TOCTOU
+    audit P1). Reading once eliminates the window entirely."""
+    raw = path.read_bytes()
+    snapshot = _FileSnapshot.from_bytes(path, raw)
+    messages: list[Message] = []
+    # errors="surrogateescape" (R4 fix, supersedes the round-3 strict abort): a
+    # non-UTF-8 byte must NOT be rewritten to U+FFFD and os.replace()'d over the
+    # live transcript (corruption — the reason strict was chosen). But strict ABORTED
+    # the prune every cycle, so the guard went permanently inert on any session that
+    # picked up one stray byte and the user sailed into auto-compaction
+    # (R4 finding non-utf8-inert-forever). surrogateescape resolves the tension: bad
+    # bytes map to reversible surrogates and save_messages re-encodes with the SAME
+    # handler, so the exact original bytes round-trip losslessly AND the prune can
+    # proceed. Verified: in-string bytes survive via json escaping, structural bytes
+    # via the _raw passthrough written through the surrogateescape-opened tmp file.
+    text = raw.decode("utf-8", "surrogateescape")
+    del raw  # C9: free the bytes copy before line processing to cap peak memory
+    for i, line in enumerate(_split_physical_lines(text)):
+        parsed = _parse_one_line(line, i)
+        if parsed is not None:
+            messages.append(parsed)
+    return messages, snapshot
+
+
+# ─── Incremental JSONL read (read-only scan path) ───────────────────────────
+#
+# The guard daemon's main loop checkpoints the session every ~30s by calling
+# load_messages() and scanning the result to extract team state. On a long-
+# running session the full-read pattern produces a large allocation each
+# cycle; even though Python frees the list, libmalloc's LARGE_REUSABLE zone
+# retains the chunks. Over hours this manifests as unbounded RSS growth.
+#
+# load_messages_incremental() keeps a per-path cache of parsed messages and
+# advances by byte offset on subsequent calls. Appends pay only the cost of
+# the newly-written bytes. Rewrites (prune via os.replace, truncation) are
+# detected via (inode, size, mtime_ns) and trigger a full re-read.
+#
+# The function is READ-ONLY — do NOT use it on mutation paths (prune cycles,
+# save roundtrips). Those still need full-read semantics paired with
+# _FileSnapshot for append-aware conflict detection.
+
+MAX_CACHED_MESSAGES = 5000  # per-session cache cap; evicts oldest on overflow
+MAX_CACHE_SESSIONS = 8      # LRU cap on distinct session paths held at once
+
+
+@dataclass
+class _CacheEntry:
+    messages: list[Message] = field(default_factory=list)
+    offset: int = 0       # byte position after the last fully-parsed newline
+    mtime_ns: int = 0
+    size: int = 0
+    inode: int = 0
+    next_line_index: int = 0  # running file-line counter for Message tuples
+
+
+# OrderedDict supports move_to_end / popitem(last=False) for LRU bookkeeping.
+# The per-path cache covers the guard daemon (one session) but also any
+# library-API consumer that iterates many sessions in a long-lived process.
+_INCR_CACHE: "OrderedDict[Path, _CacheEntry]" = OrderedDict()
+_INCR_LOCK = threading.Lock()
+
+
+def _parse_jsonl_chunk(
+    chunk: str, start_line_index: int
+) -> tuple[list[Message], int]:
+    """Parse a newline-delimited JSONL chunk. Returns (messages, lines_consumed).
+
+    Empty lines advance the line counter but are not emitted (matches
+    load_messages behaviour). Oversized lines are warned and skipped but
+    still consume a line index.
+    """
+    out: list[Message] = []
+    lines_consumed = 0
+    # _split_physical_lines (not str.splitlines) so a raw U+2028/U+2029/U+0085
+    # inside a JSON string doesn't tear one line into invalid fragments — keeps
+    # this read-only incremental path consistent with load_messages().
+    for offset, raw in enumerate(_split_physical_lines(chunk)):
+        lines_consumed += 1
+        parsed = _parse_one_line(raw, start_line_index + offset)
+        if parsed is not None:
+            out.append(parsed)
+    return out, lines_consumed
+
+
+def load_messages_incremental(path: Path) -> list[Message]:
+    """Return parsed JSONL messages using a byte-offset cache.
+
+    Equivalent to load_messages() on the happy path: same tuple shape, same
+    ordering, same error handling. Diverges only for files larger than
+    MAX_CACHED_MESSAGES — the cache retains the newest N entries, so the
+    returned list is likewise truncated. Callers that need full historical
+    state (prune, save roundtrip) must use load_messages() instead.
+
+    Invalidation: inode change (os.replace), size shrink (truncation), or
+    mtime regression trigger a full re-read. Partial trailing lines (no
+    terminating newline) are deferred until the write completes.
+
+    Thread-safe via a module-global lock.
+    """
+    path = Path(path)
+    key = path.resolve()
+    with _INCR_LOCK:
+        try:
+            st = path.stat()
+        except OSError:
+            _INCR_CACHE.pop(key, None)
+            return []
+
+        entry = _INCR_CACHE.get(key)
+        # Same-size in-place rewrite (open('r+')): inode holds, size holds,
+        # but mtime advances. Treat that as a cache-miss — otherwise the
+        # early-exit would return the pre-rewrite content.
+        needs_full_read = (
+            entry is None
+            or st.st_ino != entry.inode
+            or st.st_size < entry.size
+            or st.st_mtime_ns < entry.mtime_ns
+            or (st.st_mtime_ns > entry.mtime_ns and st.st_size == entry.size)
+        )
+
+        if needs_full_read:
+            entry = _CacheEntry(inode=st.st_ino)
+            _INCR_CACHE[key] = entry
+            start_offset = 0
+        elif st.st_size == entry.size and st.st_mtime_ns == entry.mtime_ns:
+            _INCR_CACHE.move_to_end(key)
+            return list(entry.messages)
+        else:
+            start_offset = entry.offset
+
+        with open(path, "rb") as f:
+            f.seek(start_offset)
+            raw_bytes = f.read(st.st_size - start_offset)
+
+        # Stop at the last complete line — a trailing partial line means the
+        # writer is mid-append. We'll pick up the remainder on the next call.
+        last_newline = raw_bytes.rfind(b"\n")
+        if last_newline == -1:
+            # No complete lines in the new region yet; leave cache untouched.
+            _INCR_CACHE.move_to_end(key)
+            return list(entry.messages)
+
+        complete = raw_bytes[: last_newline + 1]
+        # surrogateescape (ynaamane review, LOW): mirror load_messages /
+        # load_messages_and_snapshot rather than the lossy U+FFFD "replace". This is
+        # the read-only incremental path so the only effect is correct byte_len
+        # accounting on non-UTF-8 lines, but it keeps every decode path consistent.
+        chunk = complete.decode("utf-8", "surrogateescape")
+
+        new_messages, lines_consumed = _parse_jsonl_chunk(
+            chunk, entry.next_line_index
+        )
+        entry.messages.extend(new_messages)
+        entry.next_line_index += lines_consumed
+        entry.offset = start_offset + (last_newline + 1)
+        entry.size = st.st_size
+        entry.mtime_ns = st.st_mtime_ns
+
+        if len(entry.messages) > MAX_CACHED_MESSAGES:
+            # Retain the newest MAX_CACHED_MESSAGES; byte-offset tracking is
+            # independent of what we hold in memory.
+            del entry.messages[:-MAX_CACHED_MESSAGES]
+
+        _INCR_CACHE.move_to_end(key)
+        while len(_INCR_CACHE) > MAX_CACHE_SESSIONS:
+            _INCR_CACHE.popitem(last=False)
+
+        return list(entry.messages)
+
+
+def save_messages(
+    path: Path,
+    messages: list[Message],
+    create_backup: bool = True,
+    snapshot: _FileSnapshot | None = None,
+) -> Path | None:
+    """Save messages back to JSONL, optionally creating a timestamped backup.
+
+    When *snapshot* is provided (taken via snapshot_session() before load_messages()),
+    the file is classified before replacing:
+
+    - "unchanged"  — safe to replace; proceeds normally.
+    - "appended"   — Claude wrote new lines while pruning was in progress; the
+                     delta is validated and appended to the pruned output so no
+                     messages are lost.
+    - "conflict"   — prefix was mutated (rewrite or truncation); raises
+                     PruneConflictError.  The backup is NOT created and the
+                     original file is left untouched.
+
+    Returns the backup path if created, else None.
+    """
+    # Use mkstemp for collision-safe tmp filename. Previously this was
+    # path.with_suffix(".tmp") — two concurrent prune cycles on the same
+    # session (which the _PruneLock should prevent, but doctor.py and
+    # cmd_reload bypassed it) collided on a single tmp path, causing
+    # FileNotFoundError on the loser's os.replace.
+    import tempfile as _tempfile
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = _tempfile.mkstemp(
+        prefix=".tmp." + path.name + ".", suffix=".partial", dir=str(path.parent)
+    )
+    tmp_path = Path(tmp_name)
+    try:
+        # errors="surrogateescape" mirrors the load decode so a _raw passthrough
+        # carrying surrogate-mapped bytes (a structurally-invalid-UTF-8 line) is
+        # re-encoded to its EXACT original bytes rather than raising UnicodeEncodeError.
+        with os.fdopen(fd, "w", encoding="utf-8", errors="surrogateescape") as f:
+            for _, msg, _ in messages:
+                # Honor the loader's _raw passthrough ONLY for a well-formed wrapper:
+                # _parse_error is True AND _raw is a str. The loader strips these
+                # reserved keys from genuine on-disk dicts (so a forged content key
+                # can't reach here), but defend anyway — a missing/non-str _raw must
+                # re-serialize, never KeyError/TypeError mid-save (which on the guard
+                # path aborts AFTER Claude is SIGTERM'd but BEFORE resume).
+                if msg.get("_parse_error") is True and isinstance(msg.get("_raw"), str):
+                    # _raw came from a surrogateescape decode of a structurally-invalid
+                    # line, so any surrogates it carries are in U+DC80..U+DCFF (real
+                    # bytes) — always encodable by the surrogateescape file. Write verbatim.
+                    f.write(msg["_raw"] + "\n")
+                else:
+                    f.write(_jsonl_line(msg) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+
+        # ── Append-aware conflict detection ──────────────────────────────────
+        if snapshot is not None:
+            # Single read for BOTH the prefix-hash check and the delta — classify()
+            # then read_delta() was two reads with a TOCTOU window between them.
+            state, delta = snapshot.classify_and_delta(path)
+            if state == "conflict":
+                tmp_path.unlink(missing_ok=True)
+                raise PruneConflictError(
+                    f"Session file was modified (prefix changed) while pruning: {path}"
+                )
+            if state == "appended":
+                try:
+                    extra_lines = _parse_delta_lines(delta)
+                except (ValueError, json.JSONDecodeError) as exc:
+                    # Claude is mid-write — treat as conflict; retry next cycle.
+                    tmp_path.unlink(missing_ok=True)
+                    raise PruneConflictError(
+                        f"Session file has an incomplete append — deferring prune: {path}"
+                    ) from exc
+                if extra_lines:
+                    with open(tmp_path, "a", encoding="utf-8", errors="surrogateescape") as fa:
+                        for line in extra_lines:
+                            fa.write(line + "\n")
+                        fa.flush()
+                        os.fsync(fa.fileno())
+        # ─────────────────────────────────────────────────────────────────────
+
+        # Backup is created after conflict check so orphaned backups are not
+        # left behind when a conflict causes an early return.
+        backup_path: Path | None = None
+        if create_backup:
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = path.with_suffix(f".{ts}.jsonl.bak")
+            shutil.copy2(path, backup_path)
+
+        try:
+            os.replace(tmp_path, path)
+        except PermissionError as exc:
+            # Windows (#112): Claude Code holds the live transcript open
+            # without FILE_SHARE_DELETE, so os.replace onto it raises
+            # PermissionError [WinError 5]. This is not a hard failure —
+            # defer the prune to the next cycle, exactly like an
+            # incomplete-append conflict. Clean up the tmp file and the
+            # just-created backup so a deferred cycle leaves no orphans.
+            tmp_path.unlink(missing_ok=True)
+            if backup_path is not None:
+                backup_path.unlink(missing_ok=True)
+            raise PruneConflictError(
+                f"Session file is held open by another process — deferring prune: {path}"
+            ) from exc
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
+
+    return backup_path
+
+
+def repair_torn_trailing_line(path: Path) -> bool:
+    """Make a session resumable after a writer was killed mid-append.
+
+    If the file's last non-empty line is not valid JSON — the signature of a
+    write torn off when Claude Code was SIGTERM'd mid-line (e.g. by a guard
+    terminate-first reload), which makes ``claude --resume`` fail to parse the
+    transcript — atomically drop that ONE line so the file parses again. The
+    torn line is data the writer never finished flushing, so it is already
+    unrecoverable; removing it is strictly safe and strictly improves resume.
+
+    Conservative by design:
+      * Only a SINGLE torn trailing line is removed (Claude appends one line at
+        a time, so only the in-flight line can be torn).
+      * If the last line is valid JSON, nothing changes (corruption — if any —
+        is elsewhere, and this helper must never mask a deeper problem).
+      * A file whose ONLY line is torn is left untouched (blanking it can't help
+        resume and would be needlessly destructive).
+      * A ``.torn.bak`` copy of the original is written first (best-effort).
+
+    Returns True iff a repair was written. Never raises.
+    """
+    try:
+        raw = path.read_text(encoding="utf-8", errors="surrogateescape")
+    except OSError:
+        return False
+    if not raw:
+        return False
+    # MUST use _split_physical_lines, NOT str.splitlines(): the latter also breaks
+    # on U+2028/U+2029/U+0085 + C0 controls, which are LEGAL raw inside JSON strings
+    # (CC's JS JSON.stringify emits them unescaped). splitlines() would tear a VALID
+    # last line into fragments → false "torn" → drop real data on a healthy session.
+    lines = _split_physical_lines(raw)
+    last = next((i for i in range(len(lines) - 1, -1, -1) if lines[i].strip()), None)
+    if last is None:
+        return False
+    try:
+        json.loads(lines[last])
+        return False  # trailing line parses → nothing torn to repair
+    except (ValueError, json.JSONDecodeError):
+        pass
+    kept = lines[:last]  # drop the torn line (and any trailing blank lines)
+    if not kept:
+        return False  # only line is torn — don't blank the file
+    try:
+        from .helpers import atomic_write_text
+        try:
+            shutil.copy2(path, path.with_suffix(path.suffix + ".torn.bak"))
+        except OSError:
+            pass
+        atomic_write_text(path, "\n".join(kept) + "\n", errors="surrogateescape")
+        return True
+    except Exception:
+        return False
+
+
+def auto_repair_unresumable(path: Path, min_idle_seconds: float = 10.0) -> bool:
+    """Auto-repair a torn trailing line, but ONLY when no live writer is active.
+
+    A torn trailing line on a freshly-written file is almost always Claude Code
+    **mid-append** — it will be a complete line milliseconds later. Repairing
+    THAT would race and clobber a live write (the #106 data-loss class we exist
+    to prevent). So we only repair when the file has been idle for at least
+    ``min_idle_seconds`` (mtime staleness = no active writer): a real crash
+    artifact (a session Claude can no longer resume) is always stale, while a
+    live mid-write is not. This makes recovery automatic for silently-affected
+    users (any cozempic command that touches the dead session heals it) without
+    ever risking a healthy live session.
+
+    Returns True iff a repair was written. Never raises.
+    """
+    try:
+        if time.time() - path.stat().st_mtime < min_idle_seconds:
+            return False  # possibly a live mid-write — never race it
+    except OSError:
+        return False
+    return repair_torn_trailing_line(path)
+
+
+def cleanup_old_backups(session_path: Path, keep: int = 3) -> int:
+    """Delete old timestamped .jsonl.bak files for this session, keeping the newest `keep`.
+
+    Prevents disk fill when the guard fires many prune cycles (#19).
+    Returns the number of files deleted.
+    """
+    pattern = f"{session_path.stem}.*.jsonl.bak"
+    bak_files = sorted(
+        session_path.parent.glob(pattern),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    deleted = 0
+    for old in bak_files[keep:]:
+        try:
+            old.unlink()
+            deleted += 1
+        except OSError:
+            pass
+    return deleted

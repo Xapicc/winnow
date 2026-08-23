@@ -1,0 +1,2 @@
+{"message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "missing-tool-use-id", "content": "orphan result"}]}}
+{"message": {"role": "assistant", "content": "follow up"}}

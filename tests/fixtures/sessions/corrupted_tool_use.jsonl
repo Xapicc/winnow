@@ -1,0 +1,3 @@
+{"message": {"role": "user", "content": "trigger task"}}
+{"message": {"role": "assistant", "content": [{"type": "tool_use", "id": "c1", "name": "Bash\" command=\"ls -la /very/long/path/that/keeps/going/to/make/this/longer/still/going\" cwd=\"/another/really/long/path/that/extends/past/two/hundred/characters/for/sure/lets/keep/adding/more/text/here\"", "input": {}}]}}
+{"message": {"role": "user", "content": "ok"}}

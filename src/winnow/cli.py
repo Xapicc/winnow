@@ -123,11 +123,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     if reason:
         _say(reason)
         return EXIT_REFUSED
-    # argparse.REMAINDER keeps the `--` that separated our flags from cozempic's,
-    # and cozempic's own prescan would carry it into argparse as a token.
+    # argparse.REMAINDER keeps the `--` that separated our flags from the
+    # inherited CLI's, whose own prescan would carry it into argparse as a token.
     argv = args.argv[1:] if args.argv[:1] == ["--"] else list(args.argv)
     if not argv:
-        _say("safe run needs a cozempic command: "
+        _say("safe run needs an inherited subcommand: "
              "winnow safe run -- diagnose <session>")
         return EXIT_USAGE
 
@@ -135,7 +135,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     if refusal:
         _say(refusal)
         return EXIT_REFUSED
-    return safe.run_cozempic(argv)
+    return safe.run_legacy(argv)
 
 
 def cmd_checkpoint(args: argparse.Namespace) -> int:
@@ -218,7 +218,7 @@ def add_safe_subparser(sub: argparse._SubParsersAction) -> None:
     p_plugin.set_defaults(func=cmd_plugin_dir)
 
     p_run = actions.add_parser(
-        "run", help="run the vendored cozempic CLI under the mode"
+        "run", help="run an inherited subcommand under the mode"
     )
     p_run.add_argument("argv", nargs=argparse.REMAINDER)
     p_run.set_defaults(func=cmd_run)

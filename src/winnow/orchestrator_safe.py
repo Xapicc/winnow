@@ -13,14 +13,14 @@ carries the evidence tables.
 
 1. **It never terminates the session it is running inside.** The guard daemon
    is never started (its ``SessionStart`` hook is not in the plugin directory
-   this module materialises) and ``cozempic guard`` / ``cozempic reload`` are
+   this module materialises) and ``winnow guard`` / ``winnow reload`` are
    refused. There is no environment variable that turns the daemon off
    (USAGEFOUNDRY §4), so the mechanism has to be non-installation rather than
    restraint, and the harness's own ``--disallowedTools`` cannot help: the kill
    is an ``os.kill`` inside a detached daemon, not a tool call (§1.2).
 2. **It never resumes a session.** Session identity and ``--resume`` belong to
    the harness, which adopts the id off the stream, persists it and re-passes it
-   (§1.3). ``cozempic reload`` spawns a watcher that runs ``claude --resume``;
+   (§1.3). ``winnow reload`` spawns a watcher that runs ``claude --resume``;
    it is refused for that reason as much as for the kill.
 3. **No auto-update and no PyPI check while a run is in flight.** Both paths
    off, not overridable-off (§1.8).
@@ -33,15 +33,18 @@ carries the evidence tables.
    live (USAGEFOUNDRY §2). A prune is refused while a Claude ancestor process
    exists.
 6. **Nothing is written into the model's memory to be recalled later.**
-   ``cozempic digest inject`` writes into ``~/.claude/projects/<slug>/memory/``
+   ``winnow digest inject`` writes into ``~/.claude/projects/<slug>/memory/``
    and edits that directory's ``MEMORY.md``, which is loaded into every
    session's context (§1.7). It is refused. Retrieval is by lookup, not recall
    (SPEC §7).
 
-Nothing in ``src/winnow/legacy/`` is edited to achieve any of this — it is vendored
-prior art at a pinned version (DECISIONS §0). Where the vendored tree offers no
-switch, this module supplies the mechanism from outside: an argv gate, an
-in-process prescription exclusion, and a filtered plugin directory.
+Nothing in ``src/winnow/legacy/`` is edited to achieve any of this. It is
+winnow's own code now (DECISIONS §0) and may be changed, but this mode is the
+one place where not changing it is the point: every invariant above is held
+from outside, so it holds for a tree nobody has audited line by line. Where the
+inherited tree offers no switch, this module supplies the mechanism from
+outside: an argv gate, an in-process prescription exclusion, and a filtered
+plugin directory.
 """
 
 from __future__ import annotations
@@ -132,7 +135,7 @@ _SAFE_ENV_SPEC: tuple[tuple[str, str, str], ...] = (
         "WINNOW_NUDGE_OFF",
         "1",
         "cli.py:1429 — the Stop-hook nudge writes "
-        "~/.claude/cozempic-metrics/nudge-state.json. USAGEFOUNDRY §1.7",
+        "~/.claude/winnow-metrics/nudge-state.json. USAGEFOUNDRY §1.7",
     ),
     (
         "WINNOW_INTERACTIVE",
@@ -175,7 +178,7 @@ DATA_DIR_ENV = "WINNOW_DATA_DIR"
 
 
 def claude_config_dir(env: dict[str, str] | None = None) -> Path:
-    """Where the bind mount is. Mirrors cozempic's session.get_claude_dir()."""
+    """Where the bind mount is. Mirrors winnow's session.get_claude_dir()."""
     environ = os.environ if env is None else env
     configured = environ.get("CLAUDE_CONFIG_DIR")
     if configured:
@@ -188,7 +191,9 @@ def data_dir(env: dict[str, str] | None = None) -> Path:
 
     Container-local by default: only /home/node/.claude, /home/node/go and
     /home/node/.local/share/gh are bind mounts (USAGEFOUNDRY §1.7), so a
-    sibling of ~/.cozempic crosses nothing.
+    directory under $HOME crosses nothing. Since the rename this is also where
+    the inherited tree's own config and receipts go (FORK.md §6.1) — one
+    program, one state directory — which is why `_check_home_state` excludes it.
     """
     environ = os.environ if env is None else env
     configured = environ.get(DATA_DIR_ENV)
@@ -255,12 +260,12 @@ _REFUSED_SUBCOMMANDS: dict[str, str] = {
     # The two commands that build a home-directory path inside the function
     # rather than at module level, so `redirect_home_writes` cannot reach them.
     "nudge": (
-        "writes ~/.claude/cozempic-metrics/nudge-state.json (cli.py:1482), "
+        "writes ~/.claude/winnow-metrics/nudge-state.json (cli.py:1482), "
         "inside the bind mount. It is the Stop hook's command and this mode "
         "does not install the Stop hook. USAGEFOUNDRY §1.7"
     ),
     "remind": (
-        "writes ~/.cozempic_remind_counter (cli.py:1567) to decide when to "
+        "writes ~/.winnow_remind_counter (cli.py:1567) to decide when to "
         "ask an interactive user to run init. There is no interactive user "
         "and init is refused. USAGEFOUNDRY §1.7"
     ),
@@ -434,17 +439,18 @@ def apply_strategy_exclusions(
 
 DROPPED_HOOK_EVENTS: dict[str, str] = {
     "SessionStart": (
-        "upgrades cozempic from PyPI and then spawns the guard daemon. Both "
+        "upgrades this package from PyPI and then spawns the guard daemon. "
+        "Both "
         "are invariants 1 and 3, and the daemon has no off switch other than "
         "this one. USAGEFOUNDRY §1.8, §4"
     ),
     "PostToolUse": (
-        "`cozempic checkpoint` writes into ~/.claude/projects/<slug>/ and "
-        "`cozempic remind` reinforces digest rules. Invariants 4 and 6"
+        "`winnow team checkpoint` writes into ~/.claude/projects/<slug>/ and "
+        "`winnow remind` reinforces digest rules. Invariants 4 and 6"
     ),
     "Stop": (
         "checkpoint, `digest flush` and `nudge` — the first writes into "
-        "~/.claude, the last writes ~/.claude/cozempic-metrics/. Invariant 4"
+        "~/.claude, the last writes ~/.claude/winnow-metrics/. Invariant 4"
     ),
 }
 
@@ -455,16 +461,16 @@ KEPT_HOOK_REASON = (
     "reversible-loss insurance against an irreversible operation, and "
     "PostCompact reads it back. Neither changes the transcript the model is "
     "holding, so both are compatible with the harness owning compaction "
-    "(USAGEFOUNDRY §2). The commands are winnow's, not cozempic's, because "
-    "cozempic's write the checkpoint into ~/.claude"
+    "(USAGEFOUNDRY §2). The commands are `winnow safe`'s, not `winnow "
+    "team`'s, because `winnow team checkpoint` writes into ~/.claude"
 )
 
 DROPPED_PLUGIN_PATHS: dict[str, str] = {
     ".mcp.json": (
-        "starts the MCP server with `uv run --with cozempic`, which fetches "
-        "cozempic from PyPI — so the plugin would run a downloaded copy rather "
-        "than the vendored tree, and needs `uv` and network at spawn. "
-        "USAGEFOUNDRY §1.9"
+        "starts the MCP server with `uv run --with cozempic` — the fork has "
+        "not reached this file (FORK.md §7) — which fetches a package from "
+        "PyPI, so the plugin would run a downloaded copy rather than this "
+        "tree, and needs `uv` and network at spawn. USAGEFOUNDRY §1.9"
     ),
     "servers": "only reachable from the .mcp.json above",
     "skills": (
@@ -511,7 +517,7 @@ def safe_hooks_manifest(winnow_command: str) -> dict:
 
     `winnow_command` is the prefix that runs this package — the plugin
     directory is not a Python package and nothing here is pip-installed, so the
-    interpreter and the import path are baked in, as cozempic's own installer
+    interpreter and the import path are baked in, as winnow's own installer
     bakes its path (init.py:413).
 
     The switch is baked in rather than inherited: this directory only exists
@@ -580,10 +586,10 @@ def upstream_provenance(source_plugin: dict) -> dict:
         "license": source_plugin.get("license"),
         "copyright": _UPSTREAM_COPYRIGHT,
         "notice": (
-            "Vendored prior art, MIT, retained verbatim as LICENSE at the root "
-            "of the winnow repository (DECISIONS.md §0). Neither file in this "
-            "directory is a copy of it: both are generated by winnow, which "
-            "has not versioned itself and so declares no version."
+            "Derived from the named upstream under the MIT licence, whose "
+            "terms and copyright are at the root of the winnow repository as "
+            "LICENSE and NOTICE (DECISIONS.md §0). Neither file in this "
+            "directory is a copy of upstream's: both are generated by winnow."
         ),
     }
 
@@ -780,7 +786,7 @@ def _check_env(env: dict[str, str]) -> list[Finding]:
 
     Unset is not a violation: `safe_environment` supplies the whole overlay to
     every `winnow safe run`, and that is the only path this mode opens to the
-    vendored tree. What a set value tells you is whether a cozempic invocation
+    vendored tree. What a set value tells you is whether a winnow invocation
     that bypassed winnow entirely would also be covered.
 
     A conflicting value is a violation, because somebody configured something
@@ -812,7 +818,7 @@ def _check_guard_daemons() -> Finding:
     """
     live: list[str] = []
     stale: list[str] = []
-    for pidfile in sorted(Path("/tmp").glob("cozempic_guard_*.pid")):
+    for pidfile in sorted(Path("/tmp").glob("winnow_guard_*.pid")):
         try:
             pid = int(pidfile.read_text(encoding="utf-8").splitlines()[0].strip())
         except (OSError, ValueError, IndexError):
@@ -846,21 +852,21 @@ def _check_global_hooks(env: dict[str, str] | None) -> Finding:
         text = settings.read_text(encoding="utf-8")
     except OSError as exc:
         return Finding("global-hooks", False, f"cannot read {settings}: {exc}")
-    if "cozempic" in text:
+    if "winnow" in text:
         return Finding(
             "global-hooks",
             False,
-            f"{settings} names cozempic — hooks are wired into the bind mount, "
-            "so they run whatever this mode does. `cozempic init "
+            f"{settings} names winnow — hooks are wired into the bind mount, "
+            "so they run whatever this mode does. `winnow init "
             "--uninstall-global` on the host removes them",
         )
-    return Finding("global-hooks", True, f"{settings} does not name cozempic")
+    return Finding("global-hooks", True, f"{settings} does not name winnow")
 
 
 def _check_digest_memories(env: dict[str, str] | None) -> Finding:
     """Has a digest been written into a project's memory directory?"""
     projects = claude_config_dir(env) / "projects"
-    found = sorted(str(p) for p in projects.glob("*/memory/cozempic_digest.md"))
+    found = sorted(str(p) for p in projects.glob("*/memory/winnow_digest.md"))
     if found:
         return Finding(
             "digest-memory",
@@ -868,7 +874,7 @@ def _check_digest_memories(env: dict[str, str] | None) -> Finding:
             "a digest is in the operator's memory index, where it is loaded "
             "into every session's context: " + ", ".join(found),
         )
-    return Finding("digest-memory", True, f"no cozempic_digest.md under {projects}")
+    return Finding("digest-memory", True, f"no winnow_digest.md under {projects}")
 
 
 def _check_strategy_exclusion() -> Finding:
@@ -903,26 +909,38 @@ def _check_strategy_exclusion() -> Finding:
 
 
 def _check_home_state(home: Path | None = None) -> Finding:
-    """Has the vendored tree left state in $HOME, outside any redirect?
+    """Has the inherited tree left state in $HOME, outside any redirect?
 
     A violation, and a useful one: these files can only have been written by a
-    cozempic run that did not go through this mode, so the finding says the
+    winnow run that did not go through this mode, so the finding says the
     mode was bypassed rather than that it failed.
+
+    Both prefixes, because the rename did not reach all of it: the updater's
+    ``~/.cozempic_installed`` and ``~/.cozempic_update_check`` keep upstream's
+    names until the updater is deleted (FORK.md §5.1, §6.1). ``~/.winnow``
+    itself is excluded — since the rename it is `data_dir()`, which is where
+    `redirect_home_writes` sends this state on purpose, so finding it is the
+    mode working rather than being bypassed.
     """
     root = Path.home() if home is None else Path(home)
+    try:
+        own_state = data_dir().resolve()
+    except ValueError:  # a misconfigured data dir is _check_data_dir's finding
+        own_state = None
     found = sorted(
         entry.name
         for entry in root.iterdir()
-        if entry.name.startswith(".cozempic")
+        if (entry.name.startswith(".winnow") or entry.name.startswith(".cozempic"))
+        and entry.resolve() != own_state
     )
     if found:
         return Finding(
             "home-state",
             False,
-            "the vendored tree has state in $HOME, so something ran it outside "
-            "this mode: " + ", ".join(found),
+            "the inherited tree has state in $HOME, so something ran it "
+            "outside this mode: " + ", ".join(found),
         )
-    return Finding("home-state", True, f"no .cozempic* state in {root}")
+    return Finding("home-state", True, f"no stray winnow state in {root}")
 
 
 def _check_live_session() -> Finding:
@@ -988,14 +1006,14 @@ def resolve_session_path(payload: dict, cwd: str | None = None) -> Path | None:
 _HOME_WRITE_REDIRECTS: tuple[tuple[str, str, str], ...] = (
     ("winnow.legacy.updater", "_CACHE_FILE", "cozempic-update-check"),
     ("winnow.legacy.updater", "_INSTALL_SENTINEL", "cozempic-installed"),
-    ("winnow.legacy.config", "_CONFIG_FILE_PATH", "cozempic/config.json"),
-    ("winnow.legacy.digest", "DIGEST_DIR", "cozempic"),
-    ("winnow.legacy.digest", "DIGEST_FILE", "cozempic/behavioral-digest.json"),
-    ("winnow.legacy.digest", "DIGEST_MD_FILE", "cozempic/behavioral-digest.md"),
-    ("winnow.legacy.helpers", "_SAVINGS_FILE", "cozempic-savings.json"),
-    ("winnow.legacy.cli", "_GLOBAL_INIT_MARKER", "cozempic-global-initialized"),
-    ("winnow.legacy.init", "_GLOBAL_INIT_MARKER", "cozempic-global-initialized"),
-    ("winnow.legacy.init", "_REMIND_COUNTER", "cozempic-remind-counter"),
+    ("winnow.legacy.config", "_CONFIG_FILE_PATH", "winnow/config.json"),
+    ("winnow.legacy.digest", "DIGEST_DIR", "winnow"),
+    ("winnow.legacy.digest", "DIGEST_FILE", "winnow/behavioral-digest.json"),
+    ("winnow.legacy.digest", "DIGEST_MD_FILE", "winnow/behavioral-digest.md"),
+    ("winnow.legacy.helpers", "_SAVINGS_FILE", "winnow-savings.json"),
+    ("winnow.legacy.cli", "_GLOBAL_INIT_MARKER", "winnow-global-initialized"),
+    ("winnow.legacy.init", "_GLOBAL_INIT_MARKER", "winnow-global-initialized"),
+    ("winnow.legacy.init", "_REMIND_COUNTER", "winnow-remind-counter"),
 )
 
 
@@ -1034,8 +1052,12 @@ def redirect_home_writes(target_dir: Path) -> dict[str, Path]:
     return applied
 
 
-def run_cozempic(argv: list[str]) -> int:
-    """Run the vendored CLI in this process, under the mode.
+def run_legacy(argv: list[str]) -> int:
+    """Run the inherited CLI in this process, under the mode.
+
+    Named for what it runs, not for the program it belongs to: `winnow safe
+    run --` hands argv to `winnow.legacy.cli`, and `run_winnow` inside winnow
+    would name everything and distinguish nothing.
 
     In-process because the exclusion in `apply_strategy_exclusions` is an
     in-memory edit to a module-level dict — a subprocess would import a fresh,
@@ -1046,12 +1068,12 @@ def run_cozempic(argv: list[str]) -> int:
     apply_strategy_exclusions()
     redirect_home_writes(data_dir())
 
-    from winnow.legacy.cli import main as cozempic_main
+    from winnow.legacy.cli import main as legacy_main
 
     saved = sys.argv
-    sys.argv = ["cozempic", *argv]
+    sys.argv = ["winnow", *argv]
     try:
-        cozempic_main()
+        legacy_main()
     except SystemExit as exc:
         if exc.code is None:
             return 0

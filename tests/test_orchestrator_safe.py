@@ -94,7 +94,7 @@ class TestEnvironmentOverlay(unittest.TestCase):
 
 
 class TestDataDirectory(unittest.TestCase):
-    def test_default_is_a_sibling_of_the_cozempic_state_dir(self):
+    def test_default_is_a_sibling_of_the_winnow_state_dir(self):
         self.assertEqual(safe.data_dir({}), (Path.home() / ".winnow").resolve())
 
     def test_honours_the_override(self):
@@ -212,8 +212,8 @@ class TestArgvGate(unittest.TestCase):
     def test_the_two_commands_that_write_home_paths_in_function_are_refused(self):
         # redirect_home_writes reaches module-level constants only; these two
         # build the path inside the function, so refusal is the only closure.
-        self.assert_refused(["nudge"], naming="cozempic-metrics")
-        self.assert_refused(["remind"], naming="cozempic_remind_counter")
+        self.assert_refused(["nudge"], naming="winnow-metrics")
+        self.assert_refused(["remind"], naming="winnow_remind_counter")
 
     def test_the_watchdog_is_refused_only_when_it_would_signal(self):
         self.assert_refused(["guard-watchdog", "--fix"], naming="SIGTERM")
@@ -392,12 +392,31 @@ class TestHomeStateRedirect(unittest.TestCase):
             with self.assertRaises(AttributeError):
                 safe.redirect_home_writes(tmp)
 
-    def test_cozempic_state_in_home_is_reported_as_a_bypass(self):
+    def test_the_updaters_state_in_home_is_reported_as_a_bypass(self):
+        # Still the inherited name: the two updater dotfiles are deleted with
+        # the updater rather than renamed with everything else (FORK.md §6.1).
         with _temp_dir() as tmp:
             (tmp / ".cozempic_installed").write_text("1.8.39", encoding="utf-8")
             finding = safe._check_home_state(tmp)
             self.assertFalse(finding.ok)
             self.assertIn(".cozempic_installed", finding.detail)
+
+    def test_renamed_state_in_home_is_reported_as_a_bypass(self):
+        with _temp_dir() as tmp:
+            (tmp / ".winnow_savings.json").write_text("{}", encoding="utf-8")
+            finding = safe._check_home_state(tmp)
+            self.assertFalse(finding.ok)
+            self.assertIn(".winnow_savings.json", finding.detail)
+
+    def test_the_modes_own_data_directory_is_not_a_bypass(self):
+        # ~/.winnow is data_dir(), which redirect_home_writes creates on every
+        # `safe run`. Since the rename it also matches the .winnow* prefix this
+        # check scans for, so without the exclusion the mode reports itself.
+        with _temp_dir() as tmp:
+            (tmp / ".winnow").mkdir()
+            with mock.patch.object(safe, "data_dir", return_value=tmp / ".winnow"):
+                finding = safe._check_home_state(tmp)
+        self.assertTrue(finding.ok, finding.detail)
 
     def test_a_clean_home_is_not_a_violation(self):
         with _temp_dir() as tmp:
@@ -434,14 +453,15 @@ class TestPluginDirectory(unittest.TestCase):
             )
             self.assertIn("SessionStart", report["dropped_hook_events"])
 
-    def test_no_hook_command_can_update_start_a_daemon_or_call_cozempic(self):
+    def test_no_hook_command_can_update_start_a_daemon_or_call_the_inherited_cli(self):
         with _temp_dir() as tmp:
             safe.materialise_plugin_dir(PLUGIN_DIR, tmp / "plugin")
             text = (tmp / "plugin" / "hooks" / "hooks.json").read_text(
                 encoding="utf-8"
             )
             for forbidden in ("pip install", "uv pip", "uv tool", "guard --daemon",
-                              "--reload-self", "cozempic "):
+                              "--reload-self", "winnow guard", "winnow reload",
+                              "cozempic"):
                 self.assertNotIn(forbidden, text, forbidden)
 
     def test_the_hooks_carry_the_switch_so_they_cannot_silently_no_op(self):
@@ -478,8 +498,8 @@ class TestPluginDirectory(unittest.TestCase):
     def test_the_manifest_is_winnows_own_and_carries_nothing_of_upstreams(self):
         # UsageFoundry shows `name` and `description` out of this file
         # (plugins.ts:107-114), so a copied manifest presents the directory as
-        # cozempic's, under cozempic's version, describing a feature this mode
-        # does not have.
+        # cozempic's, under cozempic's version, describing a feature this
+        # mode does not have.
         with _temp_dir() as tmp:
             safe.materialise_plugin_dir(PLUGIN_DIR, tmp / "plugin")
             plugin = json.loads(
@@ -715,16 +735,16 @@ class TestCheckReport(unittest.TestCase):
         with _temp_dir() as tmp:
             memory = tmp / "projects" / "-some-project" / "memory"
             memory.mkdir(parents=True)
-            (memory / "cozempic_digest.md").write_text("rules", encoding="utf-8")
+            (memory / "winnow_digest.md").write_text("rules", encoding="utf-8")
             findings = self._by_name(
                 safe.check({safe.ENV_SWITCH: "1", "CLAUDE_CONFIG_DIR": str(tmp)})
             )
             self.assertFalse(findings["digest-memory"].ok)
 
-    def test_cozempic_hooks_in_the_bind_mounted_settings_are_a_violation(self):
+    def test_winnow_hooks_in_the_bind_mounted_settings_are_a_violation(self):
         with _temp_dir() as tmp:
             (tmp / "settings.json").write_text(
-                json.dumps({"hooks": {"SessionStart": ["cozempic guard --daemon"]}}),
+                json.dumps({"hooks": {"SessionStart": ["winnow guard --daemon"]}}),
                 encoding="utf-8",
             )
             findings = self._by_name(
@@ -743,7 +763,7 @@ class TestCheckReport(unittest.TestCase):
     def test_a_live_guard_daemon_pidfile_is_a_violation(self):
         # The pidfile path is hardcoded to /tmp (guard.py:2636-2650), so the
         # glob is patched rather than a file planted in a shared directory.
-        fake = Path("/tmp/cozempic_guard_deadbeef.pid")
+        fake = Path("/tmp/winnow_guard_deadbeef.pid")
         with mock.patch.object(safe.Path, "glob", return_value=[fake]), \
                 mock.patch.object(safe.Path, "read_text", return_value=f"{os.getpid()}\n"), \
                 mock.patch.object(safe.os, "kill", return_value=None):
@@ -752,7 +772,7 @@ class TestCheckReport(unittest.TestCase):
         self.assertIn("SIGKILL", finding.detail)
 
     def test_a_stale_pidfile_is_not_a_violation(self):
-        fake = Path("/tmp/cozempic_guard_deadbeef.pid")
+        fake = Path("/tmp/winnow_guard_deadbeef.pid")
         with mock.patch.object(safe.Path, "glob", return_value=[fake]), \
                 mock.patch.object(safe.Path, "read_text", return_value="999999999\n"), \
                 mock.patch.object(safe.os, "kill", side_effect=OSError):

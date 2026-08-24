@@ -71,6 +71,11 @@ class Plan:
     bytes_deferred: int = 0
     breakpoint_moved: bool = False
     tool_results_seen: int = 0
+    # Neither is used to decide anything; both exist so `winnow savings` can price
+    # what the filter did without guessing. One ledger spans several models, and the
+    # write class is a property of the request rather than of the documentation.
+    model: str | None = None
+    cache_ttl: str | None = None
 
     @property
     def changed(self) -> bool:
@@ -190,6 +195,20 @@ def _place_breakpoint_before(messages: list, position: tuple[int, int], ttl: str
     return False
 
 
+def _ttl_in_force(messages: list) -> str | None:
+    """Which cache write class this request would actually have been billed at.
+
+    Named for `usage.cache_creation`'s own keys so the ledger and the transcript can
+    be compared without a mapping. It is read rather than looked up: COZEMPIC §3.1 is
+    the record of taking the 1.25× five-minute figure from the documentation and
+    understating an invalidation by about 40%. A request carrying no breakpoint at all
+    has no class, and says so rather than defaulting to one.
+    """
+    if not _count_breakpoints(messages):
+        return None
+    return "ephemeral_1h" if _existing_ttl(messages) == "1h" else "ephemeral_5m"
+
+
 def _existing_ttl(messages: list) -> str | None:
     """Whatever TTL the client was already asking for, so the filter never
     silently reprices a request from the 1h class to the 5m one."""
@@ -218,6 +237,10 @@ def apply(
     messages = body.get("messages")
     if not isinstance(messages, list):
         return body, plan
+
+    model = body.get("model")
+    plan.model = model if isinstance(model, str) else None
+    plan.cache_ttl = _ttl_in_force(messages)
 
     uses = _index_tool_uses(messages)
 
@@ -259,12 +282,12 @@ def apply(
             # Kept this turn, dropped on the next. Remember where it sits so the
             # breakpoint can be moved in front of it and it is never written.
             newest_candidate = (m_index, b_index)
-            plan.deferred.append({"tool": name, "rule": rule, "bytes": size})
+            plan.deferred.append(_entry(block, name, rule, size))
             plan.bytes_deferred += size
             continue
         block["content"] = pointer(name or "tool", rule, size)
         block.pop("cache_control", None)
-        plan.dropped.append({"tool": name, "rule": rule, "bytes": size})
+        plan.dropped.append(_entry(block, name, rule, size))
         plan.bytes_dropped += size
 
     if newest_candidate is not None:
@@ -273,6 +296,24 @@ def apply(
         if _count_breakpoints(messages) < MAX_BREAKPOINTS:
             plan.breakpoint_moved = _place_breakpoint_before(messages, newest_candidate, ttl)
     return body, plan
+
+
+def _entry(block: dict, name: str, rule: str, size: int) -> dict:
+    """One ledger entry for one result.
+
+    `tool_use_id` is the whole reason this is a function. The filter is stateless, so
+    it re-drops the same result on every later request that still carries it, and a
+    ledger without an identity for the result cannot tell one removal from its own
+    echo — summing `bytes_dropped` over lines overstated this operator's by 27.9×.
+    See `savings.py`.
+    """
+    use_id = block.get("tool_use_id")
+    return {
+        "tool": name,
+        "rule": rule,
+        "bytes": size,
+        "tool_use_id": use_id if isinstance(use_id, str) else None,
+    }
 
 
 def ledger_line(plan: Plan, request_id: str | None = None) -> str:
@@ -284,10 +325,18 @@ def ledger_line(plan: Plan, request_id: str | None = None) -> str:
     `winnow fork` would pay `1.9·S` to remove bytes that are not in the prefix.
     This line is what lets the pruner know, and it is the reason the two can run
     together at all.
+
+    `model`, `cache_ttl` and each entry's `tool_use_id` are here for the second
+    reader, `winnow savings`: identity so a removal is not counted once per surviving
+    request, and the model and write class so it is priced at what this request would
+    have cost rather than at a documentation figure. Lines written before those fields
+    existed are readable without them, at a cost that reader reports.
     """
     return json.dumps(
         {
             "request_id": request_id,
+            "model": plan.model,
+            "cache_ttl": plan.cache_ttl,
             "dropped": plan.dropped,
             "deferred": plan.deferred,
             "bytes_dropped": plan.bytes_dropped,

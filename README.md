@@ -69,7 +69,8 @@ mistake the measurement exists to catch.
 | [docs/COZEMPIC.md](docs/COZEMPIC.md) | The vendored tool against the spec, decision by decision: six questions its code already answers, eight places the two disagree with a verdict and a reason on each, and what is still open |
 | [docs/USAGEFOUNDRY.md](docs/USAGEFOUNDRY.md) | Eleven collisions between the vendored tool and the orchestrator that would run it, with evidence on both sides; §8 is orchestrator-safe mode as built, including what it does not yet prove |
 | [docs/behavioral-digest-design.md](docs/behavioral-digest-design.md) | Cozempic's own design note, arrived with the merge |
-| `src/winnow/filter.py`, `proxy.py` | `winnow filter` — the intake filter and the local proxy that carries it. Stdlib only, about 450 lines with 35 tests |
+| `src/winnow/filter.py`, `proxy.py` | `winnow filter` — the intake filter and the local proxy that carries it. Stdlib only, about 450 lines with 39 tests |
+| `src/winnow/savings.py` | `winnow savings` — prices the filter's own ledger against the transcripts, de-duped on `tool_use_id` so a stateless filter's repeats are not counted as removals. Stdlib only, about 480 lines with 30 tests |
 | `src/winnow/inspect.py`, `report.py` | `winnow inspect` — SPEC §4's six rules, the six guards, the cache readout and `T*`. About 600 lines with 54 tests. The only command in the tree that implements the specification rather than wrapping the inherited one |
 | `src/winnow/cli.py`, `orchestrator_safe.py` | The `safe` and `inspect` groups, and orchestrator-safe mode, about 1,300 lines with its tests |
 | `src/winnow/legacy/`, `plugin/`, `tests/` | The tree inherited from Cozempic 1.8.39, about 21,700 lines. Renamed into winnow by [docs/FORK.md](docs/FORK.md) phase 1; still not installed and not started |
@@ -117,6 +118,31 @@ need to see the conversation's future, and a policy that did would change the pr
 negative. Running both is possible and nearly pointless — the filter takes the shared mass first,
 leaving the pruner 2.2% against an unchanged `S`. Details, and the ledger that stops the two
 double-counting, in [docs/COZEMPIC.md](docs/COZEMPIC.md) §3.5.
+
+**That table is a simulation. `winnow savings` is the instrument.** The 8.21% and the $246.14 come
+from replaying the three no-hindsight rules over 175 historical sessions — what the filter *would*
+have done. Once it is running, the ledger records what it *did*, and the command prices that:
+
+```sh
+python -m winnow savings                        # or --json
+```
+
+It reads `~/.winnow/filter.jsonl`, joins each line to the Claude Code transcript on `request_id` to
+recover which session it belongs to and how many turns followed it, and applies §3.5's cost model per
+result. The two numbers are not comparable and the command does not try: the simulation is a corpus
+average, this is one install's ledger over however long it has been on.
+
+**The one thing it must get right is that the filter is stateless.** It re-drops the same result on
+every later request that still carries it, so a ledger of 1,171 drop events on this install holds 46
+distinct results — summing `bytes_dropped` over lines would report **27× what was removed**. The
+repeats are not removals; they *are* the `0.1·D·T` term, and are priced at 0.1×. De-duplication is on
+`tool_use_id`, with a conservative `(tool, rule, bytes)` fallback for lines written before that field
+existed. The readout splits the avoided write from the avoided reads rather than blending them, and
+names the lines it could not join or could not price.
+
+**The figure is modelled, not billed**, and the command says so in its own output. The bytes were
+never sent, so no invoice line corresponds to them; *D* and *T* are measured and the prices are
+published, but the counterfactual is §3.5's model rather than an observation.
 
 **Turning it off, and the two ways are not equivalent.** Set the toggle blank and restart for the
 full off. On a *running* install, what can be turned off is the rewriting and not the proxy —

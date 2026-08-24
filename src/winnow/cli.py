@@ -22,6 +22,7 @@ from pathlib import Path
 from . import inspect as inspect_mod
 from . import orchestrator_safe as safe
 from . import proxy as proxy_mod
+from . import savings as savings_mod
 
 EXIT_OK = 0
 EXIT_USAGE = 1
@@ -292,6 +293,48 @@ def add_inspect_subparser(sub) -> None:
     p.set_defaults(func=cmd_inspect)
 
 
+def cmd_savings(args: argparse.Namespace) -> int:
+    from .report import savings_command
+
+    code, output = savings_command(
+        ledger=args.ledger,
+        projects=args.projects,
+        as_json=args.json,
+    )
+    print(output, file=sys.stderr if code == EXIT_USAGE else sys.stdout)
+    return code
+
+
+def add_savings_subparser(sub) -> None:
+    """Register `winnow savings` — what the filter has done, not what it would do.
+
+    Its own group next to `inspect` and for the same reason: it has no write path,
+    reading only the filter's ledger and the transcripts the ledger points at. It is
+    the counterpart to `inspect`, which prices a cut that has not happened; this
+    prices the cuts that have.
+    """
+    p = sub.add_parser(
+        "savings",
+        help="price what the intake filter has removed on this install",
+        description="Read the intake filter's ledger, join it to Claude Code's "
+                    "transcripts on request_id, and price what it removed using "
+                    "COZEMPIC.md §3.5's model. Each removed result is counted once, "
+                    "however many later requests the stateless filter re-dropped it "
+                    "from. The figure is modelled, not billed. Writes nothing.",
+    )
+    p.add_argument(
+        "--ledger", metavar="PATH",
+        help=f"the filter's ledger (default: {savings_mod.DEFAULT_LEDGER})",
+    )
+    p.add_argument(
+        "--projects", metavar="PATH",
+        help="Claude Code's transcript root, joined on requestId "
+             f"(default: {savings_mod.DEFAULT_PROJECTS})",
+    )
+    p.add_argument("--json", action="store_true", help="machine-readable output")
+    p.set_defaults(func=cmd_savings)
+
+
 def cmd_filter(args: argparse.Namespace) -> int:
     if not proxy_mod.is_enabled() and not args.force:
         _say("intake filter is off. Set WINNOW_FILTER=1, or pass --force to run "
@@ -366,11 +409,12 @@ def build_parser() -> argparse.ArgumentParser:
     add_safe_subparser(sub)
     add_inspect_subparser(sub)
     add_filter_subparser(sub)
+    add_savings_subparser(sub)
     return parser
 
 
 # Groups this tree owns. Everything else falls through to the inherited CLI.
-_OWN_GROUPS = ("safe", "inspect", "filter")
+_OWN_GROUPS = ("safe", "inspect", "filter", "savings")
 
 
 def main(argv: list[str] | None = None) -> int:

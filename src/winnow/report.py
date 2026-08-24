@@ -1,9 +1,12 @@
-"""Rendering for `winnow inspect` — the readout and its `--json` twin.
+"""Rendering for `winnow inspect` and `winnow savings` — the readouts and their
+`--json` twins.
 
-Separate from `inspect.py` because the analysis has to be usable without a
-terminal: the corpus sweep that checks SPEC §9's reproduction criterion consumes
-`Report` objects directly, and a formatter that only existed inside the command
-would have to be reimplemented there.
+Separate from `inspect.py` and `savings.py` because the analysis has to be usable
+without a terminal: the corpus sweep that checks SPEC §9's reproduction criterion
+consumes `Report` objects directly, and a formatter that only existed inside the
+command would have to be reimplemented there. Both readouts live here for the same
+reason and so that they read alike — an operator comparing what a cut *would* be
+worth against what the filter *has* been worth should not have to learn two layouts.
 """
 
 from __future__ import annotations
@@ -11,6 +14,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from . import savings as savings_mod
 from .inspect import (
     CONTENT_CLASSES,
     RULE_ORDER,
@@ -264,3 +268,188 @@ def inspect_command(
     # the readout is still printed: SPEC §8 makes inspect useful whether or not
     # anything is ever stripped.
     return (2 if not report.tier_bytes(tier) else 0), payload
+
+
+# ─── `winnow savings` ────────────────────────────────────────────────────────
+
+# Said in the command's own output and not only in the docs. Other tools report bytes
+# removed and call that a saving; the whole of this project's claim to be different is
+# that it says which of its numbers were measured and which were modelled.
+MODELLED_NOT_BILLED = (
+    "This is modelled, not billed. The bytes were never sent, so no invoice line "
+    "corresponds to them. D and T are measured and the prices are published; the "
+    "counterfactual — that these bytes would have been cache-written once and read "
+    "every turn after — is COZEMPIC.md §3.5's model, not an observation."
+)
+
+
+def savings_to_dict(result: savings_mod.Savings) -> dict:
+    """`--json`. Same fields as the readout, in the same split."""
+    bill, sessions_priced, unpriced_models = result.bill()
+    total = result.dollars
+    turns = result.turns
+    return {
+        "ledger": {
+            "path": str(result.ledger.path),
+            "lines": result.ledger.lines,
+            "parse_errors": result.ledger.parse_errors,
+            "drop_events": result.ledger.drop_events,
+            "bytes_summed_over_events": result.ledger.bytes_summed,
+            "legacy_lines_without_tool_use_id": result.ledger.legacy_lines,
+            "lines_without_model": result.ledger.lines_without_model,
+            "lines_without_cache_ttl": result.ledger.lines_without_ttl,
+        },
+        "removed": {
+            "unique_results": len(result.priced),
+            "unique_bytes": result.unique_bytes,
+            "overstatement_if_summed": (
+                round(result.ledger.bytes_summed / result.ledger.unique_bytes, 2)
+                if result.ledger.unique_bytes
+                else None
+            ),
+            "priced_results": len(result.counted),
+        },
+        "turns_after": savings_mod.turn_distribution(turns),
+        "dollars": {
+            "avoided_write": round(result.write_dollars, 4),
+            "avoided_reads": round(result.read_dollars, 4),
+            "total": round(total, 4),
+            "bill": round(bill, 4),
+            "share_of_bill_pct": round(total / bill * 100, 3) if bill else None,
+            "bill_sessions": sessions_priced,
+            "bill_models_without_price": unpriced_models,
+        },
+        "tokens": {
+            "calibrated_bytes": result.calibrated_bytes,
+            "calibrated_share": (
+                round(result.calibrated_bytes / result.unique_bytes, 3)
+                if result.unique_bytes
+                else None
+            ),
+            "default_bytes_per_token": savings_mod.DEFAULT_BYTES_PER_TOKEN,
+            "per_session": {
+                sid: {
+                    "bytes_per_token": round(facts.bytes_per_token, 3),
+                    "calibrated": facts.calibrated,
+                    "calibration_points": facts.calibration_points,
+                    "turns": facts.turns,
+                }
+                for sid, facts in sorted(result.sessions.items())
+            },
+        },
+        "excluded": {
+            reason: {"results": count, "bytes": size}
+            for reason, (count, size) in sorted(result.exclusions.items())
+        },
+        "caveat": MODELLED_NOT_BILLED,
+    }
+
+
+def render_savings(result: savings_mod.Savings) -> str:
+    """The human readout, laid out like `render`."""
+    ledger = result.ledger
+    out: list[str] = []
+    add = out.append
+
+    add("winnow savings — what the intake filter has done on this install")
+    add(f"  {ledger.path}")
+    add("")
+
+    add(f"ledger           {ledger.lines:>10,} lines   "
+        f"unparseable {ledger.parse_errors:,}")
+    add(f"  drop events    {ledger.drop_events:>10,}   "
+        f"{_human(ledger.bytes_summed)} if summed")
+    add(f"  unique results {len(result.priced):>10,}   "
+        f"{_human(result.unique_bytes)} actually removed")
+    if ledger.unique_bytes:
+        # The one number that decides whether any of the rest is right. The filter is
+        # stateless and re-drops the same result on every later request, so the naive
+        # sum is a per-turn quantity read as a one-time one (COZEMPIC.md §3.4).
+        add(f"  summing events would overstate this by "
+            f"{ledger.bytes_summed / ledger.unique_bytes:.1f}×")
+    if ledger.legacy_lines:
+        add(f"  {ledger.legacy_lines:,} lines predate tool_use_id and were de-duped "
+            "on (tool, rule, bytes)")
+    add("")
+
+    turns = result.turns
+    dist = savings_mod.turn_distribution(turns)
+    if dist:
+        add(f"T, turns after removal ({dist['count']:,} results joined)")
+        add(f"  min {dist['min']:,}   p25 {dist['p25']:,.0f}   "
+            f"median {dist['median']:,.0f}   p75 {dist['p75']:,.0f}   "
+            f"max {dist['max']:,}")
+        add("  capped at the next compact boundary: a result cannot be read back "
+            "across one")
+    else:
+        add("T, turns after removal   nothing joined; no read term can be priced")
+    add("")
+
+    add("tokens")
+    add(f"  calibrated     {_human(result.calibrated_bytes):>10}   "
+        f"of {_human(result.unique_bytes)} removed")
+    for sid, facts in sorted(result.sessions.items()):
+        how = (f"fit on {facts.calibration_points} requests"
+               if facts.calibrated else "SPEC §6 default")
+        add(f"  {sid[:8]}  {facts.bytes_per_token:>5.2f} bytes/token   "
+            f"{how}, {facts.turns:,} turns")
+    if not result.sessions:
+        add(f"  no session joined; SPEC §6's ÷{savings_mod.DEFAULT_BYTES_PER_TOKEN:.0f} "
+            "stands for everything")
+    add("")
+
+    bill, sessions_priced, unpriced = result.bill()
+    total = result.dollars
+    add(f"saved ({len(result.counted):,} of {len(result.priced):,} results priced)")
+    add(f"  avoided write  ${result.write_dollars:>9.2f}   "
+        "(W−1)·D once — 1.0·D at the 2.0× 1h class")
+    add(f"  avoided reads  ${result.read_dollars:>9.2f}   "
+        "0.1·D·T — the repeats, priced as repeats")
+    add(f"  total          ${total:>9.2f}")
+    add("")
+
+    add(f"share of the bill ({sessions_priced:,} joined sessions, their own usage)")
+    add(f"  bill           ${bill:>9.2f}")
+    if bill:
+        add(f"  saved          {total / bill * 100:>9.2f}%")
+    else:
+        add("  saved                  n/a   no priced usage in the joined sessions")
+    if unpriced:
+        add(f"  {len(unpriced)} model(s) with no published price excluded from the "
+            f"bill: {', '.join(unpriced)}")
+    add("")
+
+    exclusions = result.exclusions
+    add("not counted")
+    if not exclusions:
+        add("  nothing; every unique removal was joined and priced")
+    for reason, (count, size) in sorted(exclusions.items(), key=lambda kv: -kv[1][0]):
+        add(f"  {count:>4,} results  {_human(size):>10}   {reason}")
+    add("")
+
+    add(MODELLED_NOT_BILLED)
+    return "\n".join(out)
+
+
+def savings_command(
+    ledger: str | None,
+    projects: str | None,
+    as_json: bool,
+) -> tuple[int, str]:
+    """`(exit code, output)`. Exit codes follow SPEC §8: 1 usage, 2 nothing to do."""
+    path = Path(ledger).expanduser() if ledger else savings_mod.DEFAULT_LEDGER
+    if not path.is_file():
+        return 1, (f"winnow: no ledger at {path}. The filter writes one only when "
+                   "started with --ledger; there is nothing to price without it.")
+    projects_dir = (
+        Path(projects).expanduser() if projects else savings_mod.DEFAULT_PROJECTS
+    )
+    result = savings_mod.compute(path, projects_dir)
+    payload = (
+        json.dumps(savings_to_dict(result), indent=2)
+        if as_json
+        else render_savings(result)
+    )
+    # Exit 2 is "nothing to do — the filter has removed nothing yet". Not an error,
+    # and the readout still prints, for the same reason `inspect` does.
+    return (2 if not result.priced else 0), payload

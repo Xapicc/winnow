@@ -541,6 +541,65 @@ status` on the turn after it read it does worse work. `keep_newest` defaults to 
 aggressive setting the design admits. Milestone 3 is still the only thing that answers this, and the
 filter now gives it a second arm to measure rather than one.
 
+#### 3.5.1 `winnow savings` — the same model, run against one install's ledger
+
+**Everything above §3.5.1 is a corpus simulation.** The 8.21%, the $246.14 and the +3.76% are the
+three no-hindsight rules replayed over 175 historical sessions: what the filter *would* have done to
+conversations that were never filtered. `winnow savings` is the other kind of number. It reads
+`~/.winnow/filter.jsonl` — lines the running filter wrote about requests it actually rewrote — and
+prices them with the model above, taken verbatim and not re-derived.
+
+The two are not the same quantity and neither supersedes the other. The simulation is a corpus
+average over sessions chosen to be representative; the command is one operator's ledger over however
+long the proxy has been running, joined to that operator's own bill. A figure from one must never be
+restated as the other.
+
+**The trap, and it decides whether the command is right at all.** The filter is stateless by design
+(the second of the four properties above) — it recomputes the decision from the request body, so it
+re-drops the same tool result on *every* later request that still carries it. Each of those is a
+ledger entry. Summing `bytes_dropped` over lines therefore counts one removal once per surviving
+request. On the ledger this was built against, 1,171 drop events across 379 lines are **46 distinct
+results**: 6.1 MB summed against 229.6 KB actually removed, an overstatement of **27×**. This is
+§3.4's units error arriving by a third route — a per-turn quantity summed as a one-time one — and a
+KPI that made it would be wrong by more than an order of magnitude while looking entirely plausible.
+
+The fix is identity, not arithmetic. A unique removed result pays `1.0·D` **once**; its repeats *are*
+the `0.1·D·T` term and are priced at `0.1`. De-duplication is on `tool_use_id`, which the ledger now
+records for exactly this reason. `tests/test_savings.py::test_repeated_result_counts_once` writes a
+ledger with one result across forty requests and fails if the de-dupe is removed.
+
+**Three fields were added to the ledger line**, and nothing else about the filter changed:
+
+| Field | Why it could not be inferred |
+| --- | --- |
+| `tool_use_id` | The identity above. Without it, a removal cannot be told from its own echo |
+| `model` | Pricing is per model and one ledger spans several. An id absent from the price table is counted and excluded from the dollar total, never priced at a neighbour's rate |
+| `cache_ttl` | Decides 2.0× against 1.25×, read from the request's own breakpoint. §3.1 is the record of taking the 1.25× figure from the documentation and understating an invalidation by ~40% |
+
+Lines written before those fields exist are read, not discarded: de-dupe falls back to
+`(tool, rule, bytes)`, which can only merge distinct results and so can only *under*count, and the
+readout says how many lines were on the fallback.
+
+**Where the rest comes from.** `request_id` joins each ledger line to the assistant records in
+`~/.claude/projects/*/*.jsonl`, which carry `requestId` alongside `message.usage` and `message.model`.
+That recovers the session, the model the turn was actually billed at, and *T* — the billable assistant
+turns that followed, **capped at the next compact boundary**, because a result cannot be read back
+across one. `inspect.Usage` does the usage parsing; there is no second transcript reader.
+
+Two arithmetic details worth recording because both were nearly wrong:
+
+- **The saving on the write term is `(W − 1.0)·D`, not `W·D`.** The filter still sends the result in full on the one request the model acts on, and that turn is ordinary uncached input at 1.0×. What it avoids is the write *premium* — which is `1.0·D` at the 2.0× class, matching §3.5's `saving 1.0·D`, and only `0.25·D` at the 1.25× one. Pricing the whole write overstated this install's total by about 20% on the first run.
+- **bytes→tokens is a least-squares slope, not a ratio.** SPEC §6's ÷4 is an estimate; where the join gives both a request's prefix bytes and its measured `cache_read_input_tokens`, the rate is calibrated per session. It must be the *slope*: `cache_read_input_tokens` also covers the system prompt and tool schemas, which are not in message-content bytes, so a plain ratio understates bytes-per-token and would inflate every `D`. The fit's intercept is that fixed overhead. A fit on fewer than three points, or landing outside 1.5–12.0 bytes/token, is rejected back to ÷4, and the readout reports which was used for what share.
+
+**The figure is modelled, not billed, and the command says so itself** rather than leaving it to this
+document. The bytes were never sent, so nothing on the wire proves the counterfactual: *D*, *T* and
+the prices are measured or published, but "these bytes would have been cache-written once and read on
+every turn after" is §3.5's model. This project exists because other tools report bytes removed and
+call that a saving; a caveat that lives only in the docs is a caveat the number travels without.
+
+The command is stdlib-only, like everything else the CLI reaches — pricing is a table of published
+list prices with its source and read-date in a comment, not a reason to add a second dependency (§4).
+
 ### 3.6 Where Q1 to Q6 stand
 
 [DECISIONS.md](DECISIONS.md) §6's six open questions are unaffected by the merge, with two updates.

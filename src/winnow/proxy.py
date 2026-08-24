@@ -37,7 +37,10 @@ from urllib.parse import urlsplit
 from .filter import apply, ledger_line
 
 DEFAULT_UPSTREAM = "https://api.anthropic.com"
-DEFAULT_PORT = 8787
+# Not 8787: UsageFoundry's Discord relay binds 127.0.0.1:8787 inside the same
+# container this runs in (`scripts/discord-relay.mjs:87`), and the second of two
+# processes to want a port does not get a degraded service, it gets nothing.
+DEFAULT_PORT = 8789
 
 # Hop-by-hop headers belong to one connection and must not be relayed. Content
 # lengths are recomputed because the body changes; `accept-encoding` is dropped

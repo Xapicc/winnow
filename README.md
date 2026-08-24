@@ -99,7 +99,7 @@ never writes it to cache, and dropped on the next request.
 ```sh
 export WINNOW_FILTER=1                          # the toggle, and the whole of it
 python -m winnow filter --ledger ~/.winnow/filter.jsonl
-export ANTHROPIC_BASE_URL=http://127.0.0.1:8787 # what it prints
+export ANTHROPIC_BASE_URL=http://127.0.0.1:8789 # what it prints
 ```
 
 Per result of *D* tokens over *T* following turns, the baseline is a 2.0× cache write plus a 0.1×

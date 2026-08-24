@@ -106,7 +106,7 @@ never enabled, deliberately.
 ## The inherited tool
 
 `src/winnow/legacy/` is [Cozempic](https://github.com/Ruya-AI/cozempic) 1.8.39 by Ruya AI, forked
-into this repository and renamed. It is real, working software: 18 pruning strategies in three tiers,
+into this repository and renamed. It is real, working software: 20 pruning strategies in three tiers (18 inherited, two added here),
 a nine-invariant validator that refuses any prune leaving a `tool_use` without its result, a floor
 pass that re-adds the last 10 turns, a guard daemon, five hooks and a doctor with 15 checks. Its test
 suite passes here (see below).

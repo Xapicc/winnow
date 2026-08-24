@@ -22,6 +22,11 @@ PRESCRIPTIONS: dict[str, list[str]] = {
         "progress-collapse",
         "file-history-dedup",
         "metadata-strip",
+        # Ahead of every strategy that rewrites tool_result content
+        # (tool-output-trim, tool-result-age, stale-reads): identical-reread
+        # compares result bytes, and a rewrite upstream of it destroys the
+        # byte-identity it tests for.
+        "identical-reread",
         "thinking-blocks",
         "tool-output-trim",
         "tool-result-age",
@@ -35,6 +40,16 @@ PRESCRIPTIONS: dict[str, list[str]] = {
         "progress-collapse",
         "file-history-dedup",
         "metadata-strip",
+        # Ahead of every strategy that rewrites tool_result content
+        # (tool-output-trim, tool-result-age, stale-reads): identical-reread
+        # compares result bytes, and a rewrite upstream of it destroys the
+        # byte-identity it tests for.
+        "identical-reread",
+        # Lossy sibling of identical-reread, aggressive-tier because what it
+        # removes is a file version held neither in the conversation nor on
+        # disk. Immediately after it, for the same ordering reason and so a
+        # byte-identical pair is settled by the lossless rule first.
+        "changed-reread",
         "thinking-blocks",
         "tool-output-trim",
         "tool-result-age",

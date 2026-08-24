@@ -101,6 +101,11 @@ class Stats:
         )
 
 
+# The kill switch. While this file exists the proxy keeps listening and keeps
+# relaying, but stops rewriting anything — see `_filtering_disabled`.
+DEFAULT_OFF_FILE = Path.home() / ".winnow" / "filter-off"
+
+
 @dataclass
 class Config:
     upstream: str = DEFAULT_UPSTREAM
@@ -109,6 +114,46 @@ class Config:
     keep_newest: int = 1
     ledger: Path | None = None
     verbose: bool = False
+    off_file: Path | None = None
+
+
+# Whether the last request saw the kill switch, so the transition is logged once
+# rather than on every request.
+_OFF_STATE = {"disabled": False}
+_OFF_LOCK = threading.Lock()
+
+
+def _filtering_disabled(config: Config) -> bool:
+    """Is the kill switch on?
+
+    Turning the *proxy* off is not the useful operation and cannot be done
+    safely: `ANTHROPIC_BASE_URL` is fixed in the agent's environment when it is
+    spawned, so a listener that goes away takes every request with it. What an
+    operator actually needs is to stop the *rewriting* — and that is this. The
+    socket stays open, requests keep flowing, and the bytes stop being touched.
+
+    Checked per request, by design: a `touch` has to take effect on the next
+    request rather than the next restart, or it is not a kill switch. One `stat`
+    against an HTTPS round trip is not a cost worth optimising.
+    """
+    path = config.off_file
+    if path is None:
+        return False
+    try:
+        disabled = path.exists()
+    except OSError:
+        # An unreadable switch is not an off switch. Failing the other way would
+        # let a permissions change silently disable the thing.
+        return False
+    with _OFF_LOCK:
+        if disabled != _OFF_STATE["disabled"]:
+            _OFF_STATE["disabled"] = disabled
+            print(
+                f"winnow: filtering {'DISABLED' if disabled else 're-enabled'} "
+                f"by {path}; still relaying",
+                file=sys.stderr,
+            )
+    return disabled
 
 
 def _rewrite(raw: bytes, config: Config, stats: Stats) -> tuple[bytes, str | None]:
@@ -161,7 +206,7 @@ class _Handler(BaseHTTPRequestHandler):
         raw = self.rfile.read(length) if length else b""
 
         ledger = None
-        if _is_filtered(self.path) and raw:
+        if _is_filtered(self.path) and raw and not _filtering_disabled(self.config):
             raw, ledger = _rewrite(raw, self.config, self.stats)
         elif raw:
             self.stats.record()
@@ -240,6 +285,17 @@ def serve(config: Config) -> int:
     print(f"winnow: intake filter on {base} → {config.upstream}", file=sys.stderr)
     print(f"winnow: keep_newest={config.keep_newest} min_bytes={config.min_bytes}"
           + (f" ledger={config.ledger}" if config.ledger else ""), file=sys.stderr)
+    if config.off_file:
+        # Make the directory now, so the documented `touch` works. Without this
+        # an operator reaching for the kill switch under load gets "No such file
+        # or directory" from the one command they were told to run.
+        try:
+            config.off_file.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            print(f"winnow: cannot create {config.off_file.parent}: {exc}; "
+                  "the kill switch needs that directory to exist", file=sys.stderr)
+        print(f"winnow: stop filtering without a restart — touch {config.off_file}",
+              file=sys.stderr)
     print(f"\n  export ANTHROPIC_BASE_URL={base}\n", file=sys.stderr)
     try:
         server.serve_forever()
@@ -266,6 +322,8 @@ def config_from_env(**overrides) -> Config:
     )
     ledger = os.environ.get("WINNOW_FILTER_LEDGER")
     config.ledger = Path(ledger) if ledger else None
+    off_file = os.environ.get("WINNOW_FILTER_OFF_FILE")
+    config.off_file = Path(off_file) if off_file else DEFAULT_OFF_FILE
     for name, value in overrides.items():
         if value is not None:
             setattr(config, name, value)

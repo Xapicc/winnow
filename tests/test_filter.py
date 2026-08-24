@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 import typing
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 import pytest
 
@@ -406,3 +408,79 @@ def test_stats_line_reports_passthrough_on_error():
 
 def test_plan_is_unchanged_when_nothing_fired():
     assert not Plan().changed
+
+
+# ─── The kill switch ─────────────────────────────────────────────────────────
+
+
+def test_the_kill_switch_stops_rewriting_but_keeps_relaying(wired, tmp_path):
+    """Turning the proxy *off* is not the safe operation: ANTHROPIC_BASE_URL is
+    fixed in an agent's environment when it spawns, so a listener that goes away
+    takes every request with it. Stopping the rewriting is the safe one."""
+    base, config, _ = wired
+    off = tmp_path / "filter-off"
+    config.off_file = off
+
+    payload = body(*turn("a", "Bash", {"command": "ls -la"}),
+                   *turn("b", "Bash", {"command": "git diff"}))
+    _post(base, payload)
+    assert results_of(_Upstream.received[0])[0]["content"].startswith("[winnow:")
+
+    off.touch()
+    _post(base, payload)
+    # Same conversation, nothing rewritten, and the request still reached the API.
+    assert results_of(_Upstream.received[1])[0]["content"] == BIG
+    assert len(_Upstream.received) == 2
+
+    off.unlink()
+    _post(base, payload)
+    assert results_of(_Upstream.received[2])[0]["content"].startswith("[winnow:")
+
+
+def test_no_off_file_configured_means_no_kill_switch(tmp_path):
+    from winnow.proxy import _filtering_disabled
+
+    assert _filtering_disabled(Config(off_file=None)) is False
+
+
+def test_an_unreadable_switch_is_not_an_off_switch(monkeypatch, tmp_path):
+    """Failing the other way would let a permissions change silently disable the
+    filter, which is the one outcome that should never happen by accident."""
+    from winnow.proxy import _filtering_disabled
+
+    target = tmp_path / "off"
+
+    def boom(*a, **k):
+        raise PermissionError("nope")
+
+    monkeypatch.setattr(Path, "exists", boom)
+    assert _filtering_disabled(Config(off_file=target)) is False
+
+
+def test_serving_creates_the_directory_the_kill_switch_lives_in(tmp_path):
+    """The documented way to reach the switch is one `touch`. It has to work —
+    the first version of this shipped without the mkdir, and the one command an
+    operator is told to run failed with "No such file or directory"."""
+    import threading as _threading
+
+    import winnow.proxy as proxy_mod
+
+    off = tmp_path / "nested" / "deeper" / "filter-off"
+    done = _threading.Event()
+
+    def run():
+        try:
+            proxy_mod.serve(Config(port=0, off_file=off))
+        finally:
+            done.set()
+
+    thread = _threading.Thread(target=run, daemon=True)
+    thread.start()
+    for _ in range(200):  # up to 2s for the socket to bind and the mkdir to run
+        if off.parent.is_dir():
+            break
+        time.sleep(0.01)
+    assert off.parent.is_dir()
+
+    off.touch()  # the command an operator is told to run
+    assert proxy_mod._filtering_disabled(Config(off_file=off))

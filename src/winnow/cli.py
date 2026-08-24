@@ -303,6 +303,7 @@ def cmd_filter(args: argparse.Namespace) -> int:
         min_bytes=args.min_bytes,
         keep_newest=args.keep_newest,
         ledger=Path(args.ledger) if args.ledger else None,
+        off_file=Path(args.off_file) if args.off_file else None,
         verbose=args.verbose or None,
     )
     return proxy_mod.serve(config)
@@ -335,6 +336,10 @@ def add_filter_subparser(sub) -> None:
     p.add_argument("--ledger", default=None, metavar="PATH",
                    help="append one JSON line per filtered request, so `inspect` "
                         "can be told what the transcript no longer reflects")
+    p.add_argument("--off-file", default=None, metavar="PATH",
+                   help="kill switch: while this file exists the proxy keeps "
+                        "relaying but stops rewriting (default "
+                        f"{proxy_mod.DEFAULT_OFF_FILE})")
     p.add_argument("--verbose", action="store_true",
                    help="one stderr line per filtered request")
     p.add_argument("--force", action="store_true",

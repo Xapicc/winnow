@@ -118,6 +118,12 @@ negative. Running both is possible and nearly pointless — the filter takes the
 leaving the pruner 2.2% against an unchanged `S`. Details, and the ledger that stops the two
 double-counting, in [docs/COZEMPIC.md](docs/COZEMPIC.md) §3.5.
 
+**Turning it off, and the two ways are not equivalent.** Set the toggle blank and restart for the
+full off. On a *running* install, what can be turned off is the rewriting and not the proxy —
+`touch ~/.winnow/filter-off` and the next request is relayed untouched; remove the file to resume.
+Killing the process is not the off switch: `ANTHROPIC_BASE_URL` is fixed in a client's environment
+when it starts, so a listener that goes away takes every request with it.
+
 **It is in your credential path.** It relays your auth headers upstream, holds none of its own, logs
 none — but an operator running it has put a process of their own in front of their own key. It
 refuses to start without `WINNOW_FILTER=1` for that reason, and forwards the original bytes unchanged

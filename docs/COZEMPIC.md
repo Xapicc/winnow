@@ -487,7 +487,61 @@ quantity — every turn re-reads the whole prefix — and the bytes a rule remov
 Dividing one by the other compares different units. `T*` is what nets them, which is the reason the
 formula rather than a token share is the deliverable.
 
-### 3.5 Where Q1 to Q6 stand
+### 3.5 The intake filter, and what it is actually worth against the pruner
+
+`winnow filter` is built. It is a local pass-through proxy on `ANTHROPIC_BASE_URL` that drops a tool
+result **before the API ever writes it to cache**, so it never pays the `1.9·S` that §3.4 measures.
+
+The mechanism is one sentence: a result a rule would strip is sent in full on the single request where
+the model acts on it, placed *after* the last `cache_control` breakpoint so it is never cache-written,
+and dropped on the next request. Per result of *D* tokens over *T* following turns:
+
+    baseline   2.0·D  (one 1h write)  +  0.1·D·T  (a read every turn)
+    filtered   1.0·D  (one uncached turn, then gone)
+    saving     1.0·D  +  0.1·D·T,  with no break-even term at all
+
+**It reaches less than the pruner and is worth slightly more.** Only the rules that need no hindsight
+can fire — C1, C3 and B2 — because C2 needs a later duplicate, B1 a later read and A1 a later edit,
+and a policy whose answer depended on the future of the conversation would change the prefix under the
+cache on every request. Measured over the same 175 sessions:
+
+| | Reaches | Netted | Share of the bill | Sessions where it pays |
+| --- | ---: | ---: | ---: | ---: |
+| Intake filter (C1, C3, B2) | 8.21% | **$246.14** | **+3.76%** | 175 of 175, by construction |
+| Pruner, tier CB | 10.17% | $214.46 | +3.27% | 97 of 168 |
+
+**The ratio is 1.1×, and the honest reading is that the two are close.** Both are dominated by
+`0.1·D·T`, and at a median 224 turns after the cut that term is ~22·D — large enough that the pruner's
+`1.9·S` and the filter's avoided write are both second-order. What separates them is not size but
+variance: the filter cannot be negative, because nothing cached is ever edited, while the pruner is
+negative in 42% of sessions.
+
+**Running both together is possible and nearly pointless.** They overlap on C1, C3 and B2, and the
+filter takes those first because it sees the request before the transcript is even written. What is
+left for the pruner is C2 plus B1 — **2.2% of message content** — against an unchanged `S`, so `S/D`
+rises by roughly 4.6× and `T*` with it. On this corpus that combination clears its break-even almost
+nowhere. The two are alternatives on the mass that matters, not a stack.
+
+There is one hard conflict, and it is why `--ledger` exists. **The filter never touches the
+transcript**: Claude Code writes what it holds, which still contains every byte the API never saw. So
+`winnow inspect` read off disk overstates both *D* and *S* for any filtered session, and a later
+`winnow fork` would pay `1.9·S` to remove bytes that are not in the prefix — the double-count
+`79dd165` records, arriving by a new route. The ledger is one JSON line per filtered request and is
+what lets milestone 2 know.
+
+Four properties the implementation holds, each with a test:
+
+- **Failure is passthrough, never breakage.** An unparseable body, a body that is not an object, or a filter that raises all forward the original bytes and say so on stderr.
+- **The policy is stateless and idempotent.** The decision is recomputed from the request body alone. A policy that gave two answers over one conversation would destroy the cache it exists to protect.
+- **`/v1/messages/count_tokens` is not filtered.** It was, on the first version, because the path test was a prefix match — which would have made the count disagree with the request it counted.
+- **The client's TTL is carried onto any breakpoint the filter moves**, so it cannot silently reprice a request from the 2.0× class to the 1.25× one. That is §3.1's error in the opposite direction.
+
+What is **not** measured, and is the same gap the pruner has: whether a session that loses a `git
+status` on the turn after it read it does worse work. `keep_newest` defaults to 1, which is the most
+aggressive setting the design admits. Milestone 3 is still the only thing that answers this, and the
+filter now gives it a second arm to measure rather than one.
+
+### 3.6 Where Q1 to Q6 stand
 
 [DECISIONS.md](DECISIONS.md) §6's six open questions are unaffected by the merge, with two updates.
 Q1 (is the cache actually cold at a typical resume?) is unchanged as the falsification test and

@@ -21,6 +21,7 @@ from pathlib import Path
 
 from . import inspect as inspect_mod
 from . import orchestrator_safe as safe
+from . import proxy as proxy_mod
 
 EXIT_OK = 0
 EXIT_USAGE = 1
@@ -291,6 +292,56 @@ def add_inspect_subparser(sub) -> None:
     p.set_defaults(func=cmd_inspect)
 
 
+def cmd_filter(args: argparse.Namespace) -> int:
+    if not proxy_mod.is_enabled() and not args.force:
+        _say("intake filter is off. Set WINNOW_FILTER=1, or pass --force to run "
+             "it once without the toggle.")
+        return EXIT_REFUSED
+    config = proxy_mod.config_from_env(
+        port=args.port,
+        upstream=args.upstream,
+        min_bytes=args.min_bytes,
+        keep_newest=args.keep_newest,
+        ledger=Path(args.ledger) if args.ledger else None,
+        verbose=args.verbose or None,
+    )
+    return proxy_mod.serve(config)
+
+
+def add_filter_subparser(sub) -> None:
+    """Register `winnow filter` — the intake filter's proxy.
+
+    A separate group from `inspect` because it is the only thing in this tree
+    that sits in the request path of a live session. It refuses to start unless
+    `WINNOW_FILTER=1`, for the same reason orchestrator-safe mode refuses: a
+    process that quietly inserted itself between a session and its credentials
+    would be indistinguishable from one that was asked to.
+    """
+    p = sub.add_parser(
+        "filter",
+        help="run the intake filter proxy (needs WINNOW_FILTER=1)",
+        description="A local pass-through proxy that drops a tool result before "
+                    "it is ever written to the prompt cache. Point Claude Code "
+                    "at it with ANTHROPIC_BASE_URL. See docs/COZEMPIC.md §3.5.",
+    )
+    p.add_argument("--port", type=int, default=None,
+                   help=f"listen port (default {proxy_mod.DEFAULT_PORT})")
+    p.add_argument("--upstream", default=None,
+                   help=f"where to forward (default {proxy_mod.DEFAULT_UPSTREAM})")
+    p.add_argument("--min-bytes", type=int, default=None, metavar="N",
+                   help="guard G2: never drop a result under N bytes")
+    p.add_argument("--keep-newest", type=int, default=None, metavar="N",
+                   help="exempt the newest N tool results (default 1)")
+    p.add_argument("--ledger", default=None, metavar="PATH",
+                   help="append one JSON line per filtered request, so `inspect` "
+                        "can be told what the transcript no longer reflects")
+    p.add_argument("--verbose", action="store_true",
+                   help="one stderr line per filtered request")
+    p.add_argument("--force", action="store_true",
+                   help="run without WINNOW_FILTER=1")
+    p.set_defaults(func=cmd_filter)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """A parser for the groups implemented in this tree.
 
@@ -309,11 +360,12 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="group", required=True)
     add_safe_subparser(sub)
     add_inspect_subparser(sub)
+    add_filter_subparser(sub)
     return parser
 
 
 # Groups this tree owns. Everything else falls through to the inherited CLI.
-_OWN_GROUPS = ("safe", "inspect")
+_OWN_GROUPS = ("safe", "inspect", "filter")
 
 
 def main(argv: list[str] | None = None) -> int:

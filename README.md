@@ -18,7 +18,10 @@ that only fires when the arithmetic says it pays.
 > ([docs/COZEMPIC.md](docs/COZEMPIC.md) §3.4). Netted against the cache — `0.1·D` earned on each turn
 > that followed the cut, `1.9·S − 2·D` paid once — a tier-CB cut **pays off in 58% of sessions and is
 > worth +3.27% of the bill**, on an optimistic bound, against the 15% SPEC §9 set as the target. There
-> is still no `winnow fork` and no `winnow bench`.
+> is still no `winnow fork` and no `winnow bench`. What there is instead is
+> [`winnow filter`](#the-intake-filter): the same rules applied *before* the cache write, which never
+> pays the invalidation and is worth **+3.76%** — 1.1× the pruner, and positive in every session
+> rather than 58% of them.
 > The other thing that runs is not the pruner either: `src/winnow/` is
 > [orchestrator-safe mode](#orchestrator-safe-mode), the harness around the vendored tool that makes
 > running it inside an unattended session survivable.
@@ -66,6 +69,7 @@ mistake the measurement exists to catch.
 | [docs/COZEMPIC.md](docs/COZEMPIC.md) | The vendored tool against the spec, decision by decision: six questions its code already answers, eight places the two disagree with a verdict and a reason on each, and what is still open |
 | [docs/USAGEFOUNDRY.md](docs/USAGEFOUNDRY.md) | Eleven collisions between the vendored tool and the orchestrator that would run it, with evidence on both sides; §8 is orchestrator-safe mode as built, including what it does not yet prove |
 | [docs/behavioral-digest-design.md](docs/behavioral-digest-design.md) | Cozempic's own design note, arrived with the merge |
+| `src/winnow/filter.py`, `proxy.py` | `winnow filter` — the intake filter and the local proxy that carries it. Stdlib only, about 450 lines with 35 tests |
 | `src/winnow/inspect.py`, `report.py` | `winnow inspect` — SPEC §4's six rules, the six guards, the cache readout and `T*`. About 600 lines with 54 tests. The only command in the tree that implements the specification rather than wrapping the inherited one |
 | `src/winnow/cli.py`, `orchestrator_safe.py` | The `safe` and `inspect` groups, and orchestrator-safe mode, about 1,300 lines with its tests |
 | `src/winnow/legacy/`, `plugin/`, `tests/` | The tree inherited from Cozempic 1.8.39, about 21,700 lines. Renamed into winnow by [docs/FORK.md](docs/FORK.md) phase 1; still not installed and not started |
@@ -83,6 +87,41 @@ python -m winnow inspect <session-id>            # composition readout, writes n
 python -m winnow inspect <session-id> --json     # machine-readable, for a corpus sweep
 python -m winnow inspect <session-id> --tier CBA # include the opt-in tier in the arithmetic
 ```
+
+## The intake filter
+
+The pruner edits a conversation that is already cached, so it pays `1.9·S − 2·D` once. **The only way
+not to pay that is to never let the bytes into the cached prefix.** `winnow filter` is a local
+pass-through proxy that does exactly that: a tool result a rule would strip is sent in full on the one
+request where the model acts on it, placed *after* the last `cache_control` breakpoint so the API
+never writes it to cache, and dropped on the next request.
+
+```sh
+export WINNOW_FILTER=1                          # the toggle, and the whole of it
+python -m winnow filter --ledger ~/.winnow/filter.jsonl
+export ANTHROPIC_BASE_URL=http://127.0.0.1:8787 # what it prints
+```
+
+Per result of *D* tokens over *T* following turns, the baseline is a 2.0× cache write plus a 0.1×
+read on every later turn; this pays 1.0× once and nothing after. **There is no break-even term** —
+it is cheaper from the first request, at every `S/D`, which is the one thing the pruner cannot say.
+
+| | Reaches | Netted | Share of the bill | Sessions where it pays |
+| --- | ---: | ---: | ---: | ---: |
+| Intake filter | 8.21% | $246.14 | **+3.76%** | 175 of 175 |
+| Pruner, tier CB | 10.17% | $214.46 | +3.27% | 97 of 168 |
+
+It reaches less, because only the rules needing no hindsight can fire (C1, C3, B2 — C2, B1 and A1 all
+need to see the conversation's future, and a policy that did would change the prefix under the cache).
+**The ratio is 1.1×.** What separates them is variance rather than size: the filter cannot be
+negative. Running both is possible and nearly pointless — the filter takes the shared mass first,
+leaving the pruner 2.2% against an unchanged `S`. Details, and the ledger that stops the two
+double-counting, in [docs/COZEMPIC.md](docs/COZEMPIC.md) §3.5.
+
+**It is in your credential path.** It relays your auth headers upstream, holds none of its own, logs
+none — but an operator running it has put a process of their own in front of their own key. It
+refuses to start without `WINNOW_FILTER=1` for that reason, and forwards the original bytes unchanged
+on any failure to parse or rewrite: it must not be the thing that breaks a run.
 
 ## Orchestrator-safe mode
 

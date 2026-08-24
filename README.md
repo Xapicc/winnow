@@ -10,12 +10,18 @@ winnow is an attempt to answer that question and, if the answer comes back the r
 that only fires when the arithmetic says it pays.
 
 > [!IMPORTANT]
-> **The pruner does not exist yet.** There is no `winnow inspect`, no cache readout, no measurement.
-> The deliverable of the first milestone is a number, not a binary, and the number has not been
-> produced. What does run is one thing, and it is not the pruner: `src/winnow/` is
+> **The pruner does not exist yet, but the instrument does.** `winnow inspect` runs, and milestone
+> 1's number has been produced: **tier CB strips 10.2% of message content pooled, 8.8% at the median**
+> — against the 22.6% / 21.6% [docs/SPEC.md](docs/SPEC.md) §6 recorded and the ±3 points §9 asked it
+> to reproduce within. It misses by 12.4, and 8.7 of those are one rule whose measured number was
+> taken with a looser definition than the same document specifies
+> ([docs/COZEMPIC.md](docs/COZEMPIC.md) §3.4). Netted against the cache — `0.1·D` earned on each turn
+> that followed the cut, `1.9·S − 2·D` paid once — a tier-CB cut **pays off in 58% of sessions and is
+> worth +3.27% of the bill**, on an optimistic bound, against the 15% SPEC §9 set as the target. There
+> is still no `winnow fork` and no `winnow bench`.
+> The other thing that runs is not the pruner either: `src/winnow/` is
 > [orchestrator-safe mode](#orchestrator-safe-mode), the harness around the vendored tool that makes
 > running it inside an unattended session survivable.
-> [What is here today](#what-is-here-today) is the inventory, and it is still short.
 
 ---
 
@@ -60,13 +66,23 @@ mistake the measurement exists to catch.
 | [docs/COZEMPIC.md](docs/COZEMPIC.md) | The vendored tool against the spec, decision by decision: six questions its code already answers, eight places the two disagree with a verdict and a reason on each, and what is still open |
 | [docs/USAGEFOUNDRY.md](docs/USAGEFOUNDRY.md) | Eleven collisions between the vendored tool and the orchestrator that would run it, with evidence on both sides; §8 is orchestrator-safe mode as built, including what it does not yet prove |
 | [docs/behavioral-digest-design.md](docs/behavioral-digest-design.md) | Cozempic's own design note, arrived with the merge |
-| `src/winnow/` | `cli.py` and orchestrator-safe mode, about 1,200 lines with its tests |
+| `src/winnow/inspect.py`, `report.py` | `winnow inspect` — SPEC §4's six rules, the six guards, the cache readout and `T*`. About 600 lines with 54 tests. The only command in the tree that implements the specification rather than wrapping the inherited one |
+| `src/winnow/cli.py`, `orchestrator_safe.py` | The `safe` and `inspect` groups, and orchestrator-safe mode, about 1,300 lines with its tests |
 | `src/winnow/legacy/`, `plugin/`, `tests/` | The tree inherited from Cozempic 1.8.39, about 21,700 lines. Renamed into winnow by [docs/FORK.md](docs/FORK.md) phase 1; still not installed and not started |
 | `packaging/README.md` | The record of the six package channels, the npm shim and the PyPI release workflow that phase 2 deleted. **Winnow publishes to no channel**; installing means a checkout |
 
-**No `winnow inspect`, no cache readout, no `winnow bench`.** The numbers the documents cite as
-measured were produced by analysis scripts in earlier work and are recorded with their sample sizes;
-nothing in this checkout reproduces them yet.
+**No `winnow fork`, no `winnow recover`, no `winnow bench`.** `inspect` is milestone 1. Its
+*population* lands where SPEC §6's method says it should — 174 sessions over 400 KB of message
+content, 129.6 MB pooled, against a recorded 161 and 120.1 MB one day earlier — so the denominator is
+not the disagreement. Its *rule shares* come in 12.4 points under at tier CB, and milestone 1 was
+built to be allowed to say that ([docs/COZEMPIC.md](docs/COZEMPIC.md) §3.4). Every other number the
+documents cite as measured still comes from analysis scripts in earlier work.
+
+```sh
+python -m winnow inspect <session-id>            # composition readout, writes nothing
+python -m winnow inspect <session-id> --json     # machine-readable, for a corpus sweep
+python -m winnow inspect <session-id> --tier CBA # include the opt-in tier in the arithmetic
+```
 
 ## Orchestrator-safe mode
 

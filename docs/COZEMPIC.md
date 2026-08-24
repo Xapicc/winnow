@@ -369,7 +369,125 @@ different predicate from no-inflation: a prune that removes 20 MB and adds 21 MB
 ratio test on what it removed. `safety.py`'s nine invariants do not compare sizes, so nothing
 structurally forbids the inflating case. Open on both sides, and cheap to close on either.
 
-### 3.3 Where Q1 to Q6 stand
+### 3.3 The vendor pays the same cost, documents it, and ships a knob that cannot express it
+
+[DECISIONS.md](DECISIONS.md) §D1 inferred that `clear_at_least` exists because clearing breaks the
+cache. The inference was right and is now quotable rather than inferred.
+`platform.claude.com/docs/en/build-with-claude/context-editing.md`, fetched 2026-08-24:
+
+> **Tool result clearing:** Invalidates cached prompt prefixes when content is cleared. To account
+> for this, clear enough tokens to make the cache invalidation worthwhile. Use the `clear_at_least`
+> parameter to ensure a minimum number of tokens is cleared each time. You'll incur cache write costs
+> each time content is cleared, but subsequent requests can reuse the newly cached prefix.
+
+and on the parameter itself: *"This helps determine if context clearing is worth breaking your prompt
+cache."* Server-side clearing is not an escape from `1.9·S − 2·D`. It pays it and says so.
+
+**The knob is in the wrong units, and that is the finding.** `clear_at_least` is denominated in *D*
+alone — tokens removed. The break-even is `T* = 19·(S/D) − 20`, which depends on the ratio.
+`clear_at_least: 5000` against a 50K-token suffix needs 170 further turns; the same 5,000 against a
+10K suffix needs 18. One value cannot be correct for both, and nothing in the configuration carries
+*S*. There is also no timing dimension anywhere in it: no TTL, no cache age, no cold-boundary
+predicate, and a default `trigger` of 100,000 input tokens, which fires **mid-session on a warm
+cache** — the worst case in the arithmetic and the one D1 refuses. Winnow's D1 has no counterpart in
+the feature.
+
+Two smaller readings from the same page, both useful:
+
+- *"Context editing is applied server-side before the prompt reaches Claude. Your client application maintains the full, unmodified conversation history."* The client keeps the originals, so SPEC §7's route 3 comes free with the vendor's own strategy.
+- Thinking-block clearing is the contrast case: kept blocks **preserve** the cache, cleared blocks invalidate it "at the point where clearing occurs". One feature, two caching profiles.
+
+This narrows SPEC §2's claim and strengthens it. It is no longer "no tool reports the netted cost":
+the vendor acknowledges the cost, declines to compute it, and ships a control that cannot express the
+condition it exists to enforce.
+
+### 3.4 SPEC §6's B1 does not reproduce, and the reason is a rule the spec does not specify
+
+`winnow inspect` (milestone 1) now exists and was run over this operator's whole corpus on
+2026-08-24: 640 main-session transcripts, of which **174 carry more than 400 KB of message content**,
+pooling **129,626,194 bytes**. SPEC §6's population was 161 sessions and 120,090,336 bytes, so the
+denominator reproduces and the method matches; what follows is not a measurement artefact.
+
+| Rule | SPEC §6 | Measured | Delta |
+| --- | ---: | ---: | ---: |
+| C1 locator | 0.00% | 0.004% | +0.00 |
+| C2 duplicate | 2.78% | 2.09% | −0.69 |
+| C3 passing verification | 0.72% | 0.27% | −0.45 |
+| **B1 superseded read** | **9.82%** | **1.16%** | **−8.66** |
+| B2 Bash inspection | 9.29% | 7.75% | −1.54 |
+| A1 read then written | 7.06% | 8.69% | +1.63 |
+
+| Tier | SPEC pooled / median | Measured pooled / median |
+| --- | ---: | ---: |
+| C | 3.5% / 1.0% | 2.36% / 0.00% |
+| C+B | **22.6% / 21.6%** | **10.17% / 8.75%** |
+| C+B+A | 29.7% / 30.1% | 18.83% / 18.57% |
+
+**Tier CB misses SPEC §9's ±3-point reproduction criterion by 12.4 points, and B1 is 8.7 of them.**
+The rest are within the band or close to it.
+
+The cause is exact. Re-run with B1 keyed on `file_path` alone — ignoring the coverage clause SPEC §4
+writes into the rule, *"a ranged read is superseded only by a read that provably covers its range"* —
+and B1 measures **9.318%**, against the 9.82% recorded. **SPEC §6's number was measured with a looser
+rule than SPEC §4 specifies.** The two halves of the same document disagree, and §6 is the half that
+is wrong: 87.6% of the path-only mass is a read no later read covers — a different window of the same
+file, complemented rather than superseded, whose bytes exist nowhere else once removed.
+
+SPEC §5.6 already contained the contradiction and it was not noticed: *"Verbatim re-reads are only
+0.3% of tool-result bytes"*. B1 is the re-read rule. It cannot be 9.82% of message content and 0.3%
+of tool-result bytes at once. The measured 1.16% of message content is 1.8% of tool-result bytes,
+which is the same order as §5.6 and consistent with C2 taking the byte-identical re-reads first.
+
+This is an independent confirmation of `79dd165`, reached from the other direction. That commit
+measured the two legacy re-read strategies through `run_prescription` and reported "SPEC §6's 9.82%
+for B1 does not reproduce here"; this is a fresh implementation of SPEC §4's rule text against the
+same corpus, and it agrees.
+
+**The result is stable, not an artefact of a few large sessions.** Sessions last written after SPEC
+was authored are genuinely held out from the rule-writing: those 23 sessions give tier CB at 13.04%
+pooled, against 9.68% for the 151 that could have informed it — both far from 22.6%. A deterministic
+hash split gives 10.98% and 9.56%. Concentration is low: the largest single session is 4.1% of all
+tier-CB bytes, the top five are 15.1%, and B2 fires in 164 of 174 sessions with the largest carrying
+2% of its total. The exception is B1 itself, which now fires in only **9 of 174 sessions** — too few
+to plan against in either direction.
+
+Two things the same run settled that were previously assumptions:
+
+- **The write class is measured, not assumed.** Across the corpus, `cache_creation.ephemeral_1h_input_tokens` is 364,838,776 and `ephemeral_5m_input_tokens` is **0**. The 2.0× multiplier in §3.1 holds on this install at a larger sample than the 26,194 turns it was taken from.
+- **Sub-agent transcripts are on disk now, and SPEC §3 says they are not.** The corpus holds 1,328 `*.jsonl` files, of which only 640 are main sessions; the other 688 live in `<session-id>/subagents/` directories that did not exist when SPEC measured "0 sidechain records in 563 transcripts". The claim was true of the format it was written against. Nothing in `inspect` reads them — the population above is main sessions only — but "not in the file" is no longer the reason.
+
+Parser health over all 640: **0 unparseable lines, 3,665 unrecognised records** (record types added
+since SPEC, counted and reported rather than dropped), and **5 unanswered `tool_use` blocks out of
+48,471** — SPEC §4 measured 5 out of 42,966, so the pairing claim holds exactly.
+
+**The netting, which is the number the project was opened for.** Every share above is a ceiling on
+the mechanism. Netted per session — `0.1·D` earned on each assistant turn that actually followed the
+cut, against `1.9·S − 2·D` paid once — over the 175 sessions in the population at the time of this
+run:
+
+| Tier | Median `S/D` | Median `T*` | Median turns that followed | Paid off |
+| --- | ---: | ---: | ---: | ---: |
+| CB | 10.6 | 182 turns | 224 | **97 of 168 (58%)** |
+| CBA | 4.7 | 69 turns | 223 | 148 of 175 (85%) |
+
+Summed at tier CB: **$460.68 earned back against $246.22 paid, a net of $214.46** — against
+**$6,551.64** actually billed on those sessions, so **+3.27% of the bill.** SPEC §9's milestone-3
+target is a **15%** reduction in cache-adjusted cost per successful task.
+
+Three reasons that 3.27% is an optimistic bound and not a result:
+
+1. It prunes every session at its own earliest strippable result, so the entire session is still ahead of the cut. Any real cut is later and earns less.
+2. It uses SPEC §6's bytes÷4 token estimate on both sides. The estimate cancels inside `S/D` but not in the dollar figure.
+3. It prices no quality cost at all. That is milestone 3, and nothing here substitutes for it.
+
+The honest reading: **the mechanism nets positive and is about a fifth of the size the project set out
+to find.** A trap avoided in producing it, recorded because it is the natural first attempt and it is
+wrong by a factor of thousands: `cache_read_input_tokens` summed over a session is a *per-turn*
+quantity — every turn re-reads the whole prefix — and the bytes a rule removes are *one-time*.
+Dividing one by the other compares different units. `T*` is what nets them, which is the reason the
+formula rather than a token share is the deliverable.
+
+### 3.5 Where Q1 to Q6 stand
 
 [DECISIONS.md](DECISIONS.md) §6's six open questions are unaffected by the merge, with two updates.
 Q1 (is the cache actually cold at a typical resume?) is unchanged as the falsification test and

@@ -19,6 +19,7 @@ import json
 import sys
 from pathlib import Path
 
+from . import inspect as inspect_mod
 from . import orchestrator_safe as safe
 
 EXIT_OK = 0
@@ -244,32 +245,86 @@ def add_safe_subparser(sub: argparse._SubParsersAction) -> None:
     p_pc.set_defaults(func=cmd_post_compact)
 
 
+def cmd_inspect(args: argparse.Namespace) -> int:
+    from .report import inspect_command
+
+    code, output = inspect_command(
+        session=args.session,
+        tier=args.tier,
+        keep_last=args.keep_last,
+        min_bytes=args.min_bytes,
+        as_json=args.json,
+    )
+    print(output, file=sys.stderr if code == EXIT_USAGE else sys.stdout)
+    return code
+
+
+def add_inspect_subparser(sub) -> None:
+    """Register `winnow inspect` (SPEC §8).
+
+    Its own group rather than a member of `safe`, because it is not part of
+    orchestrator-safe mode: it has no write path at all, so there is nothing for
+    that mode to withhold and no reason to make an operator set an environment
+    variable to read their own transcript.
+    """
+    p = sub.add_parser(
+        "inspect",
+        help="composition readout for one session; writes nothing",
+        description="Read a session transcript and report what it is carrying, "
+                    "what SPEC §4's rules would replace, and whether the cache "
+                    "arithmetic says replacing it pays. Writes nothing, anywhere.",
+    )
+    p.add_argument("session", help="session ID, path, or unambiguous ID prefix")
+    p.add_argument(
+        "--tier", choices=("C", "CB", "CBA"), default="CB",
+        help="which rule tiers the arithmetic is computed for (default: CB)",
+    )
+    p.add_argument(
+        "--keep-last", type=int, default=inspect_mod.DEFAULT_KEEP_LAST,
+        metavar="N", help="guard G1: never strip the last N tool results",
+    )
+    p.add_argument(
+        "--min-bytes", type=int, default=inspect_mod.DEFAULT_MIN_BYTES,
+        metavar="N", help="guard G2: never strip a result under N bytes",
+    )
+    p.add_argument("--json", action="store_true", help="machine-readable output")
+    p.set_defaults(func=cmd_inspect)
+
+
 def build_parser() -> argparse.ArgumentParser:
-    """A parser for `winnow safe ...` alone.
+    """A parser for the groups implemented in this tree.
 
     `winnow`'s full parser is `winnow.legacy.cli.build_parser`, which registers
-    this group as well. This one exists so that dispatching `safe` never has to
-    build the inherited parser, whose construction is not the problem but whose
-    `main()` does an update ping and an auto-init before it parses.
+    the safe group as well. This one exists so that dispatching `safe` or
+    `inspect` never has to build the inherited parser, whose construction is not
+    the problem but whose `main()` does an update ping and an auto-init before it
+    parses — and an auto-init writes to `~/.claude`, which a read-only command
+    has no business triggering.
     """
     parser = argparse.ArgumentParser(
         prog="winnow",
-        description="winnow — see docs/SPEC.md. Only the orchestrator-safe "
-                    "mode is implemented.",
+        description="winnow — see docs/SPEC.md. Implemented: the "
+                    "orchestrator-safe mode, and `inspect`.",
     )
-    add_safe_subparser(parser.add_subparsers(dest="group", required=True))
+    sub = parser.add_subparsers(dest="group", required=True)
+    add_safe_subparser(sub)
+    add_inspect_subparser(sub)
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    """The `winnow` entry point: the safe group here, everything else inherited."""
-    argv = list(sys.argv[1:] if argv is None else argv)
-    if argv[:1] != ["safe"]:
-        from .legacy.cli import main as legacy_main
+# Groups this tree owns. Everything else falls through to the inherited CLI.
+_OWN_GROUPS = ("safe", "inspect")
 
-        return legacy_main(argv)
-    args = build_parser().parse_args(argv)
-    return args.func(args)
+
+def main(argv: list[str] | None = None) -> int:
+    """The `winnow` entry point: this tree's groups here, everything else inherited."""
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] and argv[0] in _OWN_GROUPS:
+        args = build_parser().parse_args(argv)
+        return args.func(args)
+    from .legacy.cli import main as legacy_main
+
+    return legacy_main(argv)
 
 
 if __name__ == "__main__":

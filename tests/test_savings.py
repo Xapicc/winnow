@@ -3,7 +3,7 @@
 The test that matters most is `test_repeated_result_counts_once`: it writes a ledger
 in which one result recurs across many requests, exactly as the stateless filter
 produces, and fails if the de-dupe is removed. That is the regression test for the
-27.9× overstatement on this operator's live ledger, which is the single error that
+27.2× overstatement on this operator's live ledger, which is the single error that
 would make this whole command wrong by more than an order of magnitude.
 """
 
@@ -50,14 +50,14 @@ def entry(use_id: str | None, size: int = BYTES, tool: str = "Bash",
     return {"tool": tool, "rule": rule, "bytes": size, "tool_use_id": use_id}
 
 
-# ─── The de-dupe, and the 27.9× it prevents ──────────────────────────────────
+# ─── The de-dupe, and the 27.2× it prevents ──────────────────────────────────
 
 
 def test_repeated_result_counts_once(tmp_path):
     """One result re-dropped on 40 requests is one removal of 8,000 bytes.
 
     This fails loudly if the de-dupe is removed: without it the reader would report
-    40 results and 320,000 bytes, which is the shape of the live ledger's 27.9×.
+    40 results and 320,000 bytes, which is the shape of the live ledger's 27.2×.
     """
     path = write_ledger(tmp_path / "filter.jsonl", [
         drop_line(f"req_{i}", [entry("toolu_same")]) for i in range(REPEATS)
@@ -67,7 +67,7 @@ def test_repeated_result_counts_once(tmp_path):
     assert len(read.removals) == 1, "a stateless filter's repeats are not new removals"
     assert read.unique_bytes == BYTES
     # The naive sum is kept only so the readout can show the gap it avoids.
-    assert read.drop_events == REPEATS
+    assert read.removal_events == REPEATS
     assert read.bytes_summed == REPEATS * BYTES
     assert read.bytes_summed / read.unique_bytes == pytest.approx(REPEATS)
     assert read.removals[0].repeats == REPEATS
@@ -104,6 +104,11 @@ def test_deferred_then_dropped_is_one_removal(tmp_path):
     # T is measured from where the result first appeared, not from where it was
     # first stripped: that is the turn the baseline would have cache-written it on.
     assert read.removals[0].request_id == "req_a"
+    # The naive sum has to span the same two kinds the unique set does. Counting
+    # only `dropped` here would report 2 events and 2·D against a 1·D denominator —
+    # a ratio of 2 where the file's own events say 3.
+    assert read.removal_events == 3
+    assert read.bytes_summed == 3 * BYTES
 
 
 def test_distinct_results_are_not_merged(tmp_path):
@@ -172,14 +177,54 @@ def test_a_triple_claimed_by_an_id_blocks_a_later_legacy_line(tmp_path):
     assert read.removals[0].tool_use_id == "toolu_x"
 
 
+def test_every_event_lands_in_exactly_one_bucket(tmp_path):
+    """A removal event is a first sight or a repeat, and malformed is a third bucket.
+
+    Nothing may fall out between them: an entry the reader cannot use has to be
+    counted and named, because a silently discarded event is indistinguishable in the
+    readout from one that was never written.
+    """
+    path = write_ledger(tmp_path / "filter.jsonl", [
+        drop_line("req_a", [entry("toolu_x"), entry(None, size=99)]),
+        drop_line("req_b", [entry("toolu_x"), entry(None, size=99)]),
+        # An id-less echo of a triple already claimed under its id: still a repeat.
+        drop_line("req_c", [{"tool": "Bash", "rule": "B2", "bytes": BYTES}]),
+        {"request_id": "req_d", "model": MODEL, "cache_ttl": "ephemeral_1h",
+         "dropped": [{"tool": "Bash", "rule": "B2"}, "not-a-dict"], "deferred": [],
+         "bytes_dropped": 0, "bytes_deferred": 0, "tool_results_seen": 2},
+    ])
+    read = savings.read_ledger(path)
+
+    assert read.malformed_entries == 2
+    assert len(read.removals) == 2, "one id-bearing result and one id-less one"
+    assert sum(r.repeats for r in read.removals) == 5
+    assert read.events == 7, "five usable entries plus the two malformed ones"
+
+
+def test_buckets_account_for_every_unique_removal(tmp_path):
+    projects = tmp_path / "projects" / "proj"
+    projects.mkdir(parents=True)
+    _transcript(projects / "sess.jsonl", [
+        _assistant("req_a", ephemeral_1h_input_tokens=1000,
+                   cache_creation_input_tokens=1000),
+    ])
+    ledger = write_ledger(tmp_path / "filter.jsonl", [
+        drop_line("req_a", [entry("toolu_x")]),
+        drop_line("req_gone", [entry("toolu_y")]),
+        drop_line("req_a", [entry("toolu_z")], model="claude-not-a-real-model"),
+    ])
+    result = savings.compute(ledger, tmp_path / "projects")
+    excluded = sum(count for count, _bytes in result.exclusions.values())
+
+    assert len(result.counted) + excluded == len(result.priced) == 3
+
+
 def test_no_model_is_excluded_never_guessed(tmp_path, monkeypatch):
     path = write_ledger(tmp_path / "filter.jsonl", [
         drop_line("req_a", [entry("toolu_x")], model="claude-not-a-real-model"),
     ])
     requests = {"req_a": savings.RequestFacts(
-        session_id="s", turn_index=0, turns_after=10, model=None,
-        prefix_bytes=1_000, cache_read=100,
-    )}
+        session_id="s", turn_index=0, turns_after=10, model=None)}
     sessions = {"s": savings.SessionFacts(path=tmp_path / "s.jsonl", session_id="s")}
     priced = savings._price(savings.read_ledger(path).removals[0], requests, sessions)
 
@@ -197,9 +242,7 @@ def _priced(ttl: str, turns_after: int, size: int = 1_000_000) -> savings.Priced
         tool_use_id="toolu_x", model=MODEL, ttl=ttl, first_kind="dropped",
     )
     facts = savings.RequestFacts(
-        session_id="s", turn_index=0, turns_after=turns_after, model=MODEL,
-        prefix_bytes=size, cache_read=size // 4,
-    )
+        session_id="s", turn_index=0, turns_after=turns_after, model=MODEL)
     session = savings.SessionFacts(path=Path("s.jsonl"), session_id="s")
     return savings._price(removal, {"req_a": facts}, {"s": session})
 
@@ -245,9 +288,7 @@ def test_ledger_ttl_beats_the_session_write_class():
     session = savings.SessionFacts(path=Path("s.jsonl"), session_id="s")
     session.usage.ephemeral_1h = 500_000  # the session paid 1h; this request did not
     facts = savings.RequestFacts(
-        session_id="s", turn_index=0, turns_after=0, model=MODEL,
-        prefix_bytes=1, cache_read=1,
-    )
+        session_id="s", turn_index=0, turns_after=0, model=MODEL)
     priced = savings._price(removal, {"req_a": facts}, {"s": session})
 
     assert priced.write_multiplier == pytest.approx(savings.WRITE_5M)
@@ -261,13 +302,52 @@ def test_legacy_line_falls_back_to_the_session_write_class():
     session = savings.SessionFacts(path=Path("s.jsonl"), session_id="s")
     session.usage.ephemeral_1h = 500_000
     facts = savings.RequestFacts(
-        session_id="s", turn_index=0, turns_after=0, model=MODEL,
-        prefix_bytes=1, cache_read=1,
-    )
+        session_id="s", turn_index=0, turns_after=0, model=MODEL)
     priced = savings._price(removal, {"req_a": facts}, {"s": session})
 
     assert priced.model == MODEL, "the joined turn names the model the ledger did not"
     assert priced.write_multiplier == pytest.approx(savings.WRITE_1H)
+
+
+def test_a_mixed_session_reaches_the_output_as_mixed(tmp_path):
+    """§3.1's error was a write class assumed rather than read. A blend is neither
+    2.0× nor 1.25×, and the readout must not call it either one."""
+    removal = savings.Removal(
+        tool="Bash", rule="B2", bytes=1_000_000, request_id="req_a",
+        tool_use_id=None, model=None, ttl=None, first_kind="dropped",
+    )
+    session = savings.SessionFacts(path=Path("s.jsonl"), session_id="s")
+    session.usage.ephemeral_1h = 300_000
+    session.usage.ephemeral_5m = 100_000
+    facts = savings.RequestFacts(
+        session_id="s", turn_index=0, turns_after=0, model=MODEL)
+    priced = savings._price(removal, {"req_a": facts}, {"s": session})
+
+    assert priced.write_class == "mixed"
+    # (300k·2.0 + 100k·1.25) / 400k
+    assert priced.write_multiplier == pytest.approx(1.8125)
+
+    result = savings.Savings(
+        ledger=savings.LedgerRead(path=tmp_path / "filter.jsonl"),
+        projects_dir=tmp_path,
+        priced=[priced],
+    )
+    assert result.write_classes == {"mixed ×1.81": 1}
+    assert "mixed ×1.81" in report.render_savings(result)
+
+
+def test_the_readout_names_the_five_minute_class_when_that_is_what_was_paid(tmp_path):
+    priced = _priced("ephemeral_5m", turns_after=0)
+    result = savings.Savings(
+        ledger=savings.LedgerRead(path=tmp_path / "filter.jsonl"),
+        projects_dir=tmp_path,
+        priced=[priced],
+    )
+    rendered = report.render_savings(result)
+
+    assert priced.write_class == "5m"
+    assert "5m ×1.25" in rendered
+    assert "1h ×2.00" not in rendered, "the class it did not pay must not appear"
 
 
 def test_no_ttl_anywhere_is_excluded_with_a_reason():
@@ -277,9 +357,7 @@ def test_no_ttl_anywhere_is_excluded_with_a_reason():
     )
     session = savings.SessionFacts(path=Path("s.jsonl"), session_id="s")
     facts = savings.RequestFacts(
-        session_id="s", turn_index=0, turns_after=0, model=MODEL,
-        prefix_bytes=1, cache_read=1,
-    )
+        session_id="s", turn_index=0, turns_after=0, model=MODEL)
     priced = savings._price(removal, {"req_a": facts}, {"s": session})
 
     assert priced.excluded is not None
@@ -287,37 +365,23 @@ def test_no_ttl_anywhere_is_excluded_with_a_reason():
     assert priced.dollars == 0.0
 
 
-# ─── Calibration ─────────────────────────────────────────────────────────────
+# ─── Tokens ──────────────────────────────────────────────────────────────────
 
 
-def test_calibration_recovers_the_marginal_rate_not_the_ratio():
-    """tokens = bytes/3 + 20,000 fixed overhead. The slope is 3, the ratio is not.
+def test_every_result_uses_the_spec_estimate(tmp_path):
+    """One rate for everything, and it is SPEC §6's ÷4 (COZEMPIC §3.5.2).
 
-    The 20,000 is the system prompt and the tool schemas, which are in
-    `cache_read_input_tokens` and not in the message-content bytes. A plain ratio
-    would report ~2.3 bytes/token here and inflate every D by 30%.
+    The per-session least-squares calibration this replaced regressed
+    `cache_read_input_tokens` on on-disk message bytes — two spans that are not the
+    same content — and on the ledger it was built against it fired on exactly one
+    session, inflating that session's D by 1.55×. A rate that moves with how many
+    requests happened to be sampled is not a measurement of a tokenizer.
     """
-    points = [(b, int(b / 3) + 20_000) for b in (300_000, 600_000, 900_000, 1_200_000)]
-    bytes_per_token, used = savings._calibrate(points)
+    assert savings.DEFAULT_BYTES_PER_TOKEN == 4.0
+    assert not hasattr(savings, "_calibrate"), "the fit was withdrawn, not disabled"
 
-    assert used == 4
-    assert bytes_per_token == pytest.approx(3.0, rel=1e-3)
-    naive = sum(b for b, _ in points) / sum(t for _, t in points)
-    assert naive < bytes_per_token, "the ratio the fit exists to avoid"
-    assert bytes_per_token / naive > 1.05, "and it is off by enough to matter"
-
-
-def test_calibration_needs_three_points():
-    assert savings._calibrate([(1000, 250), (2000, 500)]) == (4.0, 0)
-    assert savings._calibrate([]) == (4.0, 0)
-
-
-def test_implausible_fit_falls_back_to_the_spec_estimate():
-    """A fit of noise is not a measurement. Outside any real tokenizer, ÷4 stands."""
-    bytes_per_token, used = savings._calibrate([(100, 900), (200, 1800), (300, 2700)])
-
-    assert used == 0
-    assert bytes_per_token == savings.DEFAULT_BYTES_PER_TOKEN
+    priced = _priced("ephemeral_1h", turns_after=0, size=1_000_000)
+    assert priced.tokens == pytest.approx(250_000)
 
 
 # ─── The join, end to end ────────────────────────────────────────────────────
@@ -384,6 +448,51 @@ def test_T_is_capped_at_the_next_compact_boundary(tmp_path):
     result = savings.compute(ledger, tmp_path / "projects")
 
     assert result.priced[0].turns_after == 2, "not 22 — the boundary ends the cache"
+
+
+def test_a_split_response_is_one_turn_not_three(tmp_path):
+    """Claude Code writes one API response as one record per content-block group.
+
+    Every record carries the same `requestId` *and the same `message.usage`*, so a
+    reader that walks records counts one response's cache read three times and calls
+    it three turns. `T` is a count of cache reads and a response is read from cache
+    once. Six requests here, each split three ways: T is 5, not 17.
+    """
+    projects = tmp_path / "projects" / "proj"
+    projects.mkdir(parents=True)
+    records = []
+    for i in range(6):
+        rid = "req_hit" if i == 0 else f"req_{i}"
+        usage = ({"ephemeral_1h_input_tokens": 1000, "cache_creation_input_tokens": 1000}
+                 if i == 0 else {})
+        records += [_assistant(rid, **usage) for _ in range(3)]
+    _transcript(projects / "sess.jsonl", records)
+
+    ledger = write_ledger(tmp_path / "filter.jsonl", [
+        drop_line("req_hit", [entry("toolu_x", size=40_000)]),
+    ])
+    result = savings.compute(ledger, tmp_path / "projects")
+
+    assert result.sessions["sess"].turns == 6
+    assert result.sessions["sess"].records == 18
+    assert result.priced[0].turns_after == 5, "five requests after, not seventeen records"
+
+
+def test_the_bill_counts_a_split_response_once(tmp_path):
+    """The same units error on the denominator: identical usage on every record."""
+    projects = tmp_path / "projects" / "proj"
+    projects.mkdir(parents=True)
+    _transcript(projects / "sess.jsonl", [
+        _assistant("req_hit", input_tokens=1_000_000, output_tokens=0,
+                   cache_creation_input_tokens=0)
+        for _ in range(4)
+    ])
+    ledger = write_ledger(tmp_path / "filter.jsonl", [
+        drop_line("req_hit", [entry("toolu_x", size=4_000)]),
+    ])
+    bill, _sessions, _unpriced = savings.compute(ledger, tmp_path / "projects").bill()
+
+    assert bill == pytest.approx(5.0), "one request of 1M tokens at $5/MTok, not four"
 
 
 def test_unjoined_lines_are_reported_with_a_reason(tmp_path):

@@ -304,7 +304,7 @@ def _entry(block: dict, name: str, rule: str, size: int) -> dict:
     `tool_use_id` is the whole reason this is a function. The filter is stateless, so
     it re-drops the same result on every later request that still carries it, and a
     ledger without an identity for the result cannot tell one removal from its own
-    echo — summing `bytes_dropped` over lines overstated this operator's by 27.9×.
+    echo — summing `bytes_dropped` over lines overstated this operator's by 27.2×.
     See `savings.py`.
     """
     use_id = block.get("tool_use_id")

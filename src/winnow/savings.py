@@ -9,10 +9,11 @@ question, and only that one: since the proxy was switched on, what did it do *he
 by design (`filter.py`): it recomputes its decision from each request body, so it
 re-drops the same tool result on every later request that still carries it. Summing
 `bytes_dropped` over ledger lines therefore counts one removal **once per surviving
-request**. On this operator's live ledger that is 889 drop events and 5,484,366 bytes
-against 34 distinct results and 196,374 unique bytes — a **27.9× overstatement**. It
+request**. On this operator's live ledger that is 1,283 drop events and 6,852,653 bytes
+against 49 distinct results and 251,894 unique bytes — a **27.2× overstatement**. It
 is the units error COZEMPIC §3.4 records for the pruner, arriving by a new route: a
-per-turn quantity summed as though it were a one-time one.
+per-turn quantity summed as though it were a one-time one. §3.5.2 records that error
+arriving by a *third* route, in this module, and what removing it moved.
 
 A unique removed result pays the avoided write **once**. Its repeats on later requests
 are not further savings — they *are* the `0.1·D·T` read term, and belong at 0.1, not
@@ -23,7 +24,10 @@ appears as `deferred` on one request and `dropped` on the next is one removal, n
 
     baseline   W·D (one cache write) + 0.1·D·T (a read on every later turn)
     filtered   1.0·D (one uncached turn, then gone)
-    saving     1.0·D + 0.1·D·T,  no break-even term
+    saving     (W − 1.0)·D + 0.1·D·T,  no break-even term
+
+which is §3.5's `saving 1.0·D + 0.1·D·T` at the 2.0× write class, and 0.25·D on the
+write term at the 1.25× one. `T` counts **API requests, not assistant records**.
 
 `W` is 2.0 for a 1h write and 1.25 for a 5m one, and it is **read** — from the TTL the
 ledger recorded as in force on the request, or failing that from the write class the
@@ -46,7 +50,7 @@ import statistics
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .inspect import Usage, _inner, _input_size, _read_usage, _result_size
+from .inspect import Usage, _inner, _read_usage
 from .legacy.session import load_messages
 
 DEFAULT_LEDGER = Path.home() / ".winnow" / "filter.jsonl"
@@ -82,9 +86,14 @@ WRITE_1H = 2.0
 WRITE_5M = 1.25
 CACHE_READ = 0.1
 
-# SPEC §6's estimate, and the fallback when a session gives nothing to calibrate
-# against. COZEMPIC §3.4 lists it as one of three reasons the 3.27% figure is an
-# optimistic bound, so where the join affords a measurement it is preferred.
+# SPEC §6's estimate, and the only bytes→tokens rate used here. A per-session
+# least-squares calibration was built and then withdrawn; COZEMPIC §3.5.2 is the
+# record. It regressed `cache_read_input_tokens` on on-disk message-content bytes,
+# and those are not the same span: the cache read is whatever matched up to the last
+# breakpoint, the bytes are every message ever written, and only the former resets at
+# a compact boundary. Across this install's seven joined sessions the fitted rate ran
+# from -8.4 to +40.6 bytes/token, and the guard band admitted the one fit with the
+# fewest points while rejecting the tightest ones.
 DEFAULT_BYTES_PER_TOKEN = 4.0
 
 # A dated alias prices identically to its undated one; the suffix is a release date,
@@ -116,7 +125,7 @@ class Removal:
     model: str | None
     ttl: str | None
     first_kind: str  # "deferred" or "dropped", whichever the result appeared as first
-    repeats: int = 1  # ledger entries collapsed into this one; the 27.9×, per result
+    repeats: int = 1  # ledger entries collapsed into this one; the 27.2×, per result
 
 
 @dataclass
@@ -126,16 +135,30 @@ class LedgerRead:
     path: Path
     lines: int = 0
     parse_errors: int = 0
-    drop_events: int = 0
+    # Both counters span `dropped` and `deferred`, because `removals` does. A naive
+    # sum taken over one kind and compared against unique results drawn from both
+    # is a mixed-basis ratio, and understates the very gap it exists to show.
+    removal_events: int = 0
     bytes_summed: int = 0  # the naive sum, kept only so the readout can show the gap
     legacy_lines: int = 0  # lines predating `tool_use_id`, de-duped on the fallback
     lines_without_model: int = 0
     lines_without_ttl: int = 0
+    malformed_entries: int = 0  # entries with no usable size; counted, never silent
     removals: list[Removal] = field(default_factory=list)
 
     @property
     def unique_bytes(self) -> int:
         return sum(r.bytes for r in self.removals)
+
+    @property
+    def events(self) -> int:
+        """Every removal event the file described, malformed ones included.
+
+        The invariant the readout rests on: one event is either the first sight of a
+        result or a repeat of one already counted, and nothing is a third thing.
+        `test_every_event_lands_in_exactly_one_bucket` is the guard.
+        """
+        return sum(r.repeats for r in self.removals) + self.malformed_entries
 
 
 def read_ledger(path: Path) -> LedgerRead:
@@ -152,7 +175,7 @@ def read_ledger(path: Path) -> LedgerRead:
     read = LedgerRead(path=path)
     seen_ids: set[str] = set()
     seen_triples: set[tuple[str, str, int]] = set()
-    claimed_triples: set[tuple[str, str, int]] = set()
+    claimed_triples: dict[tuple[str, str, int], Removal] = {}
     by_id: dict[str, Removal] = {}
     by_triple: dict[tuple[str, str, int], Removal] = {}
 
@@ -186,17 +209,18 @@ def read_ledger(path: Path) -> LedgerRead:
                     continue
                 for entry in entries:
                     if not isinstance(entry, dict):
+                        read.malformed_entries += 1
                         continue
                     size = entry.get("bytes")
                     if not isinstance(size, int) or isinstance(size, bool):
+                        read.malformed_entries += 1
                         continue
                     tool = entry.get("tool") if isinstance(entry.get("tool"), str) else ""
                     rule = entry.get("rule") if isinstance(entry.get("rule"), str) else ""
                     use_id = entry.get("tool_use_id")
                     use_id = use_id if isinstance(use_id, str) and use_id else None
-                    if kind == "dropped":
-                        read.drop_events += 1
-                        read.bytes_summed += size
+                    read.removal_events += 1
+                    read.bytes_summed += size
                     if use_id is None:
                         legacy = True
 
@@ -206,13 +230,16 @@ def read_ledger(path: Path) -> LedgerRead:
                             by_id[use_id].repeats += 1
                             continue
                         seen_ids.add(use_id)
-                        claimed_triples.add(triple)
                     else:
                         if triple in seen_triples:
                             by_triple[triple].repeats += 1
                             continue
-                        if triple in claimed_triples:
-                            continue  # already counted under its id; see the docstring
+                        claimant = claimed_triples.get(triple)
+                        if claimant is not None:
+                            # Already counted under its id. It is still a repeat, and
+                            # a repeat that vanished here would break `events`.
+                            claimant.repeats += 1
+                            continue
                         seen_triples.add(triple)
 
                     removal = Removal(
@@ -222,38 +249,13 @@ def read_ledger(path: Path) -> LedgerRead:
                     read.removals.append(removal)
                     if use_id is not None:
                         by_id[use_id] = removal
+                        claimed_triples.setdefault(triple, removal)
                     else:
                         by_triple[triple] = removal
 
             if legacy:
                 read.legacy_lines += 1
     return read
-
-
-def ledger_dropped_bytes(path: Path) -> dict[str, int]:
-    """`request_id → bytes_dropped`, for the calibration's prefix correction.
-
-    The transcript still holds every byte the API never saw (COZEMPIC §3.5), so a
-    request's on-disk prefix overstates the one that was actually cached by exactly
-    what the filter took off it.
-    """
-    dropped: dict[str, int] = {}
-    with path.open(encoding="utf-8", errors="replace") as handle:
-        for raw in handle:
-            raw = raw.strip()
-            if not raw:
-                continue
-            try:
-                line = json.loads(raw)
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(line, dict):
-                continue
-            request_id = line.get("request_id")
-            size = line.get("bytes_dropped")
-            if isinstance(request_id, str) and isinstance(size, int):
-                dropped[request_id] = dropped.get(request_id, 0) + size
-    return dropped
 
 
 # ─── The join, against Claude Code's own transcripts ─────────────────────────
@@ -264,49 +266,19 @@ class RequestFacts:
     """What the transcript knows about one filtered request."""
 
     session_id: str
-    turn_index: int  # 0-based position among billable assistant turns
+    turn_index: int  # 0-based position among billable API requests
     turns_after: int  # T, capped at the next compact boundary
     model: str | None
-    prefix_bytes: int
-    cache_read: int
 
 
 @dataclass
 class SessionFacts:
     path: Path
     session_id: str
-    turns: int = 0
+    turns: int = 0  # billable API requests, not assistant records; see read_session
+    records: int = 0  # assistant records, kept only so the gap between the two shows
     usage: Usage = field(default_factory=Usage)
     usage_by_model: dict[str, Usage] = field(default_factory=dict)
-    bytes_per_token: float = DEFAULT_BYTES_PER_TOKEN
-    calibrated: bool = False
-    calibration_points: int = 0
-
-
-def _record_content_bytes(record: dict) -> int:
-    """Message-content bytes on one record, measured exactly as `inspect` measures
-    them, so a prefix here and an `S` there are the same quantity."""
-    content = _inner(record).get("content")
-    if isinstance(content, str):
-        return len(content)
-    if not isinstance(content, list):
-        return 0
-    total = 0
-    for block in content:
-        if not isinstance(block, dict):
-            continue
-        btype = block.get("type")
-        if btype == "tool_result":
-            total += _result_size(block.get("content"))
-        elif btype == "tool_use":
-            total += _input_size(block.get("input"))
-        elif btype == "text":
-            text = block.get("text")
-            total += len(text) if isinstance(text, str) else 0
-        elif btype == "thinking":
-            thinking = block.get("thinking")
-            total += len(thinking) if isinstance(thinking, str) else 0
-    return total
 
 
 def find_transcripts(projects_dir: Path, wanted: set[str]) -> dict[str, Path]:
@@ -334,14 +306,27 @@ def find_transcripts(projects_dir: Path, wanted: set[str]) -> dict[str, Path]:
     return found
 
 
-def read_session(path: Path, wanted: set[str], dropped: dict[str, int]) -> tuple[
+def read_session(path: Path, wanted: set[str]) -> tuple[
     SessionFacts, dict[str, RequestFacts]
 ]:
-    """One pass over a transcript: usage, turn positions, and the prefix at each hit."""
+    """One pass over a transcript: usage and turn positions, counted per API request.
+
+    **One API request is one turn, however many records it left behind.** Claude Code
+    writes an assistant response as one record per content-block group — text, then
+    each `tool_use` — and stamps *every* one of them with the same `requestId` and the
+    same `message.usage`. On this install that is 1.7 to 2.4 records per request. A
+    reader that walks records therefore counts each response's usage two or three
+    times and calls each of them a turn, which inflates the bill and the `0.1·D·T`
+    read term alike. `T` is a count of *cache reads*, and a response is read from
+    cache once. This is COZEMPIC §3.4's units error a third time over, so the first
+    record of a request is taken and the continuations are skipped.
+
+    A record with no `requestId` cannot be attributed and is counted on its own.
+    """
     facts = SessionFacts(path=path, session_id=path.stem)
-    hits: dict[str, tuple[int, int, str | None, int]] = {}  # id → (turn, prefix, model, read)
+    hits: dict[str, tuple[int, str | None]] = {}  # request_id → (turn index, model)
     boundaries: list[int] = []  # billable turns seen when each compact boundary passed
-    cumulative = 0
+    seen_requests: set[str] = set()
 
     for _line_index, record, _raw in load_messages(path):
         if record.get("_parse_error"):
@@ -350,79 +335,36 @@ def read_session(path: Path, wanted: set[str], dropped: dict[str, int]) -> tuple
         if record.get("subtype") == "compact_boundary" or rtype == "compact_boundary":
             boundaries.append(facts.turns)
 
-        if rtype == "assistant":
-            inner = _inner(record)
-            model = normalise_model(inner.get("model"))
-            usage = inner.get("usage")
-            billable = inner.get("model") != "<synthetic>" and isinstance(usage, dict)
-            if billable:
-                request_id = record.get("requestId")
-                if isinstance(request_id, str) and request_id in wanted:
-                    cache_read = usage.get("cache_read_input_tokens")
-                    cache_read = cache_read if isinstance(cache_read, int) else 0
-                    # The prefix the API actually cached is the on-disk one minus what
-                    # the filter took off this very request.
-                    hits[request_id] = (
-                        facts.turns,
-                        cumulative - dropped.get(request_id, 0),
-                        model,
-                        cache_read,
-                    )
-                _read_usage(record, facts.usage)
-                if model:
-                    _read_usage(record, facts.usage_by_model.setdefault(model, Usage()))
-                facts.turns += 1
-        cumulative += _record_content_bytes(record)
-
-    facts.bytes_per_token, facts.calibration_points = _calibrate(
-        [(prefix, read) for _turn, prefix, _model, read in hits.values()]
-    )
-    facts.calibrated = facts.calibration_points > 0
+        if rtype != "assistant":
+            continue
+        inner = _inner(record)
+        usage = inner.get("usage")
+        if inner.get("model") == "<synthetic>" or not isinstance(usage, dict):
+            continue
+        facts.records += 1
+        request_id = record.get("requestId")
+        if isinstance(request_id, str):
+            if request_id in seen_requests:
+                continue  # a continuation of a response already counted
+            seen_requests.add(request_id)
+            if request_id in wanted:
+                hits[request_id] = (facts.turns, normalise_model(inner.get("model")))
+        model = normalise_model(inner.get("model"))
+        _read_usage(record, facts.usage)
+        if model:
+            _read_usage(record, facts.usage_by_model.setdefault(model, Usage()))
+        facts.turns += 1
 
     resolved: dict[str, RequestFacts] = {}
-    for request_id, (turn, prefix, model, cache_read) in hits.items():
+    for request_id, (turn, model) in hits.items():
         horizon = next((b for b in boundaries if b > turn), facts.turns)
         resolved[request_id] = RequestFacts(
             session_id=facts.session_id,
             turn_index=turn,
             turns_after=max(0, horizon - turn - 1),
             model=model,
-            prefix_bytes=prefix,
-            cache_read=cache_read,
         )
     return facts, resolved
-
-
-def _calibrate(points: list[tuple[int, int]]) -> tuple[float, int]:
-    """Marginal bytes per token, by least squares over (prefix bytes, cache read).
-
-    A plain `bytes / tokens` ratio is the obvious thing and it is wrong, optimistically
-    so: `cache_read_input_tokens` covers the system prompt and the tool schemas as well
-    as the messages, while the bytes here are message content only. The ratio would
-    therefore understate bytes-per-token and inflate every `D`. The *intercept* of a
-    fit is that fixed overhead, so the *slope* is the marginal rate — which is the one
-    `D` needs, because a removed tool result is marginal bytes and nothing else.
-
-    Returns `(bytes_per_token, points_used)`; `points_used` is 0 when the sample could
-    not support a fit and SPEC §6's ÷4 stands.
-    """
-    usable = [(float(b), float(t)) for b, t in points if b > 0 and t > 0]
-    xs = {b for b, _ in usable}
-    if len(usable) < 3 or len(xs) < 3:
-        return DEFAULT_BYTES_PER_TOKEN, 0
-    mean_x = sum(b for b, _ in usable) / len(usable)
-    mean_y = sum(t for _, t in usable) / len(usable)
-    variance = sum((b - mean_x) ** 2 for b, _ in usable)
-    if variance <= 0:
-        return DEFAULT_BYTES_PER_TOKEN, 0
-    slope = sum((b - mean_x) * (t - mean_y) for b, t in usable) / variance
-    if slope <= 0:
-        return DEFAULT_BYTES_PER_TOKEN, 0
-    bytes_per_token = 1.0 / slope
-    # A fit that lands outside any plausible tokenizer is a fit of noise, not of text.
-    if not 1.5 <= bytes_per_token <= 12.0:
-        return DEFAULT_BYTES_PER_TOKEN, 0
-    return bytes_per_token, len(usable)
 
 
 # ─── Pricing ─────────────────────────────────────────────────────────────────
@@ -437,8 +379,7 @@ class Priced:
     turns_after: int | None = None
     model: str | None = None
     write_multiplier: float | None = None
-    bytes_per_token: float = DEFAULT_BYTES_PER_TOKEN
-    calibrated: bool = False
+    write_class: str | None = None  # "1h", "5m", "mixed" — never a silent default
     tokens: float = 0.0
     write_dollars: float = 0.0
     read_dollars: float = 0.0
@@ -494,8 +435,20 @@ class Savings:
         return out
 
     @property
-    def calibrated_bytes(self) -> int:
-        return sum(p.removal.bytes for p in self.priced if p.calibrated)
+    def write_classes(self) -> dict[str, int]:
+        """`"1h ×2.00" → results priced at it`. 2.0× against 1.25× is the difference
+        COZEMPIC §3.1 got wrong by about 40%, so which one this install actually paid
+        belongs in the output and not in a constant sentence beside it. A session that
+        wrote in both classes gets its own blended row rather than being rounded into
+        one of them.
+        """
+        out: dict[str, int] = {}
+        for p in self.counted:
+            if p.write_class is None or p.write_multiplier is None:
+                continue
+            label = f"{p.write_class} ×{p.write_multiplier:.2f}"
+            out[label] = out.get(label, 0) + 1
+        return out
 
     def bill(self) -> tuple[float, int, list[str]]:
         """`(dollars, sessions priced, model ids that had no price)`.
@@ -546,12 +499,11 @@ def compute(ledger_path: Path, projects_dir: Path = DEFAULT_PROJECTS) -> Savings
         return result
 
     wanted = {r.request_id for r in read.removals if r.request_id}
-    dropped = ledger_dropped_bytes(ledger_path)
     located = find_transcripts(projects_dir, wanted)
 
     requests: dict[str, RequestFacts] = {}
     for path in sorted(set(located.values())):
-        facts, resolved = read_session(path, wanted, dropped)
+        facts, resolved = read_session(path, wanted)
         result.sessions[facts.session_id] = facts
         requests.update(resolved)
 
@@ -577,8 +529,6 @@ def _price(
     session = sessions[facts.session_id]
     priced.session_id = facts.session_id
     priced.turns_after = facts.turns_after
-    priced.bytes_per_token = session.bytes_per_token
-    priced.calibrated = session.calibrated
 
     # The ledger's own model first: one ledger spans several, and the request body is
     # the only place that says which one this request was actually billed at.
@@ -592,15 +542,20 @@ def _price(
         return priced
 
     priced.write_multiplier = _TTL_MULTIPLIER.get(removal.ttl or "")
-    if priced.write_multiplier is None:
-        both = session.usage.ephemeral_1h + session.usage.ephemeral_5m
-        if not both:
+    if priced.write_multiplier is not None:
+        priced.write_class = "1h" if priced.write_multiplier == WRITE_1H else "5m"
+    else:
+        # `Usage.write_class` is already the read-not-assumed answer inspect gives;
+        # "unknown" here means the session cache-wrote nothing, so there is no
+        # avoided write to price and no class to guess at.
+        priced.write_class = session.usage.write_class
+        if priced.write_class == "unknown":
             priced.excluded = "no cache TTL on the ledger line and none paid in the session"
             return priced
         priced.write_multiplier = _session_multiplier(session.usage, WRITE_5M)
 
     base = price[0]
-    priced.tokens = removal.bytes / priced.bytes_per_token
+    priced.tokens = removal.bytes / DEFAULT_BYTES_PER_TOKEN
     # `W·D − 1.0·D`, not `W·D`. The filter still sends the result in full on the one
     # request the model acts on, and that turn is ordinary uncached input at 1.0×.
     # What it avoids is the write *premium*, which is 1.0·D at the 2.0× 1h class —

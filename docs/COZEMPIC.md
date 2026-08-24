@@ -558,8 +558,8 @@ restated as the other.
 (the second of the four properties above) — it recomputes the decision from the request body, so it
 re-drops the same tool result on *every* later request that still carries it. Each of those is a
 ledger entry. Summing `bytes_dropped` over lines therefore counts one removal once per surviving
-request. On the ledger this was built against, 1,171 drop events across 379 lines are **46 distinct
-results**: 6.1 MB summed against 229.6 KB actually removed, an overstatement of **27×**. This is
+request. On the ledger this was built against, 1,283 removal events across 403 lines are **49
+distinct results**: 6.5 MB summed against 246.0 KB actually removed, an overstatement of **27×**. This is
 §3.4's units error arriving by a third route — a per-turn quantity summed as a one-time one — and a
 KPI that made it would be wrong by more than an order of magnitude while looking entirely plausible.
 
@@ -589,7 +589,7 @@ across one. `inspect.Usage` does the usage parsing; there is no second transcrip
 Two arithmetic details worth recording because both were nearly wrong:
 
 - **The saving on the write term is `(W − 1.0)·D`, not `W·D`.** The filter still sends the result in full on the one request the model acts on, and that turn is ordinary uncached input at 1.0×. What it avoids is the write *premium* — which is `1.0·D` at the 2.0× class, matching §3.5's `saving 1.0·D`, and only `0.25·D` at the 1.25× one. Pricing the whole write overstated this install's total by about 20% on the first run.
-- **bytes→tokens is a least-squares slope, not a ratio.** SPEC §6's ÷4 is an estimate; where the join gives both a request's prefix bytes and its measured `cache_read_input_tokens`, the rate is calibrated per session. It must be the *slope*: `cache_read_input_tokens` also covers the system prompt and tool schemas, which are not in message-content bytes, so a plain ratio understates bytes-per-token and would inflate every `D`. The fit's intercept is that fixed overhead. A fit on fewer than three points, or landing outside 1.5–12.0 bytes/token, is rejected back to ÷4, and the readout reports which was used for what share.
+- **bytes→tokens is SPEC §6's ÷4 estimate, everywhere, and the readout says so.** A per-session least-squares calibration was built here and then withdrawn; §3.5.2 is the record of why. Nothing in the join gives a bytes→tokens observation over the *same span* as the bytes being priced, and a rate fitted over a different span is not a measurement of this one.
 
 **The figure is modelled, not billed, and the command says so itself** rather than leaving it to this
 document. The bytes were never sent, so nothing on the wire proves the counterfactual: *D*, *T* and
@@ -599,6 +599,75 @@ call that a saving; a caveat that lives only in the docs is a caveat the number 
 
 The command is stdlib-only, like everything else the CLI reaches — pricing is a table of published
 list prices with its source and read-date in a comment, not a reason to add a second dependency (§4).
+
+#### 3.5.2 The audit of §3.5.1, and what it moved
+
+§3.5.1 prices a counterfactual, so nothing on the wire can contradict it — which is exactly the shape
+of §3.1 and §3.4, the two arithmetic errors this document already records. The command was therefore
+re-derived from the model text alone, by a throwaway script that read the ledger and the transcripts
+directly and shared no helper with `savings.py`. Frozen copies of both inputs were used, because the
+audit's own traffic goes through the proxy and grows the ledger while it runs.
+
+The two routes disagreed. Working out which was right found one error of the same family as §3.4 and
+one measurement that was not one.
+
+**One API request is one turn, however many records it left on disk.** Claude Code writes a single
+API response as *several* assistant records — one per content-block group, so the text, then each
+`tool_use` separately — and stamps every one of them with the same `requestId` and the same
+`message.usage`. On this install's seven joined transcripts that is 1.66 to 2.43 records per request;
+of 37 requests written as more than one record, none carried differing usage between them. Counting
+records charged the same response two or three times in two places at once:
+
+- ***T*** — the turns that followed a removal — counted records, inflating the dominant `0.1·D·T`
+  read term. `sum(T)` over the priced results fell from 1,740 to 917; the median *T* fell from 48
+  to 28.
+- **The denominator.** `_read_usage` was called once per record, so one response's usage was added to
+  the bill two or three times. The measured bill of the joined sessions fell from $94.67 to $43.67.
+
+This is §3.4's units error a third time — a per-request quantity summed per record — and worth naming
+why it is hard to see: it moved the numerator and the denominator in the same direction, so the
+*share of the bill* it produced stayed entirely plausible, and only re-deriving the two sides
+separately showed both were wrong. `read_session` now takes the first record of each `requestId` and
+skips the continuations.
+
+**The bytes→tokens calibration was withdrawn, not fixed.** It regressed `cache_read_input_tokens` on
+cumulative on-disk message-content bytes and used the fitted slope in place of ÷4. Those are not the
+same span: the cache read is whatever prefix matched up to the last breakpoint, the bytes are every
+message ever written, and only the former resets at a compact boundary. The consequences were
+visible in the data — across the seven sessions the fitted rate ran from −8.4 to +40.6 bytes/token,
+and five of the seven produced points with *fewer bytes than tokens*, which no real bytes→tokens
+relation can do. The 1.5–12.0 guard band did not catch this; it rejected the two tightest fits and
+admitted the one with the fewest points, whose 2.58 bytes/token inflated that session's `D` by 1.55×.
+A better-posed variant (reset at each boundary, regressed on the request's whole input) does fit —
+slopes 1.30 to 3.30 with intercepts of 31k to 82k tokens, which is the right shape for fixed system
+prompt and tool schemas — but adopting it would roughly double every `D` on an unvalidated basis, and
+it would still be a marginal rate fitted over mixed prose and applied to tool-output bytes. SPEC §6's
+÷4 is an estimate and is now labelled as one wherever it is used, which is everywhere.
+
+**The top-line after both fixes**, against the frozen ledger of 403 lines and 1,283 removal events:
+
+| | before the audit | after |
+| --- | --- | --- |
+| avoided write premium | $0.22 | $0.20 |
+| avoided reads | $1.08 | $0.56 |
+| total, modelled | $1.29 | **$0.77** |
+| measured bill of the joined sessions | $94.67 | **$43.67** |
+| share of the bill | 1.37% | **1.76%** |
+
+The independent route lands on $0.7674 against $43.67 for 1.757%, which is the same number. Both
+corrections cut the modelled saving; the share rose because the denominator was overstated by more
+than the numerator was.
+
+**What was checked, and one thing corrected in passing.** De-duplication collapses correctly — 1,283
+events to 49 unique results by both routes, and deleting the de-dupe fails eight tests including
+`test_repeated_result_counts_once`. The overstatement ratio it feeds was on a mixed basis, though:
+the numerator summed only `dropped` entries while the denominator's unique results came from
+`dropped` *and* `deferred`, reading 26.4× where the file's own events say 27.2×. Both sides now span
+both kinds. The compact-boundary cap is right at both ends. The denominator
+is drawn from the joined sessions' own usage, not a corpus constant. Every ledger entry lands in
+exactly one bucket and the buckets sum to the line count; on this ledger that is 34 priced, 15
+unjoinable, 0 unpriceable. The same per-record double-count exists in `inspect.py`'s own usage reader
+and is not touched here — it is `winnow inspect`'s bug to fix, in its own change, with its own tests.
 
 ### 3.6 Where Q1 to Q6 stand
 

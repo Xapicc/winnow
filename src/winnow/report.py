@@ -293,11 +293,14 @@ def savings_to_dict(result: savings_mod.Savings) -> dict:
             "path": str(result.ledger.path),
             "lines": result.ledger.lines,
             "parse_errors": result.ledger.parse_errors,
-            "drop_events": result.ledger.drop_events,
+            "removal_events": result.ledger.removal_events,
             "bytes_summed_over_events": result.ledger.bytes_summed,
             "legacy_lines_without_tool_use_id": result.ledger.legacy_lines,
             "lines_without_model": result.ledger.lines_without_model,
             "lines_without_cache_ttl": result.ledger.lines_without_ttl,
+            "malformed_entries": result.ledger.malformed_entries,
+            # removal_events + malformed_entries; every entry the file described.
+            "entries_total": result.ledger.events,
         },
         "removed": {
             "unique_results": len(result.priced),
@@ -318,21 +321,15 @@ def savings_to_dict(result: savings_mod.Savings) -> dict:
             "share_of_bill_pct": round(total / bill * 100, 3) if bill else None,
             "bill_sessions": sessions_priced,
             "bill_models_without_price": unpriced_models,
+            "write_classes": result.write_classes,
         },
         "tokens": {
-            "calibrated_bytes": result.calibrated_bytes,
-            "calibrated_share": (
-                round(result.calibrated_bytes / result.unique_bytes, 3)
-                if result.unique_bytes
-                else None
-            ),
-            "default_bytes_per_token": savings_mod.DEFAULT_BYTES_PER_TOKEN,
+            "bytes_per_token": savings_mod.DEFAULT_BYTES_PER_TOKEN,
+            "source": "SPEC §6 estimate; no per-session calibration (COZEMPIC §3.5.2)",
             "per_session": {
                 sid: {
-                    "bytes_per_token": round(facts.bytes_per_token, 3),
-                    "calibrated": facts.calibrated,
-                    "calibration_points": facts.calibration_points,
                     "turns": facts.turns,
+                    "assistant_records": facts.records,
                 }
                 for sid, facts in sorted(result.sessions.items())
             },
@@ -357,7 +354,7 @@ def render_savings(result: savings_mod.Savings) -> str:
 
     add(f"ledger           {ledger.lines:>10,} lines   "
         f"unparseable {ledger.parse_errors:,}")
-    add(f"  drop events    {ledger.drop_events:>10,}   "
+    add(f"  removal events {ledger.removal_events:>10,}   "
         f"{_human(ledger.bytes_summed)} if summed")
     add(f"  unique results {len(result.priced):>10,}   "
         f"{_human(result.unique_bytes)} actually removed")
@@ -370,6 +367,9 @@ def render_savings(result: savings_mod.Savings) -> str:
     if ledger.legacy_lines:
         add(f"  {ledger.legacy_lines:,} lines predate tool_use_id and were de-duped "
             "on (tool, rule, bytes)")
+    if ledger.malformed_entries:
+        add(f"  {ledger.malformed_entries:,} entries carried no usable size and could "
+            "not be counted as removals")
     add("")
 
     turns = result.turns
@@ -379,30 +379,30 @@ def render_savings(result: savings_mod.Savings) -> str:
         add(f"  min {dist['min']:,}   p25 {dist['p25']:,.0f}   "
             f"median {dist['median']:,.0f}   p75 {dist['p75']:,.0f}   "
             f"max {dist['max']:,}")
+        add("  one API request is one turn, however many records it left on disk")
         add("  capped at the next compact boundary: a result cannot be read back "
             "across one")
     else:
         add("T, turns after removal   nothing joined; no read term can be priced")
     add("")
 
-    add("tokens")
-    add(f"  calibrated     {_human(result.calibrated_bytes):>10}   "
-        f"of {_human(result.unique_bytes)} removed")
+    add(f"tokens           bytes ÷ {savings_mod.DEFAULT_BYTES_PER_TOKEN:.0f}, "
+        "SPEC §6's estimate for every result")
+    add("  no per-session calibration: the fit it used was not a measurement "
+        "(COZEMPIC §3.5.2)")
     for sid, facts in sorted(result.sessions.items()):
-        how = (f"fit on {facts.calibration_points} requests"
-               if facts.calibrated else "SPEC §6 default")
-        add(f"  {sid[:8]}  {facts.bytes_per_token:>5.2f} bytes/token   "
-            f"{how}, {facts.turns:,} turns")
-    if not result.sessions:
-        add(f"  no session joined; SPEC §6's ÷{savings_mod.DEFAULT_BYTES_PER_TOKEN:.0f} "
-            "stands for everything")
+        add(f"  {sid[:8]}  {facts.turns:>5,} requests   "
+            f"{facts.records:,} assistant records")
     add("")
 
     bill, sessions_priced, unpriced = result.bill()
     total = result.dollars
+    classes = result.write_classes
     add(f"saved ({len(result.counted):,} of {len(result.priced):,} results priced)")
     add(f"  avoided write  ${result.write_dollars:>9.2f}   "
-        "(W−1)·D once — 1.0·D at the 2.0× 1h class")
+        "(W−1)·D once, W read from what the request carried")
+    for label, count in sorted(classes.items(), key=lambda kv: -kv[1]):
+        add(f"                              {count:,} at {label}")
     add(f"  avoided reads  ${result.read_dollars:>9.2f}   "
         "0.1·D·T — the repeats, priced as repeats")
     add(f"  total          ${total:>9.2f}")

@@ -274,7 +274,9 @@ def run(
     """
     ledger = Ledger(ledger_path)
     done = ledger.attempted
-    for path in corpus.sources(root):
+    found = corpus.transcripts(root)
+    population = [t.path for t in found if not t.is_fork]
+    for path in population:
         if ledger.forks >= forks:
             break
         if str(path) in done:
@@ -286,16 +288,32 @@ def run(
         ledger.record(attempt)
         if on_attempt is not None:
             on_attempt(attempt)
-    return ledger, summarise(ledger.attempts, target=forks)
+    return ledger, summarise(
+        ledger.attempts,
+        target=forks,
+        population=len(population),
+        excluded_as_forks=len(found) - len(population),
+    )
 
 
-def summarise(attempts: list[Attempt], target: int = 100) -> dict:
+def summarise(
+    attempts: list[Attempt],
+    target: int = 100,
+    population: int | None = None,
+    excluded_as_forks: int = 0,
+) -> dict:
     """The pass/fail count, the failures named, and whether the guardrail is met.
 
     `met` is three conditions and not one. It needs zero failures, it needs the
     full `target` forks — SPEC §9 says 100, and 40 forks with no failure is a
     smaller claim wearing the same words — and it needs the run not to have been
     dry. A dry run's zero failures are a fact about a stub.
+
+    `excluded_as_forks` is reported because `corpus.is_fork` is a heuristic whose
+    false positives are silent: a source transcript mistaken for a fork drops out
+    of the population without anything saying so. A session that once printed a
+    winnow pointer to its terminal is the case that would do it. An exclusion
+    count that looks too large is the only warning available.
     """
     outcomes = Counter(a.outcome for a in attempts)
     forks = outcomes[PASS] + outcomes[FAIL]
@@ -303,6 +321,8 @@ def summarise(attempts: list[Attempt], target: int = 100) -> dict:
     shortfall = max(0, target - forks)
     return {
         "target_forks": target,
+        "population": population,
+        "excluded_as_forks": excluded_as_forks,
         "forks_attempted": forks,
         "passed": outcomes[PASS],
         "failed": outcomes[FAIL],
@@ -347,6 +367,10 @@ def render(summary: dict) -> str:
     add = out.append
     add(f"resume test       {summary['passed']:,} passed, {summary['failed']:,} failed "
         f"of {summary['forks_attempted']:,} forks (target {summary['target_forks']:,})")
+    if summary.get("population") is not None:
+        add(f"population        {summary['population']:,} source transcript(s)"
+            + (f", {summary['excluded_as_forks']:,} excluded as winnow's own forks"
+               if summary["excluded_as_forks"] else ""))
     add(f"refused           {summary['refused']:,} session(s) produced no fork")
     for guard, count in summary["refused_by_guard"].items():
         add(f"                  {guard}: {count:,}")

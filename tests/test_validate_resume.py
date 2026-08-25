@@ -204,6 +204,11 @@ def test_a_fork_is_never_itself_forked(tmp_path):
     # nothing left to strip, so it would report a resume of a barely-changed file
     # against a guardrail that is about changed ones.
     assert second["forks_attempted"] == 2
+    # And it says how many it dropped, because `is_fork` is a heuristic and its
+    # false positives shrink the population without anything else noticing.
+    assert second["population"] == 2
+    assert second["excluded_as_forks"] == 2
+    assert "excluded as winnow's own forks" in render(second)
 
 
 # ─── The arithmetic, over hand-built attempts ────────────────────────────────

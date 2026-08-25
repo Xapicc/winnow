@@ -71,13 +71,18 @@ mistake the measurement exists to catch.
 | [docs/behavioral-digest-design.md](docs/behavioral-digest-design.md) | Cozempic's own design note, arrived with the merge |
 | `src/winnow/filter.py`, `proxy.py` | `winnow filter` — the intake filter and the local proxy that carries it. Stdlib only, about 450 lines with 39 tests |
 | `src/winnow/savings.py` | `winnow savings` — prices the filter's own ledger against the transcripts, de-duped on `tool_use_id` so a stateless filter's repeats are not counted as removals. Stdlib only, about 575 lines with 34 tests |
-| `src/winnow/inspect.py`, `report.py` | `winnow inspect` — SPEC §4's six rules, the six guards, the cache readout and `T*`. About 600 lines with 54 tests. The only command in the tree that implements the specification rather than wrapping the inherited one |
-| `src/winnow/cli.py`, `orchestrator_safe.py` | The `safe` and `inspect` groups, and orchestrator-safe mode, about 1,300 lines with its tests |
+| `src/winnow/rules.py` | SPEC §4 itself: the six rules, the guards, the pointer and its ID scheme. Imported by `inspect`, by `plan`, and by the `fork` that does not exist yet — one engine, so the three cannot disagree about what B1 means |
+| `src/winnow/inspect.py`, `report.py` | `winnow inspect` — the reading, the byte accounting, the cache readout and `T*`. About 600 lines with 54 tests. Its `--json` output is pinned byte-for-byte in `tests/fixtures/inspect_golden.json`, because milestone 1's deliverable is a number and a number should not move by accident |
+| `src/winnow/plan.py` | `winnow plan` — the dry run: which results a fork would replace, the pointer that would replace each, what the pointers cost, the net, and `T*` for the cut. Guard G4 is decided here rather than at write time, so `plan` and `fork` agree. About 450 lines with 53 tests |
+| `src/winnow/cli.py`, `orchestrator_safe.py` | The `safe`, `inspect` and `plan` groups, and orchestrator-safe mode, about 1,300 lines with its tests |
 | `src/winnow/legacy/`, `plugin/`, `tests/` | The tree inherited from Cozempic 1.8.39, about 21,700 lines. Renamed into winnow by [docs/FORK.md](docs/FORK.md) phase 1; still not installed and not started |
 | `packaging/README.md` | The record of the six package channels, the npm shim and the PyPI release workflow that phase 2 deleted. **Winnow publishes to no channel**; installing means a checkout |
 | [web/README.md](web/README.md) | The site: four static routes over what this document says, checked against its own contract in [web/docs/design-language.md](web/docs/design-language.md). Not deployed anywhere yet, and it imports nothing from this tree |
 
-**No `winnow fork`, no `winnow recover`, no `winnow bench`.** `inspect` is milestone 1. Its
+**No `winnow fork`, no `winnow recover`, no `winnow bench`.** Milestone 2 is the actuator and
+`plan` is the first third of it: it says exactly what a fork would remove and what the removal is
+worth, and it writes nothing anywhere. Nothing in this tree yet writes a forked transcript or
+recovers from one. `inspect` is milestone 1. Its
 *population* lands where SPEC §6's method says it should — 174 sessions over 400 KB of message
 content, 129.6 MB pooled, against a recorded 161 and 120.1 MB one day earlier — so the denominator is
 not the disagreement. Its *rule shares* come in 12.4 points under at tier CB, and milestone 1 was
@@ -88,7 +93,16 @@ documents cite as measured still comes from analysis scripts in earlier work.
 python -m winnow inspect <session-id>            # composition readout, writes nothing
 python -m winnow inspect <session-id> --json     # machine-readable, for a corpus sweep
 python -m winnow inspect <session-id> --tier CBA # include the opt-in tier in the arithmetic
+
+python -m winnow plan <session-id>               # what a fork would strip, and the arithmetic
+python -m winnow plan <session-id> --explain     # one line per result: rule, tool, arguments, bytes
+python -m winnow plan <session-id> --no-rule B1  # override the tier, one rule at a time
 ```
+
+`inspect` reports the ceiling of the mechanism — every rule, no pointer overhead. `plan` reports one
+operator's actual selection with the pointers priced in, so its `T*` is the longer and the honest of
+the two. `--explain` prints tool arguments verbatim, and a transcript routinely contains credentials
+pasted into a Bash command; treat that output as sensitive.
 
 ## The intake filter
 
@@ -291,8 +305,8 @@ Full list with reasons: [docs/SPEC.md](docs/SPEC.md) §3.
 | Specification, decisions, milestone plan and kill criteria | **written** |
 | Content-composition measurement, 563 transcripts | **done**, in earlier analysis; not reproducible from this checkout |
 | Orchestrator-safe mode | **built and tested**; never run inside a real orchestrated cycle |
-| Milestone 1, `winnow inspect` and the cache readout | **not started** |
-| Milestone 2, the rules, the guards and `winnow fork` | **not started** |
+| Milestone 1, `winnow inspect` and the cache readout | **built**, and it produced its number — 12.4 points under SPEC §6 at tier CB ([docs/COZEMPIC.md](docs/COZEMPIC.md) §3.4) |
+| Milestone 2, the rules, the guards and `winnow fork` | **`winnow plan` built**: the rule engine, the pointer, and guard G4 decided at plan time. No writer, no `winnow recover` |
 | Milestone 3, `winnow bench` and the quality arm | **not started** |
 | Any claim that pruning a Claude Code session saves money | **unmade, by anyone** |
 

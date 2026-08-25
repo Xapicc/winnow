@@ -300,6 +300,78 @@ def add_inspect_subparser(sub) -> None:
     p.set_defaults(func=cmd_inspect)
 
 
+def cmd_plan(args: argparse.Namespace) -> int:
+    from .plan import plan_command
+
+    code, output = plan_command(
+        session=args.session,
+        tier=args.tier,
+        rule=args.rule,
+        no_rule=args.no_rule,
+        keep_last=args.keep_last,
+        min_bytes=args.min_bytes,
+        i_know=args.i_know,
+        as_json=args.json,
+        explain=args.explain,
+    )
+    print(output, file=sys.stderr if code == EXIT_USAGE else sys.stdout)
+    return code
+
+
+def add_plan_subparser(sub) -> None:
+    """Register `winnow plan` (SPEC §8) — the dry run, in its own group.
+
+    Next to `inspect` rather than under `safe`, and for the same reason: it has
+    no write path, so orchestrator-safe mode has nothing to withhold from it.
+    `--write`, `--out`, `--force` and `--min-cold-age` are absent because they
+    belong to `fork`, which does not exist yet; a flag parsed here that does
+    nothing would be worse than one that is missing.
+    """
+    p = sub.add_parser(
+        "plan",
+        help="dry run: what a fork would strip from one session, and the arithmetic",
+        description="Classify one session under SPEC §4's rules and report exactly "
+                    "which tool results a fork would replace with pointers, what "
+                    "the pointers cost, what the net is, and how many further "
+                    "turns the cut needs to pay for its cache invalidation. "
+                    "Writes nothing, anywhere.",
+    )
+    p.add_argument("session", help="session ID, path, or unambiguous ID prefix")
+    p.add_argument(
+        "--tier", choices=("C", "CB", "CBA"), default="CB",
+        help="which rule tiers may fire (default: CB; CBA requires --i-know)",
+    )
+    p.add_argument(
+        "--rule", action="append", default=[], metavar="ID",
+        help="enable one rule on top of the tier, repeatable (C1 C2 C3 B1 B2 A1)",
+    )
+    p.add_argument(
+        "--no-rule", action="append", default=[], metavar="ID",
+        help="disable one rule the tier enabled, repeatable. Applied after --rule",
+    )
+    p.add_argument(
+        "--keep-last", type=int, default=rules_mod.DEFAULT_KEEP_LAST,
+        metavar="N", help="guard G1: never strip the last N tool results",
+    )
+    p.add_argument(
+        "--min-bytes", type=int, default=rules_mod.DEFAULT_MIN_BYTES,
+        metavar="N", help="guard G2: never strip a result under N bytes",
+    )
+    p.add_argument(
+        "--i-know", action="store_true",
+        help="acknowledge that tier A strips reads the session may still need; "
+             "required by any selection containing A1 (SPEC §4, §8)",
+    )
+    p.add_argument("--json", action="store_true", help="machine-readable output")
+    p.add_argument(
+        "--explain", action="store_true",
+        help="one line per stripped result: rule, tool, arguments, bytes. "
+             "Prints tool arguments verbatim, which routinely contain "
+             "credentials (SPEC §10) — treat the output as sensitive",
+    )
+    p.set_defaults(func=cmd_plan)
+
+
 def cmd_savings(args: argparse.Namespace) -> int:
     from .report import savings_command
 
@@ -411,18 +483,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="winnow",
         description="winnow — see docs/SPEC.md. Implemented: the "
-                    "orchestrator-safe mode, and `inspect`.",
+                    "orchestrator-safe mode, `inspect`, and `plan`.",
     )
     sub = parser.add_subparsers(dest="group", required=True)
     add_safe_subparser(sub)
     add_inspect_subparser(sub)
+    add_plan_subparser(sub)
     add_filter_subparser(sub)
     add_savings_subparser(sub)
     return parser
 
 
 # Groups this tree owns. Everything else falls through to the inherited CLI.
-_OWN_GROUPS = ("safe", "inspect", "filter", "savings")
+_OWN_GROUPS = ("safe", "inspect", "plan", "filter", "savings")
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -152,6 +152,12 @@ def parse_key(text: str) -> tuple[dict, dict[str, dict]]:
         identifier = record.get("item")
         if not identifier:
             raise SheetError(f"key line {number} has no item id")
+        if not record.get("rule"):
+            # Not defaulted to a placeholder rule. A key entry with no rule would
+            # be scored under whatever the placeholder was called, and a bucket
+            # named "?" sitting in a per-rule table looks like a finding rather
+            # than like the corrupt key it is.
+            raise SheetError(f"key line {number}: item {identifier} has no rule")
         if identifier in items:
             raise SheetError(f"key line {number}: item {identifier} appears twice")
         items[identifier] = record
@@ -202,7 +208,9 @@ def score(labels: dict[str, str | None], key: dict[str, dict], meta: dict) -> di
     by_rule: dict[str, dict[str, int]] = {}
     overall = dict.fromkeys(LABELS, 0)
     for identifier, label in labels.items():
-        rule = key[identifier].get("rule", "?")
+        rule = key[identifier].get("rule")
+        if not rule:
+            raise SheetError(f"item {identifier} has no rule in the key")
         counts = by_rule.setdefault(rule, dict.fromkeys(LABELS, 0))
         counts[label] += 1
         overall[label] += 1

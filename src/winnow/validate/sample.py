@@ -90,10 +90,18 @@ def allocate(target: int, available: dict[str, int]) -> dict[str, int]:
     """
     if target < 0:
         raise ValueError(f"target must not be negative, got {target}")
-    supply = {rule: count for rule, count in available.items() if count > 0}
-    for rule, count in supply.items():
+    # Checked before the `> 0` filter below, or a negative count would be dropped
+    # by it and the sample would quietly be short by however many that rule was
+    # owed. Rule names are checked here too, because the tie-break indexes
+    # `RULE_ORDER` and an unknown name would otherwise surface as a bare
+    # ValueError from `.index` with nothing in it about where it came from.
+    for rule, count in available.items():
         if count < 0:
             raise ValueError(f"{rule}: available must not be negative, got {count}")
+        if rule not in RULE_ORDER:
+            raise ValueError(f"{rule!r} is not a rule; expected one of "
+                             f"{', '.join(RULE_ORDER)}")
+    supply = {rule: count for rule, count in available.items() if count > 0}
     taken = dict.fromkeys(supply, 0)
     remaining = min(target, sum(supply.values()))
 

@@ -74,6 +74,18 @@ def test_a_negative_target_is_a_usage_error_rather_than_an_empty_sample():
         sample.allocate(-1, {"C1": 5})
 
 
+def test_a_negative_supply_raises_rather_than_being_filtered_away():
+    """The `> 0` filter would swallow it, and the sample would come up short by
+    however many that rule was owed with nothing saying why."""
+    with pytest.raises(ValueError, match="must not be negative"):
+        sample.allocate(10, {"C1": 5, "B2": -1})
+
+
+def test_a_name_that_is_not_a_rule_is_named_in_the_error():
+    with pytest.raises(ValueError, match="is not a rule"):
+        sample.allocate(10, {"B9": 5})
+
+
 # ─── The draw ────────────────────────────────────────────────────────────────
 
 
@@ -247,11 +259,34 @@ def test_a_rule_below_the_bar_is_named_even_when_the_aggregate_passes():
     assert "WINNOW_RULES_OFF=B2" in score.render(result)
 
 
-def test_exactly_ninety_percent_is_at_the_bar_and_not_below_it():
-    result = scored([("B1", ONCE_ONLY)] * 90 + [("B1", NEEDED_AGAIN)] * 10)
+@pytest.mark.parametrize(("once", "total"), [(90, 100), (27, 30), (18, 20), (9, 10)])
+def test_exactly_ninety_percent_is_at_the_bar_and_not_below_it(once, total):
+    """Pinned across several denominators because the comparison is on a float.
+
+    `0.9` is not exactly representable, so the thing being asserted is that
+    `once / total` lands on the same double as the `PRECISION_BAR` literal and a
+    rule that scored exactly the bar is not disabled by a rounding artefact.
+    """
+    result = scored([("B1", ONCE_ONLY)] * once
+                    + [("B1", NEEDED_AGAIN)] * (total - once))
     assert result["by_rule"]["B1"]["precision"] == 0.9
     assert result["by_rule"]["B1"]["below_bar"] is False
     assert result["rules_below_bar"] == []
+
+
+def test_a_key_entry_with_no_rule_is_refused_rather_than_bucketed():
+    """A placeholder bucket in a per-rule table looks like a finding.
+
+    Scoring an item whose key entry lost its rule would put a row in the output
+    that reads as a rule with bad precision, when what it is is a corrupt key.
+    """
+    with pytest.raises(score.SheetError, match="no rule"):
+        score.score({"0001": ONCE_ONLY}, {"0001": {"item": "0001"}},
+                    {"schema_version": SCHEMA_VERSION})
+    text = json.dumps({"meta": {"schema_version": SCHEMA_VERSION}}) + "\n" + \
+        json.dumps({"item": "0001", "session": "s"}) + "\n"
+    with pytest.raises(score.SheetError, match="no rule"):
+        score.parse_key(text)
 
 
 @pytest.mark.parametrize(

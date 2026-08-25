@@ -256,6 +256,7 @@ def cmd_inspect(args: argparse.Namespace) -> int:
         keep_last=args.keep_last,
         min_bytes=args.min_bytes,
         as_json=args.json,
+        filter_ledger=Path(args.filter_ledger) if args.filter_ledger else None,
     )
     print(output, file=sys.stderr if code == EXIT_USAGE else sys.stdout)
     return code
@@ -289,6 +290,12 @@ def add_inspect_subparser(sub) -> None:
         "--min-bytes", type=int, default=inspect_mod.DEFAULT_MIN_BYTES,
         metavar="N", help="guard G2: never strip a result under N bytes",
     )
+    p.add_argument(
+        "--filter-ledger", default=None, metavar="PATH",
+        help="a `winnow filter --ledger` file. Joined on requestId, it says what "
+             "the intake filter kept off the wire for this session — which the "
+             "transcript still contains and every figure here otherwise counts",
+    )
     p.add_argument("--json", action="store_true", help="machine-readable output")
     p.set_defaults(func=cmd_inspect)
 
@@ -300,6 +307,7 @@ def cmd_savings(args: argparse.Namespace) -> int:
         ledger=args.ledger,
         projects=args.projects,
         as_json=args.json,
+        filter_ledger=Path(args.filter_ledger) if args.filter_ledger else None,
     )
     print(output, file=sys.stderr if code == EXIT_USAGE else sys.stdout)
     return code

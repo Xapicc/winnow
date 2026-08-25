@@ -168,6 +168,23 @@ class Usage:
 
 
 @dataclass
+class FilterLedger:
+    """What the intake filter kept off the wire for one session.
+
+    The filter never touches the transcript — Claude Code writes what it holds,
+    which still contains every byte the API never saw. So every figure `inspect`
+    derives from disk overstates a filtered session, and `fork` would pay
+    `1.9·S` to remove bytes that are not in the prefix. This is the correction,
+    joined on `requestId`: the ledger records the id the API returned, and the
+    transcript records the same id on the assistant turn it answered.
+    """
+
+    requests: int = 0
+    bytes_dropped: int = 0
+    by_rule: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass
 class Report:
     """Everything `winnow inspect` knows about one session. Writes nothing."""
 
@@ -188,6 +205,19 @@ class Report:
     usage: Usage = field(default_factory=Usage)
     cut_line: int | None = None
     suffix_bytes: int = 0
+    filtered: FilterLedger | None = None
+
+    @property
+    def wire_content_bytes(self) -> int:
+        """Message content minus what the filter kept off the wire.
+
+        The denominator every share should use on a filtered session. Equal to
+        `message_content_bytes` when no ledger was supplied, so nothing changes
+        for a session that was never filtered.
+        """
+        if self.filtered is None:
+            return self.message_content_bytes
+        return max(0, self.message_content_bytes - self.filtered.bytes_dropped)
 
     @property
     def message_content_bytes(self) -> int:
@@ -466,10 +496,49 @@ def _blocks(record: dict) -> list:
     return []
 
 
+def read_filter_ledger(ledger_path: Path, request_ids: set[str]) -> FilterLedger:
+    """Total what the filter dropped on the requests this session made.
+
+    Joined on `requestId` rather than a session field because the filter cannot
+    know the session: it sees a Messages API request body, which carries no
+    session identity. The id the API returns is the only thing both sides hold.
+    """
+    found = FilterLedger()
+    try:
+        with ledger_path.open(encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(record, dict):
+                    continue
+                if record.get("request_id") not in request_ids:
+                    continue
+                found.requests += 1
+                found.bytes_dropped += _as_int(record.get("bytes_dropped"))
+                for dropped in record.get("dropped") or ():
+                    if isinstance(dropped, dict):
+                        rule = str(dropped.get("rule", "?"))
+                        found.by_rule[rule] = found.by_rule.get(rule, 0) + _as_int(
+                            dropped.get("bytes")
+                        )
+    except OSError:
+        # A ledger that cannot be read is a missing correction, not a failure to
+        # inspect. The readout says so rather than silently reporting uncorrected
+        # figures as if they were correct.
+        return FilterLedger()
+    return found
+
+
 def inspect_session(
     path: Path,
     keep_last: int = DEFAULT_KEEP_LAST,
     min_bytes: int = DEFAULT_MIN_BYTES,
+    filter_ledger: Path | None = None,
 ) -> Report:
     """Read one transcript and report. Opens the file once, read-only."""
     report = Report(session_id=path.stem, path=path)
@@ -479,6 +548,7 @@ def inspect_session(
     report.records = len(messages)
 
     calls: list[ToolCall] = []
+    request_ids: set[str] = set()
     results: dict[str, tuple[int, int, bool]] = {}  # tool_use_id → (line, size, is_error)
     pending: list[tuple[int, str, str, dict]] = []  # (line, id, name, input)
     # Byte offsets are accumulated per line so the cut point can be priced
@@ -500,6 +570,9 @@ def inspect_session(
 
         if rtype == "assistant":
             _read_usage(record, report.usage)
+            request_id = record.get("requestId")
+            if isinstance(request_id, str):
+                request_ids.add(request_id)
 
         role = _inner(record).get("role") or rtype
         raw_content = _inner(record).get("content")
@@ -563,6 +636,9 @@ def inspect_session(
     for order, rule in assigned.items():
         report.rule_bytes[rule] += by_order[order].result_size
         report.rule_hits[rule] += 1
+
+    if filter_ledger is not None:
+        report.filtered = read_filter_ledger(filter_ledger, request_ids)
 
     if assigned:
         report.cut_line = min(by_order[o].line for o in assigned)

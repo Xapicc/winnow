@@ -102,6 +102,16 @@ def to_dict(report: Report, tier: str) -> dict:
             "parse_errors": report.parse_errors,
         },
         "message_content_bytes": total,
+        "wire_content_bytes": report.wire_content_bytes,
+        "filter_ledger": (
+            {
+                "requests": report.filtered.requests,
+                "bytes_dropped": report.filtered.bytes_dropped,
+                "by_rule": report.filtered.by_rule,
+            }
+            if report.filtered is not None
+            else None
+        ),
         "content_bytes": {c: report.content_bytes.get(c, 0) for c in CONTENT_CLASSES},
         "content_share": {c: share(report.content_bytes.get(c, 0)) for c in CONTENT_CLASSES},
         "tool_calls": report.tool_calls,
@@ -173,6 +183,15 @@ def render(report: Report, tier: str) -> str:
     add("")
 
     add(f"message content  {_human(total):>10}")
+    if report.filtered is not None:
+        dropped = report.filtered.bytes_dropped
+        add(f"  kept off the wire by the intake filter, on "
+            f"{report.filtered.requests:,} of this session's requests:")
+        add(f"    {_human(dropped):>10}   "
+            + "  ".join(f"{rule} {_human(b)}" for rule, b in
+                        sorted(report.filtered.by_rule.items())))
+        add(f"  the API saw   {_human(report.wire_content_bytes):>10}   "
+            "— every share below is of what is on disk, not of that")
     for cls in CONTENT_CLASSES:
         size = report.content_bytes.get(cls, 0)
         pct = (size / total * 100) if total else 0.0
@@ -256,13 +275,15 @@ def inspect_command(
     keep_last: int,
     min_bytes: int,
     as_json: bool,
+    filter_ledger: Path | None = None,
 ) -> tuple[int, str]:
     """`(exit code, output)`. Exit codes follow SPEC §8: 1 usage, 2 nothing to do."""
     try:
         path = resolve_session(session)
     except LookupError as exc:
         return 1, f"winnow: {exc}"
-    report = inspect_session(path, keep_last=keep_last, min_bytes=min_bytes)
+    report = inspect_session(path, keep_last=keep_last, min_bytes=min_bytes,
+                             filter_ledger=filter_ledger)
     payload = json.dumps(to_dict(report, tier), indent=2) if as_json else render(report, tier)
     # Exit 2 is "nothing to do — no result met a rule". It is not an error and
     # the readout is still printed: SPEC §8 makes inspect useful whether or not

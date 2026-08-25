@@ -508,3 +508,62 @@ def test_b1_counts_a_later_read_whose_result_never_arrived(tmp_path):
     )
     report = inspect_session(write(tmp_path, records))
     assert report.rule_hits["B1"] == 1
+
+
+# ─── The filter ledger correction ────────────────────────────────────────────
+
+
+def _ledger(tmp_path, *entries):
+    path = tmp_path / "filter.jsonl"
+    path.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+    return path
+
+
+def test_the_ledger_is_joined_on_request_id(tmp_path):
+    """The filter cannot know the session — it sees a Messages API body, which
+    carries no session identity. The id the API returns is the only key both
+    sides hold."""
+    records = [
+        {
+            "type": "assistant",
+            "requestId": "req_mine",
+            "message": {"role": "assistant", "model": "claude-opus-5",
+                        "content": [{"type": "text", "text": "hi"}],
+                        "usage": {"input_tokens": 1, "output_tokens": 1}},
+        }
+    ]
+    ledger = _ledger(
+        tmp_path,
+        {"request_id": "req_mine", "bytes_dropped": 5000,
+         "dropped": [{"rule": "B2", "tool": "Bash", "bytes": 5000}]},
+        {"request_id": "req_someone_else", "bytes_dropped": 999_999,
+         "dropped": [{"rule": "B2", "tool": "Bash", "bytes": 999_999}]},
+    )
+    report = inspect_session(write(tmp_path, records), filter_ledger=ledger)
+    assert report.filtered.requests == 1
+    assert report.filtered.bytes_dropped == 5000  # not another session's 999,999
+    assert report.filtered.by_rule == {"B2": 5000}
+
+
+def test_the_wire_denominator_subtracts_what_never_went_out(tmp_path):
+    records = call("a", "Bash", {"command": "ls -la"}) + padding(6)
+    plain = inspect_session(write(tmp_path, records))
+    ledger = _ledger(tmp_path, {"request_id": "req_x", "bytes_dropped": 100})
+    corrected = inspect_session(write(tmp_path, records), filter_ledger=ledger)
+    # No requestId in this transcript, so nothing joins and nothing is subtracted.
+    assert corrected.filtered.requests == 0
+    assert corrected.wire_content_bytes == plain.message_content_bytes
+
+
+def test_no_ledger_means_the_wire_figure_is_the_disk_figure(tmp_path):
+    """Nothing changes for a session that was never filtered."""
+    report = inspect_session(write(tmp_path, call("a", "Bash", {"command": "ls -la"})))
+    assert report.filtered is None
+    assert report.wire_content_bytes == report.message_content_bytes
+
+
+def test_an_unreadable_ledger_is_a_missing_correction_not_a_crash(tmp_path):
+    report = inspect_session(write(tmp_path, padding(2)),
+                             filter_ledger=tmp_path / "nope.jsonl")
+    assert report.filtered is not None
+    assert report.filtered.bytes_dropped == 0

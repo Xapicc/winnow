@@ -1,0 +1,349 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   Design tokens. The contract for these lives in docs/design-language.md —
+   change that file first, this one second.
+
+   Declared inside @theme so every token is both a CSS custom property on :root
+   and a Tailwind utility (--color-canvas -> bg-canvas / text-canvas / ...).
+   --------------------------------------------------------------------------- */
+
+@theme {
+  /* Surfaces. Near-black canvas, raised surfaces one step up. */
+  --color-canvas: #0a0a0b;
+  --color-inset: #070708;
+  --color-surface: #121215;
+  --color-surface-2: #17171b;
+
+  /* Lines. --color-line is a hairline by design; box-drawing carries real edges. */
+  --color-line: #23232a;
+  --color-line-strong: #33333d;
+
+  /* Text. --color-fg-faint is 3.92:1 on canvas: decoration only, never prose. */
+  --color-fg: #e9e9ec;
+  --color-fg-muted: #9b9ba4;
+  --color-fg-faint: #6e6e78;
+
+  /* The one accent. 7.59:1 on canvas, 7.17:1 on surface — and the same 7.59:1
+     the other way round, which is what the filled button spends. §1. */
+  --color-accent: #ff7a1a;
+  --color-accent-deep: #e8621f;
+
+  /* Signals. Two, not three: an amber warning is the accent, so there is no
+     --color-warn on this site. Indeterminate is fg-muted plus a `╱` hatch.
+     See docs/design-language.md §1, "The amber that is not here". */
+  --color-ok: #30d158;
+  --color-danger: #ff617f;
+
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, "SF Mono", monospace;
+
+  --text-micro: 11px;
+  --text-micro--line-height: 16px;
+  --text-small: 13px;
+  --text-small--line-height: 20px;
+  --text-body: 15px;
+  --text-body--line-height: 24px;
+  --text-lead: 18px;
+  --text-lead--line-height: 28px;
+  --text-h3: 20px;
+  --text-h3--line-height: 28px;
+  --text-h2: 26px;
+  --text-h2--line-height: 34px;
+
+  --tracking-grid: -0.01em;
+  --tracking-tight: -0.02em;
+  --tracking-kicker: 0.14em;
+
+  --ease-grid: cubic-bezier(0.2, 0, 0, 1);
+}
+
+:root {
+  /* One column of the character grid. Exact for JetBrains Mono: every glyph in
+     the shipped subset has advance width 600/1000 em. */
+  --ch: 0.6em;
+
+  /* --- motion -----------------------------------------------------------
+     The whole motion vocabulary of the site, in one block. The three durations
+     are the state-change scale; the decode tokens time the one hero effect and
+     are read out of here by lib/motion.ts, so no component hardcodes a
+     duration. Easing is --ease-grid, declared in @theme above so it is also a
+     utility. See docs/design-language.md §5. */
+  --motion-fast: 120ms;
+  --motion-base: 180ms;
+  --motion-slow: 240ms;
+
+  /* Decode: total run, how often an unsettled cell repicks a glyph, and the
+     fraction of the run over which cells start settling (the stagger). */
+  --motion-decode: 900ms;
+  --motion-decode-churn: 45ms;
+  --motion-decode-stagger: 0.55;
+
+  /* `ch` here resolves against the html element, which is why the mono family
+     is set there and not only on body — the page gutter is a column count. */
+  --page-gutter: max(2ch, 4vw);
+  --content-max: 76rem;
+
+  color-scheme: dark;
+}
+
+@media (min-width: 640px) {
+  :root {
+    --page-gutter: max(4ch, 5vw);
+  }
+}
+
+@layer base {
+  * {
+    min-width: 0;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+    font-family: var(--font-mono);
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-fg);
+    font-family: var(--font-mono);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+    letter-spacing: var(--tracking-grid);
+    font-variant-ligatures: none;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    /* 32% of a saturated orange over near-black is a legible band with fg on
+       top; the accent at full strength would put 15px text at 2.1:1. */
+    background: color-mix(in oklab, var(--color-accent) 32%, transparent);
+    color: var(--color-fg);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 1px;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  /* The site is dark-only and its own scrollbar should not be the one bright
+     rectangle on the page. */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--color-inset);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-line-strong);
+  }
+}
+
+@layer components {
+  /* --- character-grid helpers ------------------------------------------- */
+
+  .wn-shell {
+    width: 100%;
+    max-width: var(--content-max);
+    margin-inline: auto;
+    padding-inline: var(--page-gutter);
+  }
+
+  .wn-measure {
+    max-width: 68ch;
+  }
+
+  .wn-kicker {
+    font-size: var(--text-micro);
+    line-height: var(--text-micro--line-height);
+    letter-spacing: var(--tracking-kicker);
+    text-transform: uppercase;
+    color: var(--color-fg-muted);
+  }
+
+  /* A run of box-drawing characters that fills whatever width is left. The
+     component emits a deliberately overlong string and this clips it, so the
+     rule is real text on the grid rather than a border. No <hr> on this site —
+     see docs/design-language.md §3. */
+  .wn-rule {
+    overflow: hidden;
+    white-space: nowrap;
+    user-select: none;
+    color: var(--color-fg-faint);
+  }
+
+  /* --- ascii art --------------------------------------------------------- */
+
+  .wn-ascii {
+    white-space: pre;
+    font-variant-ligatures: none;
+    line-height: 1;
+    /* Exactly as wide as the art. A `ch`-based width on the element itself
+       would resolve against the art's own computed font-size, not the
+       surrounding text, and come out far too narrow. */
+    width: max-content;
+    /* --ascii-cols is set inline by the component; 0.6 is the font's advance. */
+    font-size: min(
+      var(--ascii-cap, 32px),
+      calc(100cqw / (var(--ascii-cols, 43) * 0.6))
+    );
+  }
+
+  .wn-ascii-fit {
+    container-type: inline-size;
+    width: 100%;
+  }
+
+  /* A figure is art with rows that carry meaning: ledgers, wire diagrams, panel
+     mock-ups. Same container-query sizing as .wn-ascii so it can never overflow,
+     but on the text line-height rather than 1 — these rows are read, not
+     joined, and nothing in them is a continuous vertical. */
+  .wn-figure {
+    white-space: pre;
+    font-variant-ligatures: none;
+    line-height: 1.6;
+    width: max-content;
+    color: var(--color-fg-muted);
+    font-size: min(
+      var(--figure-cap, 15px),
+      calc(100cqw / (var(--figure-cols, 47) * 0.6))
+    );
+  }
+
+  /* Direct children only: a row is a block, the toned runs inside it are not.
+     A row the script has not reached yet is transparent but keeps its box, so
+     revealing it moves nothing. */
+  .wn-figure > span {
+    display: block;
+    transition: opacity var(--motion-slow) var(--ease-grid);
+  }
+
+  .wn-glow {
+    text-shadow: 0 0 18px color-mix(in oklab, var(--color-accent) 28%, transparent);
+  }
+
+  /* --- terminal well ------------------------------------------------------ */
+
+  .wn-terminal {
+    display: block;
+    overflow-x: auto;
+    background: var(--color-inset);
+    border-left: 2px solid var(--color-accent-deep);
+    padding: var(--text-small) calc(2 * var(--ch));
+    font-size: var(--text-small);
+    line-height: var(--text-small--line-height);
+    color: var(--color-fg);
+    white-space: pre;
+  }
+
+  .wn-terminal span {
+    display: block;
+  }
+
+  .wn-terminal-command::before {
+    content: "$ ";
+    color: var(--color-accent);
+    user-select: none;
+  }
+
+  /* --- state changes ------------------------------------------------------ */
+
+  /* Every colour state change on the site goes through this, and Tailwind's
+     `transition-colors` is not used anywhere: its property list includes
+     `outline-color`, which fades the focus ring in from the element's own
+     colour over 150ms — near-black on the filled button, i.e. no visible ring
+     while the ring is most needed. The ring is a state, not an animation. */
+  .wn-state {
+    transition: color var(--motion-fast) var(--ease-grid),
+      background-color var(--motion-fast) var(--ease-grid);
+  }
+
+  /* --- chromatic aberration ---------------------------------------------- */
+
+  /* Hover only. On focus the outline is already the signal, and a colour fringe
+     on the same element is a second effect competing on the one element that
+     has to stay legible. See docs/design-language.md §6.
+
+     The pair is red/blue and stays red/blue under an orange brand: this is a
+     lens artefact, not a brand mark. Fringing the accent's own hue would read
+     as a glow on the accent and as nothing at all on grey text, which is where
+     the effect actually has to be visible. */
+  .wn-aberrate {
+    transition: text-shadow var(--motion-fast) var(--ease-grid);
+  }
+
+  .wn-aberrate:hover {
+    text-shadow: -0.4px 0 0 rgba(255, 59, 48, 0.34), 0.4px 0 0 rgba(58, 150, 255, 0.34);
+  }
+
+  /* --- page texture ------------------------------------------------------- */
+
+  .wn-texture {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 60;
+  }
+
+  .wn-texture-scanlines {
+    background-image: repeating-linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.014) 0px,
+      rgba(255, 255, 255, 0.014) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+  }
+
+  .wn-texture-grid {
+    z-index: 0;
+    background-image: linear-gradient(
+        to right,
+        rgba(255, 255, 255, 0.02) 1px,
+        transparent 1px
+      ),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+    background-size: 72px 72px;
+    -webkit-mask-image: radial-gradient(
+      110% 70% at 50% 0%,
+      #000 0%,
+      rgba(0, 0, 0, 0.35) 55%,
+      transparent 100%
+    );
+    mask-image: radial-gradient(
+      110% 70% at 50% 0%,
+      #000 0%,
+      rgba(0, 0, 0, 0.35) 55%,
+      transparent 100%
+    );
+  }
+}
+
+/* Reduced motion: nothing animates. The hero decode is disabled in the
+   component itself (it never schedules a frame) — this is the backstop for
+   everything else. See docs/design-language.md §5. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .wn-aberrate:hover {
+    text-shadow: none;
+  }
+}

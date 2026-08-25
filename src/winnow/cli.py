@@ -19,6 +19,7 @@ import json
 import sys
 from pathlib import Path
 
+from . import fork as fork_mod
 from . import orchestrator_safe as safe
 from . import proxy as proxy_mod
 from . import rules as rules_mod
@@ -372,6 +373,149 @@ def add_plan_subparser(sub) -> None:
     p.set_defaults(func=cmd_plan)
 
 
+def cmd_fork(args: argparse.Namespace) -> int:
+    from .fork import fork_command
+
+    code, output = fork_command(
+        session=args.session,
+        tier=args.tier,
+        rule=args.rule,
+        no_rule=args.no_rule,
+        keep_last=args.keep_last,
+        min_bytes=args.min_bytes,
+        min_cold_age=args.min_cold_age,
+        i_know=args.i_know,
+        write=args.write,
+        out=args.out,
+        force=args.force,
+        as_json=args.json,
+        explain=args.explain,
+    )
+    print(output, file=sys.stdout if code in (EXIT_OK, EXIT_NOTHING) else sys.stderr)
+    return code
+
+
+def add_fork_subparser(sub) -> None:
+    """Register `winnow fork` (SPEC §8) — the writer.
+
+    `--write` is the opt-in and there is no `--dry-run`: SPEC §8 makes dry the
+    default, so the flag that writes is the one an operator has to type. `--force`
+    is here rather than on `plan` for the same reason `--min-cold-age` is: a
+    refusal only exists where there is a file to refuse to write.
+    """
+    p = sub.add_parser(
+        "fork",
+        help="write a forked transcript with once-only tool results replaced by "
+             "pointers (needs --write)",
+        description="Classify one session under SPEC §4's rules and write a new "
+                    "transcript under a new session ID with the selected tool "
+                    "results replaced by recoverable pointers. The original is "
+                    "opened read-only and is never modified. Without --write this "
+                    "is a dry run; there is no --dry-run.",
+    )
+    p.add_argument("session", help="session ID, path, or unambiguous ID prefix")
+    p.add_argument(
+        "--tier", choices=("C", "CB", "CBA"), default="CB",
+        help="which rule tiers may fire (default: CB; CBA requires --i-know)",
+    )
+    p.add_argument(
+        "--rule", action="append", default=[], metavar="ID",
+        help="enable one rule on top of the tier, repeatable (C1 C2 C3 B1 B2 A1)",
+    )
+    p.add_argument(
+        "--no-rule", action="append", default=[], metavar="ID",
+        help="disable one rule the tier enabled, repeatable. Applied after --rule",
+    )
+    p.add_argument(
+        "--keep-last", type=int, default=rules_mod.DEFAULT_KEEP_LAST,
+        metavar="N", help="guard G1: never strip the last N tool results",
+    )
+    p.add_argument(
+        "--min-bytes", type=int, default=rules_mod.DEFAULT_MIN_BYTES,
+        metavar="N", help="guard G2: never strip a result under N bytes",
+    )
+    p.add_argument(
+        "--min-cold-age", type=int, default=fork_mod.DEFAULT_MIN_COLD_AGE,
+        metavar="S",
+        help="refuse a session whose last request finished less than S seconds "
+             f"ago (default {fork_mod.DEFAULT_MIN_COLD_AGE}); below it the prefix "
+             "may still be cached and the cut is not free (SPEC §7)",
+    )
+    p.add_argument(
+        "--i-know", action="store_true",
+        help="acknowledge that tier A strips reads the session may still need; "
+             "required by any selection containing A1 (SPEC §4, §8)",
+    )
+    p.add_argument(
+        "--write", action="store_true",
+        help="actually write the fork. Without it this is a dry run",
+    )
+    p.add_argument(
+        "--out", default=None, metavar="PATH",
+        help="where the fork goes (default: a new session ID in the same project "
+             "directory)",
+    )
+    p.add_argument(
+        "--force", action="store_true",
+        help="proceed past a soft refusal — cold age, an already-compacted "
+             "session, a malformed source record, or whole-fork G4. Never past G5",
+    )
+    p.add_argument("--json", action="store_true", help="machine-readable output")
+    p.add_argument(
+        "--explain", action="store_true",
+        help="one line per stripped result: rule, tool, arguments, bytes. "
+             "Prints tool arguments verbatim, which routinely contain "
+             "credentials (SPEC §10) — treat the output as sensitive",
+    )
+    p.set_defaults(func=cmd_fork)
+
+
+def cmd_recover(args: argparse.Namespace) -> int:
+    from .fork import recover_command
+
+    code, output = recover_command(
+        session=args.session, identifier=args.pointer_id, as_json=args.json
+    )
+    if code != EXIT_OK:
+        print(output, file=sys.stderr)
+        return code
+    # Written rather than printed: the contract is "the exact original bytes", and
+    # `print` would append a newline the digest in the pointer does not cover.
+    sys.stdout.buffer.write(output.encode("utf-8", "surrogateescape"))
+    sys.stdout.buffer.flush()
+    return code
+
+
+def add_recover_subparser(sub) -> None:
+    """Register `winnow recover` (SPEC §8) — the other half of the round trip.
+
+    Reads the *original* transcript, which is the session the pointer quotes: the
+    bytes were never removed from it, and that is what makes a strip reversible in
+    the sense SPEC §7 requires.
+    """
+    p = sub.add_parser(
+        "recover",
+        help="print the original bytes a pointer stands in for, from the "
+             "untouched source transcript",
+        description="Print the exact bytes a winnow pointer replaced, read back "
+                    "from the original transcript — which winnow never wrote to. "
+                    "The bytes hash to the sha256 the pointer records. Writes "
+                    "nothing, anywhere.",
+    )
+    p.add_argument(
+        "session",
+        help="the ORIGINAL session the pointer names, as an ID, a path, or an "
+             "unambiguous prefix",
+    )
+    p.add_argument("pointer_id", metavar="pointer-id",
+                   help="the id from the pointer, as in `b7`")
+    p.add_argument(
+        "--json", action="store_true",
+        help="wrap the bytes in a record carrying the sha256 and the tool name",
+    )
+    p.set_defaults(func=cmd_recover)
+
+
 def cmd_savings(args: argparse.Namespace) -> int:
     from .report import savings_command
 
@@ -483,19 +627,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="winnow",
         description="winnow — see docs/SPEC.md. Implemented: the "
-                    "orchestrator-safe mode, `inspect`, and `plan`.",
+                    "orchestrator-safe mode, `inspect`, `plan`, `fork` and "
+                    "`recover`.",
     )
     sub = parser.add_subparsers(dest="group", required=True)
     add_safe_subparser(sub)
     add_inspect_subparser(sub)
     add_plan_subparser(sub)
+    add_fork_subparser(sub)
+    add_recover_subparser(sub)
     add_filter_subparser(sub)
     add_savings_subparser(sub)
     return parser
 
 
 # Groups this tree owns. Everything else falls through to the inherited CLI.
-_OWN_GROUPS = ("safe", "inspect", "plan", "filter", "savings")
+_OWN_GROUPS = ("safe", "inspect", "plan", "fork", "recover", "filter", "savings")
 
 
 def main(argv: list[str] | None = None) -> int:

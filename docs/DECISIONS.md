@@ -400,7 +400,7 @@ Named so nobody wanders in unwarned.
 - **Bash command classification.** `ls` is easy. `cd x && cat y | head -20` is a parse. `bash -c "$(cat script.sh)"` is not decidable at all. The rule matches the first token of the first segment and nothing else; resist every request to make it smarter, because every increment of cleverness is an increment of silent misclassification.
 - **Path equality.** `./src/a.ts`, `src/a.ts`, `/abs/src/a.ts` and a symlink are the same file and four different strings. Winnow compares strings and does **not** touch the file system (SPEC §10, untrusted input). This under-fires, which is the correct direction, and the under-firing must be reported rather than hidden.
 - **The record types nobody documents.** 563 transcripts contain at least eleven record types (`mode`, `bridge-session`, `file-history-snapshot`, `attachment`, `ai-title`, `last-prompt`, `file-history-delta`, …) and `attachment` alone has twenty-odd subtypes. Winnow passes every record it does not understand through unchanged and must never "clean up" one. The format is undocumented and will change.
-- **Compaction interaction.** 12.6% of sessions here carry a `compact_boundary` **[measured in SPEC §6]**, and `ContextControl/19-` established that a compaction survives `--resume`. Winnow forking a session that has compacted is forking a transcript whose early history is already a summary. It should refuse, or at minimum report it — undecided, and Q4 below.
+- **Compaction interaction.** 12.6% of sessions here carry a `compact_boundary` **[measured in SPEC §6]**, and `ContextControl/19-` established that a compaction survives `--resume`. Winnow forking a session that has compacted is forking a transcript whose early history is already a summary. **Decided in milestone 2: `fork` refuses, `--force` proceeds, `inspect` and `plan` still only report. Q4 below carries the reasoning.**
 - **The `usage` field's meaning.** `[[Prompt Caching]]` (high) documents the trap that `input_tokens` counts only what follows the last cache breakpoint. Any cost arithmetic built on a naive read of `usage` will be wrong in a direction that flatters the tool.
 - **"Just make the rules better."** SPEC §5 is the answer: the reasoning that would settle once-only versus durable is stripped from the transcript before it reaches disk. No rule can see what is not in the file.
 
@@ -437,10 +437,49 @@ that it is better, but nobody has published a comparison. Two independent search
 none on 2026-08-23. *This is a free arm in milestone 3 and should be added if the budget
 allows.*
 
-**Q4 — What should winnow do with a session that has already compacted?** Forking one means
-rewriting a transcript whose early turns are a summary somebody else wrote. Refusing is
-safe and loses 12.6% of sessions. Proceeding is probably fine and is unmeasured. *Currently
-undecided; `inspect` reports it either way.*
+**Q4 — What should winnow do with a session that has already compacted?**
+**Answered in milestone 2, 2026-08-25: refuse by default, with `--force` as the escape.**
+`winnow fork` exits 3 naming the guard `compacted` and the line of the first boundary, and
+writes nothing; `--force` proceeds and the readout records that it was forced. `inspect` and
+`plan` are unchanged — both still report the boundary and neither refuses anything, because
+neither writes a file.
+
+The reasoning, and it is an arithmetic argument rather than a safety one. A compaction
+replaces the pre-boundary conversation with a summary, and `ContextControl/19-` established
+that the summary is what survives `--resume`. So on a compacted session the transcript on
+disk and the prefix a resume actually sends are two different things, and every number
+`plan` printed describes the first: a pre-boundary `tool_result` winnow strips is a byte the
+resumed session was never going to pay for. The saving is not wrong by a little, it is
+measured against the wrong denominator — and D8 says this project is evaluated on
+cache-adjusted cost, which makes a saving computed against bytes nobody sends worse than no
+saving at all. The fork would still be *correct*: the pointers are real, `recover` works,
+G5 holds. It would just be worth less than it said, in a direction that flatters the tool,
+which is the one direction §7 refuses to be wrong in.
+
+Refusing costs the 12.6% of sessions that carry a boundary **[measured in SPEC §6]**. That
+is a real loss and it is the reason `--force` exists rather than the guard being absolute:
+an operator forking for the post-boundary tail, where the arithmetic does hold, has a
+legitimate use and winnow should not be the thing standing in their way. What it should not
+do is take that decision silently on their behalf.
+
+**Rejected — proceed and report.** It is what `inspect` already does, and the objection is
+that a report an operator has to act on is a guard that fires only when somebody is paying
+attention. MILESTONES.md's kill criteria make exactly this mistake a kill condition for the
+neighbouring guard (`--min-cold-age` "loosening the guard to get results is itself a kill
+condition"), and the two guards fail the same way: both defend the arithmetic rather than
+the file, and a warning defends neither. **Rejected — refuse absolutely, with no escape.**
+G5 is absolute because a fork that breaks pairing is unresumable, which is a property of the
+output. This is a property of the *value* of the output, and the operator is better placed
+to judge it than winnow is. **Rejected — fork only the post-boundary suffix.** It is the
+technically interesting answer and it is a different tool: winnow does not delete records
+(SPEC §3), and a fork that dropped everything before the boundary would be a compaction of
+its own, with none of the evaluation this project exists to do.
+
+**Cost of being wrong:** if the refusal turns out to block most real sessions, the population
+shrinks by the measured 12.6% and `--force` absorbs the rest — one flag per use. If
+proceeding turns out to have been fine all along, milestone 3 can measure a compacted arm
+and the default flips with a one-line change. The measurement is cheap in that direction and
+expensive in the other, which is the reason to start from the refusal.
 
 **Q5 — Does the operator's own rejection of this option class still bind?**
 `ContextControl` scored Option E (externalise tool output) at +1 of a possible +24 and

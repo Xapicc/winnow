@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import { AsciiPanel } from "@/components/AsciiPanel";
 import { AsciiRule } from "@/components/AsciiRule";
 import { Button } from "@/components/Button";
@@ -5,16 +7,23 @@ import { DecodeAscii } from "@/components/DecodeAscii";
 import { SectionHeading } from "@/components/SectionHeading";
 import { TerminalBlock } from "@/components/TerminalBlock";
 import { Ticks } from "@/components/Ticks";
+import { FilterPositionDemo } from "@/components/demos/FilterPositionDemo";
+import { PaybackDemo } from "@/components/demos/PaybackDemo";
 import { WORDMARK } from "@/lib/ascii";
 import { REPO_URL, SECTIONS, SITE_NAME, SITE_TAGLINE } from "@/lib/site";
 
 /**
- * The home page shell.
+ * The home page.
  *
- * Each of the six sections carries its heading, its one-paragraph statement and
- * its deep link. The figures, panels and worked examples that go under them are
- * a later run's; what is here is the scaffolding and the copy that fixes what
- * each section is allowed to claim.
+ * Its order is the argument: the question first, then the one command that
+ * answers it, then the two things that run, then what does not exist. A feature
+ * list would have to put the absences last, and on this site they are the point
+ * — docs/design-language.md §8, rule 11.
+ *
+ * Each of the six sections gets its heading, its statement and its deep link
+ * from `SECTIONS`, so the index at the top, the anchors and the sitemap cannot
+ * drift apart. What varies per section is the thing beside the prose, and that
+ * is `ASIDES` below, keyed by the same id.
  */
 
 /* From the README's own blocks, unchanged. winnow publishes to no package
@@ -30,6 +39,95 @@ const FILTER_COMMANDS = [
   "python -m winnow filter --ledger ~/.winnow/filter.jsonl",
   "export ANTHROPIC_BASE_URL=http://127.0.0.1:8789",
 ] as const;
+
+const SAVINGS_COMMANDS = ["python -m winnow savings"] as const;
+
+const SAFE_COMMANDS = [
+  "export WINNOW_ORCHESTRATOR=1",
+  "python -m winnow safe check",
+] as const;
+
+/** What sits beside each section's prose. Keyed by `SECTIONS[].id`. */
+const ASIDES: Record<string, ReactNode> = {
+  arithmetic: (
+    <div>
+      <AsciiPanel label="break-even" tone="accent">
+        <p className="text-lead text-accent tracking-tight">T* = 19·(S/D) − 20</p>
+        <p className="text-fg-muted mt-3">
+          further turns, before the cut has paid for itself.
+        </p>
+        <p className="text-fg-muted mt-3">
+          <Ticks>
+            {
+              "The 2.0× is not the list-price assumption. It is a measurement over 26,194 turns of one install where every main-thread turn wrote at the one-hour class."
+            }
+          </Ticks>
+        </p>
+      </AsciiPanel>
+      <div className="mt-8">
+        <PaybackDemo />
+      </div>
+    </div>
+  ),
+
+  inspect: (
+    <div>
+      <TerminalBlock commands={[INSPECT_COMMANDS[2]]} />
+      <p className="text-small text-fg-muted wn-measure mt-4">
+        <Ticks>
+          {
+            "About 600 lines with 54 tests, and the only command in the tree that implements the specification rather than wrapping the inherited one."
+          }
+        </Ticks>
+      </p>
+    </div>
+  ),
+
+  filter: <FilterPositionDemo />,
+
+  savings: (
+    <div>
+      <TerminalBlock commands={SAVINGS_COMMANDS} />
+      <div className="mt-6">
+        <AsciiPanel label="modelled">
+          <p className="text-fg-muted">
+            The figure is modelled, not billed, and the command says so in its
+            own output. The bytes were never sent, so no invoice line
+            corresponds to them.
+          </p>
+        </AsciiPanel>
+      </div>
+    </div>
+  ),
+
+  safe: (
+    <div>
+      <TerminalBlock commands={SAFE_COMMANDS} />
+      <p className="text-small text-fg-muted wn-measure mt-4">
+        <Ticks>
+          {
+            "`safe check` prints what would be refused and why. The mode has never run inside a real orchestrated cycle: everything was exercised by hand in a container, and no network call was proved absent, only switched off."
+          }
+        </Ticks>
+      </p>
+    </div>
+  ),
+
+  unbuilt: (
+    <AsciiPanel label="the project" tone="accent">
+      <p className="text-fg-muted">
+        <Ticks>
+          {
+            "If the first milestone comes back saying the cache is already warm at a typical resume, or that the strippable share at tier CB does not reproduce, the kill criteria say to stop."
+          }
+        </Ticks>
+      </p>
+      <p className="text-fg-muted mt-3">
+        Stopping then is the intended outcome rather than a failure of it.
+      </p>
+    </AsciiPanel>
+  ),
+};
 
 export default function HomePage() {
   return (
@@ -94,11 +192,11 @@ export default function HomePage() {
             <li key={section.id}>
               <a
                 href={`#${section.id}`}
-                className="group wn-state grid grid-cols-[4ch_1fr] items-start gap-x-[2ch] py-6 hover:bg-surface"
+                className="group wn-state hover:bg-surface grid grid-cols-[4ch_1fr] items-start gap-x-[2ch] py-6"
               >
                 <span
                   aria-hidden="true"
-                  className="wn-state text-small text-fg-faint pt-1 group-hover:text-accent"
+                  className="wn-state text-small text-fg-faint group-hover:text-accent pt-1"
                 >
                   {section.index}
                 </span>
@@ -106,7 +204,7 @@ export default function HomePage() {
                   {/* No aberration: the row already answers a hover with a fill
                       and a colour change, and a third effect on the same target
                       is the pile-up §6 is trying to avoid. */}
-                  <h3 className="wn-state text-h3 font-semibold group-hover:text-accent">
+                  <h3 className="wn-state text-h3 group-hover:text-accent font-semibold">
                     {section.title}
                   </h3>
                   <p className="text-body text-fg-muted mt-2 max-w-[72ch]">
@@ -120,28 +218,28 @@ export default function HomePage() {
         </ul>
       </section>
 
-      {/* The six section shells. A later run fills each one out with the
-          figures and worked examples; the heading, the statement and the deep
-          link are fixed here so that what a section may claim is settled before
-          anybody writes a paragraph under it. */}
       {SECTIONS.map((section) => (
         <section key={section.id} className="wn-shell pb-20">
           <SectionHeading id={section.id} kicker={`${section.index} · ${section.id}`}>
             {section.title}
           </SectionHeading>
 
-          <div className="wn-measure">
-            <p className="text-body text-fg-muted">
-              <Ticks>{section.line}</Ticks>
-            </p>
-            <p className="text-body text-fg-muted mt-4">
-              <Ticks>{section.detail}</Ticks>
-            </p>
-            <div className="mt-6">
-              <Button href={section.href} variant="ghost">
-                {section.hrefLabel}
-              </Button>
+          <div className="grid items-start gap-10 lg:grid-cols-2 lg:gap-[6ch]">
+            <div className="wn-measure">
+              <p className="text-body text-fg-muted">
+                <Ticks>{section.line}</Ticks>
+              </p>
+              <p className="text-body text-fg-muted mt-4">
+                <Ticks>{section.detail}</Ticks>
+              </p>
+              <div className="mt-6">
+                <Button href={section.href} variant="ghost">
+                  {section.hrefLabel}
+                </Button>
+              </div>
             </div>
+
+            {ASIDES[section.id]}
           </div>
         </section>
       ))}
@@ -154,7 +252,7 @@ export default function HomePage() {
         <div className="grid items-start gap-12 lg:grid-cols-2 lg:gap-[6ch]">
           <div>
             <TerminalBlock commands={INSPECT_COMMANDS} />
-            <p className="text-small text-fg-muted mt-4 wn-measure">
+            <p className="text-small text-fg-muted wn-measure mt-4">
               <Ticks>
                 {
                   "winnow publishes to no package channel, so installing means a checkout. `inspect` writes nothing: it reads one session and prints the composition readout, the six guards and `T*`."
@@ -165,15 +263,15 @@ export default function HomePage() {
               <Button href={REPO_URL} external>
                 Get the source<span aria-hidden="true"> ↗</span>
               </Button>
-              <Button href="/status" variant="ghost">
-                what runs today
+              <Button href="/status#install" variant="ghost">
+                what a checkout costs
               </Button>
             </div>
           </div>
 
           <div>
             <TerminalBlock commands={FILTER_COMMANDS} />
-            <p className="text-small text-fg-muted mt-4 wn-measure">
+            <p className="text-small text-fg-muted wn-measure mt-4">
               <Ticks>
                 {
                   "The filter refuses to start without `WINNOW_FILTER=1`, because running it puts a process of your own in front of your own key. It relays your auth headers upstream, holds none of its own and logs none — and it forwards the original bytes unchanged on any failure to parse or rewrite."

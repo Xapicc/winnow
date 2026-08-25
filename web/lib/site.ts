@@ -34,6 +34,7 @@ export const SITE_URL =
  */
 export const NAV_LINKS = [
   { href: "/arithmetic", label: "the arithmetic" },
+  { href: "/filter", label: "the filter" },
   { href: "/status", label: "status" },
 ] as const;
 
@@ -77,15 +78,18 @@ export const SECTIONS = [
     hrefLabel: "what inspect reports",
     /* README, "What is here today" and the note at the top. */
     line: "`winnow inspect` reads one session and prints the composition readout, the six guards, the cache position and `T*`. It writes nothing.",
+    /* No `§` and no `±` in rendered copy: neither is in the shipped font
+       subset, and a fallback glyph is a different advance width. Checked by
+       `lib/font.test.tsx`; recorded in docs/design-language.md §2. */
     detail:
-      "Milestone 1's number has been produced: tier CB strips 10.2% of message content pooled and 8.8% at the median, against the 22.6% / 21.6% `docs/SPEC.md` §6 recorded and the ±3 points §9 asked it to reproduce within. It misses, and it was built to be allowed to say so.",
+      "Milestone 1's number has been produced: tier CB strips 10.2% of message content pooled and 8.8% at the median, against the 22.6% / 21.6% section 6 of `docs/SPEC.md` recorded and the 3 points either way section 9 asked it to reproduce within. It misses, and it was built to be allowed to say so.",
   },
   {
     id: "filter",
     index: "03",
     title: "Never let the bytes into the cache",
-    href: "/arithmetic#no-break-even",
-    hrefLabel: "why there is no break-even",
+    href: "/filter#position",
+    hrefLabel: "where it acts",
     /* README, "The intake filter". */
     line: "`winnow filter` is a local pass-through proxy. A tool result a rule would strip goes out in full on the one request the model acts on it, placed after the last `cache_control` breakpoint so the API never writes it to cache, and is dropped on the next request.",
     detail:
@@ -95,7 +99,7 @@ export const SECTIONS = [
     id: "savings",
     index: "04",
     title: "Price what the filter actually did",
-    href: "/status#savings",
+    href: "/filter#savings",
     hrefLabel: "what the ledger holds",
     /* README, "That table is a simulation. `winnow savings` is the instrument." */
     line: "`winnow savings` reads `~/.winnow/filter.jsonl`, joins each line to the Claude Code transcript on `request_id` to recover the session and how many API turns followed, and prices it. The simulation is a corpus average; this is one install's ledger.",

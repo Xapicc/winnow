@@ -4,6 +4,7 @@ import { AsciiPanel } from "@/components/AsciiPanel";
 import { Button } from "@/components/Button";
 import { SectionHeading } from "@/components/SectionHeading";
 import { Ticks } from "@/components/Ticks";
+import { PaybackDemo } from "@/components/demos/PaybackDemo";
 
 export const metadata: Metadata = {
   title: "The arithmetic",
@@ -46,7 +47,7 @@ export default function ArithmeticPage() {
             <p className="text-body text-fg-muted">
               <Ticks>
                 {
-                  "Let `S` be the suffix after the cut and `D` the bytes removed from it. The edit pays `1.9·S − 2·D` once, and earns `0.1·D` back on every later turn."
+                  "Let `S` be the suffix after the cut and `D` the bytes removed from it. The edit pays `1.9·S − 2·D` once, and earns `0.1·D` back on every later turn. Neither term is a rate you can shop for: both fall out of how the API prices a cached prefix."
                 }
               </Ticks>
             </p>
@@ -82,6 +83,10 @@ export default function ArithmeticPage() {
             </p>
           </AsciiPanel>
         </div>
+
+        <div className="mt-12">
+          <PaybackDemo />
+        </div>
       </section>
 
       <section className="mb-16">
@@ -112,7 +117,7 @@ export default function ArithmeticPage() {
             </Ticks>
           </p>
           <div className="mt-6">
-            <Button href="/status#filter" variant="ghost">
+            <Button href="/filter#position" variant="ghost">
               what the filter does today
             </Button>
           </div>
@@ -146,7 +151,7 @@ export default function ArithmeticPage() {
             <p className="text-fg-muted">
               <Ticks>
                 {
-                  "This arithmetic was got wrong here once, by assuming the 1.25× multiplier from the documentation instead of reading the measurement. That version understated invalidation by about 40 percent, and `docs/COZEMPIC.md` §3.1 keeps the error on the record — it is exactly the mistake the measurement exists to catch."
+                  "This arithmetic was got wrong here once, by assuming the 1.25× multiplier from the documentation instead of reading the measurement. That version understated invalidation by about 40 percent, and section 3.1 of `docs/COZEMPIC.md` keeps the error on the record — it is exactly the mistake the measurement exists to catch."
                 }
               </Ticks>
             </p>
@@ -154,7 +159,8 @@ export default function ArithmeticPage() {
         </div>
       </section>
 
-      <div className="wn-measure">
+      <div className="wn-measure flex flex-wrap items-center gap-[3ch]">
+        <Button href="/filter">the intake filter</Button>
         <Button href="/status" variant="ghost">
           what runs today
         </Button>

@@ -186,10 +186,24 @@ One family, everywhere: **JetBrains Mono**, variable weight axis 100–800, self
 - No italics. The italic face is not shipped; use weight or colour for emphasis instead of
   letting the browser synthesise an oblique.
 
-There is no OpenGraph card yet, and therefore none of the reference's Satori caveat. The
-Twitter card is `summary` rather than `summary_large_image` for exactly that reason: a
-large-image card with no image is a broken card. A run that adds `app/opengraph-image.tsx`
-changes that line in `app/layout.tsx` in the same commit.
+**The OpenGraph card is the one surface that is not set in this font, and it could not
+be.** `app/opengraph-image.tsx` draws the card at build time, and Satori rejects the
+`wOF2` signature outright — it cannot read the subset this site ships, and the face it
+falls back to has no `█` to draw with, let alone the `╲` and `╱` the mark's walls are
+made of. So the wordmark on the card is **SVG geometry on the same 0.6 grid**: one
+rectangle per horizontal run of `█`, one line per diagonal cell, at final pixel
+coordinates because Satori rasterises an SVG child at its declared size and does not
+scale a viewBox to fit. Successive `╲` cells step one column right and one row down and a
+cell is one column by one row, so the diagonals chain into a continuous wall with no join
+to draw.
+
+The two text lines on the card are therefore in the renderer's bundled sans. The
+alternative was a second, static copy of JetBrains Mono — a TTF decompressed from our
+WOFF2 is still a *variable* font, which Satori cannot instance — and ~90 kB in the
+repository for one image is not worth it. **Do not fix this by committing a second font
+instance.** The Twitter card is `summary_large_image` since the card exists; it was
+`summary` before, because a large-image card with no image is a broken card, and the two
+move together.
 
 ### Scale
 
@@ -553,17 +567,24 @@ Claude Code session saves money has been made, by anyone."*
 
 ## 9. Checking the work
 
-`npm run typecheck`, `npm test` and `npm run build` all pass on a clean checkout with no
-`.env`, and every route prerenders static.
+`npm run typecheck`, `npm test`, `npm run build` and `npm run test:e2e` all pass on a
+clean checkout with no `.env`, and every route prerenders static. `npm run check` and
+`npm run shoot` run against a serving instance; `web/README.md` has the invocations.
 
-**Half the test layer is written.** `npm test` runs five files under `vitest`; `npm run
-test:e2e` is still wired to an `e2e/` directory that does not exist, and everything needing a
-real browser is still owed.
+**The test layer is complete.** Nothing in this document is owed a check any more, and
+the three rules that will never have one are named at the end of this section.
 
-Written, and what each one is for:
+### Without a browser — `npm test`
 
 - `lib/ascii.test.ts` — the geometry of art invented in this repository, so not checkable
-  against anything upstream.
+  against anything upstream: every row of every piece is exactly `cols` wide, the lockup
+  is 43 × 11, and the mark takes in more than it lets out.
+- `lib/decode.test.ts` — the frame arithmetic (§5). The schedule, the invariant that
+  `stagger + resolveWindow === 1`, that spaces never scramble so the block never changes
+  shape, that resolution is monotonic, and that the three `--motion-decode-*` tokens in
+  `app/globals.css` are the numbers these tests are written against — the CSS is the
+  source of truth, so a token edited there and not here leaves the file asserting a decode
+  the site does not run.
 - `lib/payback.test.ts` — the break-even formula, ported with the code it tests. Every way
   of getting `19·(S/D) − 20` wrong typechecks, and all of them produce a smaller, friendlier
   number.
@@ -571,30 +592,100 @@ Written, and what each one is for:
   Not "every character in `lib/ascii.ts`" as this list originally asked: the pages turned out
   to be where the misses were.
 - `components/Ticks.test.tsx` — both copy marks, including that emphasis is upright.
+- `components/components.test.tsx` — the contracts that live in components rather than in
+  `lib/`: the filled button is `bg-accent` on `text-canvas` and never white (§1), it
+  carries neither the glow nor the fringe (§6), neither variant uses `transition-colors`
+  (§5), an external link gets `target="_blank"` *and* `rel="noopener"`, art hands its
+  column count to CSS, and `DecodeAscii` renders the resolved art on the server.
 - `app/routes.test.tsx` — every route renders, has exactly one `<h1>`, hides its character
   art behind it (§4), links only to routes in `ROUTES`, links only to anchors that exist on
   the page they name, and leaves no unresolved emphasis star (§7). Every `SECTIONS[].href` is
   resolved against the rendered markup of the page it points at.
 
-Still owed, and all of it needs a browser:
+### With one — `npm run test:e2e`, against `next build` and `next start`
 
-- the hero scrambles and then resolves, and the reduced-motion path never enters the
-  animation (§5)
-- the first tab stop is a visible skip link (§7)
-- nothing overflows sideways at six widths (§3) — the 320px header was checked by
-  screenshot on the run that widened the nav, which is not the same as a check
-- axe finds no serious or critical violation on any route at either width
-- the filled button is canvas-on-accent and never white-on-accent (§1)
+Never the dev server: it serves different markup, different assets and an error overlay,
+so a green dev run proves nothing about what a deployment would serve.
 
-Two of those are written the way they are because the eye is bad at them, and whatever
-implements them should inherit the reasoning. A contrast check composites through ancestors
-rather than reading a class name, because a token that measures 3.92:1 looks fine on a good
-monitor. A focus-ring check samples with no settling time, because the failure it catches is
-a 150 ms fade, not an absence.
+- `e2e/motion.spec.ts` — the hero scrambles and then resolves; it does not replay on
+  scroll; under reduced motion it is resolved from the first frame, no element anywhere is
+  mid-scramble, transitions collapse rather than merely running faster, and **no animation
+  frame is requested at all** — §5 asks the component to check the query before scheduling
+  work, and a component that requests a frame and then bails has already paid for a paint.
+- `e2e/keyboard.spec.ts` — the first tab stop is a visible skip link with a ring, it moves
+  focus into `#main`, the header follows in `NAV_LINKS` order, and at phone width every nav
+  item is a plain link with nothing to trap focus in (§7).
+- `e2e/layout.spec.ts` — nothing overflows sideways on any route at any of the six widths,
+  the hero never wraps, and no paragraph is set wider than 72ch (§2).
+- `e2e/a11y.spec.ts` — axe finds no serious or critical violation on any route, including
+  the 404, at either width.
+- `e2e/routes.spec.ts` — every route serves 200 with a clean console, carries the chrome,
+  and has no dead internal link, in-page anchor or cross-page anchor; every external link
+  is `https:` and opens with `noopener`.
+- `e2e/deploy.spec.ts` — the share card is a real PNG and every page points at it as a
+  large image, the icon serves, the sitemap lists exactly `ROUTES` and every entry answers
+  200, `robots.txt` names the sitemap, the font comes from this origin, and no served page
+  leaks a filesystem path.
+
+### Reading the numbers — `npm run check`
+
+Playwright reports pass or fail; this reports the measurement, so a regression is legible
+without opening a trace. It re-measures §1's whole table off `:root` and fails if any
+entry has drifted from the numbers printed above, walks every text node on every route,
+and prints how many tab stops carried the ring and how many text nodes were below AA.
+
+Two of its checks are written the way they are because the eye is bad at them, and
+whatever edits them should inherit the reasoning:
+
+- **The contrast walk composites through ancestors** rather than reading a class name — a
+  string sits on the flattened stack of every semi-transparent background above it, and the
+  header is `bg-canvas/92`. And it decides what counts as readable **from the content of
+  the string, not from `aria-hidden`**: `/[\p{L}\p{N}]/u`. A run of `────` is a shape and
+  WCAG exempts it; `01` is a numeral somebody reads. Both were sitting at 3.92:1 behind the
+  same attribute, and only one of them was allowed to be.
+- **The focus-ring check samples with no settling time**, because the failure it catches is
+  a 150 ms fade rather than an absence. Tailwind's `transition-colors` includes
+  `outline-color`, so a ring interpolates from the element's own colour — on the filled
+  button that is near-black. Nothing but a zero-wait sample can tell that rule from a
+  comment about it.
+
+### The record — `npm run shoot`
+
+`docs/screenshots/` is the shot set: the home page at all six widths, the subpages at 320
+and 1920, the reduced-motion hero, the focus ring on the filled button, and the share card.
+The script also probes every element's box at each width and names anything that overflows.
+
+**The shots are reproducible, and that took work.** A scripted figure starts when it is
+40% in view, and `fullPage: true` scrolls the document to stitch its capture — so each
+figure began playing as the capture passed it and was photographed on whichever frame it
+had reached. Two runs against an unchanged site produced two different
+`filter-1920-full.png`. `shoot.mjs` now scrolls the whole page first to start every
+figure, then polls until no figure's text has changed for 700 ms, then returns to the top.
+Nothing on this site loops, so that always terminates, and it waits for the last figure
+rather than for a duration guessed from the longest script. A shot that changes now means
+the render changed.
+
+### What has no check, and why
 
 **A change to a rule in this file is not finished until the checks that cover it pass
 against it**; if a rule here stops being checkable, say so here rather than deleting the
-check. The rules with no check today, and why: §1's measured contrast ratios (axe
-re-measures the rendered result, which is the claim that matters), §4's two
-decided-by-looking rules, which are a judgement about a render and not an assertion, and
-§8's copy rules, which need a person.
+check. Three things are not checked, and none of them is an oversight:
+
+- **§4's two decided-by-looking rules** — the funnel is an outline rather than a fill, and
+  `W` is seven columns. Both are judgements about a render. A test could assert the current
+  shape, but it would only restate the art, and it would fail the moment somebody
+  deliberately redrew it, which is not what a failing test should mean.
+- **§6's four textures.** Their values are asserted nowhere because the rule is "if you can
+  see one clearly in a screenshot at 100%, it is turned up too far", and that is a person
+  looking at `docs/screenshots/`. The one part that *is* checked is the negative: `npm run
+  check` confirms focus adds no chromatic fringe, because §6 makes that a rule rather than a
+  preference.
+- **§8's copy rules.** Whether a sentence names its mechanism, says which kind of number it
+  is, or claims something the software does not do needs a reader. Two mechanical corners
+  are covered — `app/routes.test.tsx` fails a page carrying an odd emphasis star, and
+  `lib/font.test.tsx` fails a character the shipped subset cannot draw — but the anti-cringe
+  list and rules 11 to 14 are read, not run.
+
+§1's measured ratios used to be on this list. They are not any more: `npm run check`
+re-derives the whole table from `:root` and fails on any drift, and `e2e/a11y.spec.ts` has
+axe re-measure the rendered result, which is the claim that actually matters.

@@ -75,6 +75,7 @@ mistake the measurement exists to catch.
 | `src/winnow/cli.py`, `orchestrator_safe.py` | The `safe` and `inspect` groups, and orchestrator-safe mode, about 1,300 lines with its tests |
 | `src/winnow/legacy/`, `plugin/`, `tests/` | The tree inherited from Cozempic 1.8.39, about 21,700 lines. Renamed into winnow by [docs/FORK.md](docs/FORK.md) phase 1; still not installed and not started |
 | `packaging/README.md` | The record of the six package channels, the npm shim and the PyPI release workflow that phase 2 deleted. **Winnow publishes to no channel**; installing means a checkout |
+| [web/README.md](web/README.md) | The site: four static routes over what this document says, checked against its own contract in [web/docs/design-language.md](web/docs/design-language.md). Not deployed anywhere yet, and it imports nothing from this tree |
 
 **No `winnow fork`, no `winnow recover`, no `winnow bench`.** `inspect` is milestone 1. Its
 *population* lands where SPEC §6's method says it should — 174 sessions over 400 KB of message

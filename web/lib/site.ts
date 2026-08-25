@@ -33,8 +33,8 @@ export const SITE_URL =
  * build them out, but none of them is a dead link today.
  */
 export const NAV_LINKS = [
-  { href: "/arithmetic", label: "the arithmetic" },
-  { href: "/filter", label: "the filter" },
+  { href: "/arithmetic", label: "arithmetic" },
+  { href: "/filter", label: "filter" },
   { href: "/status", label: "status" },
 ] as const;
 

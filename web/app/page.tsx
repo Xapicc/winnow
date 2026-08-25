@@ -52,7 +52,12 @@ const ASIDES: Record<string, ReactNode> = {
   arithmetic: (
     <div>
       <AsciiPanel label="break-even" tone="accent">
-        <p className="text-lead text-accent tracking-tight">T* = 19·(S/D) − 20</p>
+        {/* Backticked so the star in `T*` is code rather than an emphasis mark
+            — `Ticks` resolves stars in plain text, and `app/routes.test.tsx`
+            fails a page that leaves one behind. */}
+        <p className="text-lead tracking-tight">
+          <Ticks>{"`T* = 19·(S/D) − 20`"}</Ticks>
+        </p>
         <p className="text-fg-muted mt-3">
           further turns, before the cut has paid for itself.
         </p>

@@ -88,6 +88,18 @@ describe.each(Object.keys(PAGES))("%s", (route) => {
     }
   });
 
+  it("leaves no emphasis mark unresolved in its copy", () => {
+    // `Ticks` resolves `*starred*` spans in pairs, so an odd star anywhere in a
+    // copy string leaves exactly one behind — and swallows the rest of the
+    // sentence into an `<em>` on the way. Character art and code spans are
+    // exempt: a `T*` or a `src/**/*.ts` in one of those is literal and meant.
+    const prose = html
+      .replace(/<pre[\s\S]*?<\/pre>/g, " ")
+      .replace(/<code[\s\S]*?<\/code>/g, " ")
+      .replace(/<[^>]*>/g, " ");
+    expect(prose, `${route} has a stray emphasis star`).not.toContain("*");
+  });
+
   it("links only to routes that exist", () => {
     for (const href of internalHrefs(html)) {
       const { route: target } = resolve(href, route);

@@ -1,0 +1,2054 @@
+{
+  "corrupted_tool_use.jsonl": {
+    "C": {
+      "arithmetic": {
+        "break_even_turns": null,
+        "cut_line": null,
+        "removed_bytes": 0,
+        "suffix_bytes": 0,
+        "suffix_over_removed": null,
+        "tier": "C"
+      },
+      "compact_boundaries": {
+        "count": 0,
+        "lines": []
+      },
+      "content_bytes": {
+        "assistant_text": 0,
+        "thinking": 0,
+        "tool_result": 0,
+        "tool_use": 2,
+        "user_text": 14
+      },
+      "content_share": {
+        "assistant_text": 0.0,
+        "thinking": 0.0,
+        "tool_result": 0.0,
+        "tool_use": 12.5,
+        "user_text": 87.5
+      },
+      "filter_ledger": null,
+      "guards": {
+        "G1_keep_last": 0,
+        "G2_min_bytes": 0,
+        "G3_errors": 0,
+        "G5_unpaired": 1
+      },
+      "message_content_bytes": 16,
+      "path": "corrupted_tool_use.jsonl",
+      "records": {
+        "by_type": {
+          "?": 3
+        },
+        "parse_errors": 0,
+        "total": 3,
+        "unrecognised": 3
+      },
+      "rules": {
+        "A1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "A"
+        },
+        "B1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "B"
+        },
+        "B2": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "B"
+        },
+        "C1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        },
+        "C2": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        },
+        "C3": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        }
+      },
+      "session_id": "corrupted_tool_use",
+      "tiers": {
+        "C": {
+          "bytes": 0,
+          "share": 0.0
+        },
+        "CB": {
+          "bytes": 0,
+          "share": 0.0
+        },
+        "CBA": {
+          "bytes": 0,
+          "share": 0.0
+        }
+      },
+      "tool_calls": 1,
+      "tool_result_bytes_by_tool": {},
+      "unanswered_tool_uses": 1,
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "turns": 0,
+        "write_class": "unknown"
+      },
+      "wire_content_bytes": 16
+    },
+    "CB": {
+      "arithmetic": {
+        "break_even_turns": null,
+        "cut_line": null,
+        "removed_bytes": 0,
+        "suffix_bytes": 0,
+        "suffix_over_removed": null,
+        "tier": "CB"
+      },
+      "compact_boundaries": {
+        "count": 0,
+        "lines": []
+      },
+      "content_bytes": {
+        "assistant_text": 0,
+        "thinking": 0,
+        "tool_result": 0,
+        "tool_use": 2,
+        "user_text": 14
+      },
+      "content_share": {
+        "assistant_text": 0.0,
+        "thinking": 0.0,
+        "tool_result": 0.0,
+        "tool_use": 12.5,
+        "user_text": 87.5
+      },
+      "filter_ledger": null,
+      "guards": {
+        "G1_keep_last": 0,
+        "G2_min_bytes": 0,
+        "G3_errors": 0,
+        "G5_unpaired": 1
+      },
+      "message_content_bytes": 16,
+      "path": "corrupted_tool_use.jsonl",
+      "records": {
+        "by_type": {
+          "?": 3
+        },
+        "parse_errors": 0,
+        "total": 3,
+        "unrecognised": 3
+      },
+      "rules": {
+        "A1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "A"
+        },
+        "B1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "B"
+        },
+        "B2": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "B"
+        },
+        "C1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        },
+        "C2": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        },
+        "C3": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        }
+      },
+      "session_id": "corrupted_tool_use",
+      "tiers": {
+        "C": {
+          "bytes": 0,
+          "share": 0.0
+        },
+        "CB": {
+          "bytes": 0,
+          "share": 0.0
+        },
+        "CBA": {
+          "bytes": 0,
+          "share": 0.0
+        }
+      },
+      "tool_calls": 1,
+      "tool_result_bytes_by_tool": {},
+      "unanswered_tool_uses": 1,
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "turns": 0,
+        "write_class": "unknown"
+      },
+      "wire_content_bytes": 16
+    },
+    "CBA": {
+      "arithmetic": {
+        "break_even_turns": null,
+        "cut_line": null,
+        "removed_bytes": 0,
+        "suffix_bytes": 0,
+        "suffix_over_removed": null,
+        "tier": "CBA"
+      },
+      "compact_boundaries": {
+        "count": 0,
+        "lines": []
+      },
+      "content_bytes": {
+        "assistant_text": 0,
+        "thinking": 0,
+        "tool_result": 0,
+        "tool_use": 2,
+        "user_text": 14
+      },
+      "content_share": {
+        "assistant_text": 0.0,
+        "thinking": 0.0,
+        "tool_result": 0.0,
+        "tool_use": 12.5,
+        "user_text": 87.5
+      },
+      "filter_ledger": null,
+      "guards": {
+        "G1_keep_last": 0,
+        "G2_min_bytes": 0,
+        "G3_errors": 0,
+        "G5_unpaired": 1
+      },
+      "message_content_bytes": 16,
+      "path": "corrupted_tool_use.jsonl",
+      "records": {
+        "by_type": {
+          "?": 3
+        },
+        "parse_errors": 0,
+        "total": 3,
+        "unrecognised": 3
+      },
+      "rules": {
+        "A1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "A"
+        },
+        "B1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "B"
+        },
+        "B2": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "B"
+        },
+        "C1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        },
+        "C2": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        },
+        "C3": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        }
+      },
+      "session_id": "corrupted_tool_use",
+      "tiers": {
+        "C": {
+          "bytes": 0,
+          "share": 0.0
+        },
+        "CB": {
+          "bytes": 0,
+          "share": 0.0
+        },
+        "CBA": {
+          "bytes": 0,
+          "share": 0.0
+        }
+      },
+      "tool_calls": 1,
+      "tool_result_bytes_by_tool": {},
+      "unanswered_tool_uses": 1,
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "turns": 0,
+        "write_class": "unknown"
+      },
+      "wire_content_bytes": 16
+    }
+  },
+  "orphaned_tool_results.jsonl": {
+    "C": {
+      "arithmetic": {
+        "break_even_turns": null,
+        "cut_line": null,
+        "removed_bytes": 0,
+        "suffix_bytes": 0,
+        "suffix_over_removed": null,
+        "tier": "C"
+      },
+      "compact_boundaries": {
+        "count": 0,
+        "lines": []
+      },
+      "content_bytes": {
+        "assistant_text": 9,
+        "thinking": 0,
+        "tool_result": 13,
+        "tool_use": 0,
+        "user_text": 0
+      },
+      "content_share": {
+        "assistant_text": 40.9091,
+        "thinking": 0.0,
+        "tool_result": 59.0909,
+        "tool_use": 0.0,
+        "user_text": 0.0
+      },
+      "filter_ledger": null,
+      "guards": {
+        "G1_keep_last": 0,
+        "G2_min_bytes": 0,
+        "G3_errors": 0,
+        "G5_unpaired": 0
+      },
+      "message_content_bytes": 22,
+      "path": "orphaned_tool_results.jsonl",
+      "records": {
+        "by_type": {
+          "?": 2
+        },
+        "parse_errors": 0,
+        "total": 2,
+        "unrecognised": 2
+      },
+      "rules": {
+        "A1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "A"
+        },
+        "B1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "B"
+        },
+        "B2": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "B"
+        },
+        "C1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        },
+        "C2": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        },
+        "C3": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        }
+      },
+      "session_id": "orphaned_tool_results",
+      "tiers": {
+        "C": {
+          "bytes": 0,
+          "share": 0.0
+        },
+        "CB": {
+          "bytes": 0,
+          "share": 0.0
+        },
+        "CBA": {
+          "bytes": 0,
+          "share": 0.0
+        }
+      },
+      "tool_calls": 0,
+      "tool_result_bytes_by_tool": {},
+      "unanswered_tool_uses": 0,
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "turns": 0,
+        "write_class": "unknown"
+      },
+      "wire_content_bytes": 22
+    },
+    "CB": {
+      "arithmetic": {
+        "break_even_turns": null,
+        "cut_line": null,
+        "removed_bytes": 0,
+        "suffix_bytes": 0,
+        "suffix_over_removed": null,
+        "tier": "CB"
+      },
+      "compact_boundaries": {
+        "count": 0,
+        "lines": []
+      },
+      "content_bytes": {
+        "assistant_text": 9,
+        "thinking": 0,
+        "tool_result": 13,
+        "tool_use": 0,
+        "user_text": 0
+      },
+      "content_share": {
+        "assistant_text": 40.9091,
+        "thinking": 0.0,
+        "tool_result": 59.0909,
+        "tool_use": 0.0,
+        "user_text": 0.0
+      },
+      "filter_ledger": null,
+      "guards": {
+        "G1_keep_last": 0,
+        "G2_min_bytes": 0,
+        "G3_errors": 0,
+        "G5_unpaired": 0
+      },
+      "message_content_bytes": 22,
+      "path": "orphaned_tool_results.jsonl",
+      "records": {
+        "by_type": {
+          "?": 2
+        },
+        "parse_errors": 0,
+        "total": 2,
+        "unrecognised": 2
+      },
+      "rules": {
+        "A1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "A"
+        },
+        "B1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "B"
+        },
+        "B2": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "B"
+        },
+        "C1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        },
+        "C2": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        },
+        "C3": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        }
+      },
+      "session_id": "orphaned_tool_results",
+      "tiers": {
+        "C": {
+          "bytes": 0,
+          "share": 0.0
+        },
+        "CB": {
+          "bytes": 0,
+          "share": 0.0
+        },
+        "CBA": {
+          "bytes": 0,
+          "share": 0.0
+        }
+      },
+      "tool_calls": 0,
+      "tool_result_bytes_by_tool": {},
+      "unanswered_tool_uses": 0,
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "turns": 0,
+        "write_class": "unknown"
+      },
+      "wire_content_bytes": 22
+    },
+    "CBA": {
+      "arithmetic": {
+        "break_even_turns": null,
+        "cut_line": null,
+        "removed_bytes": 0,
+        "suffix_bytes": 0,
+        "suffix_over_removed": null,
+        "tier": "CBA"
+      },
+      "compact_boundaries": {
+        "count": 0,
+        "lines": []
+      },
+      "content_bytes": {
+        "assistant_text": 9,
+        "thinking": 0,
+        "tool_result": 13,
+        "tool_use": 0,
+        "user_text": 0
+      },
+      "content_share": {
+        "assistant_text": 40.9091,
+        "thinking": 0.0,
+        "tool_result": 59.0909,
+        "tool_use": 0.0,
+        "user_text": 0.0
+      },
+      "filter_ledger": null,
+      "guards": {
+        "G1_keep_last": 0,
+        "G2_min_bytes": 0,
+        "G3_errors": 0,
+        "G5_unpaired": 0
+      },
+      "message_content_bytes": 22,
+      "path": "orphaned_tool_results.jsonl",
+      "records": {
+        "by_type": {
+          "?": 2
+        },
+        "parse_errors": 0,
+        "total": 2,
+        "unrecognised": 2
+      },
+      "rules": {
+        "A1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "A"
+        },
+        "B1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "B"
+        },
+        "B2": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "B"
+        },
+        "C1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        },
+        "C2": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        },
+        "C3": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        }
+      },
+      "session_id": "orphaned_tool_results",
+      "tiers": {
+        "C": {
+          "bytes": 0,
+          "share": 0.0
+        },
+        "CB": {
+          "bytes": 0,
+          "share": 0.0
+        },
+        "CBA": {
+          "bytes": 0,
+          "share": 0.0
+        }
+      },
+      "tool_calls": 0,
+      "tool_result_bytes_by_tool": {},
+      "unanswered_tool_uses": 0,
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "turns": 0,
+        "write_class": "unknown"
+      },
+      "wire_content_bytes": 22
+    }
+  },
+  "plan_demo.jsonl": {
+    "C": {
+      "arithmetic": {
+        "break_even_turns": 33.1,
+        "cut_line": 2,
+        "removed_bytes": 6160,
+        "suffix_bytes": 17218,
+        "suffix_over_removed": 2.795,
+        "tier": "C"
+      },
+      "compact_boundaries": {
+        "count": 0,
+        "lines": []
+      },
+      "content_bytes": {
+        "assistant_text": 29,
+        "thinking": 0,
+        "tool_result": 16665,
+        "tool_use": 546,
+        "user_text": 46
+      },
+      "content_share": {
+        "assistant_text": 0.1678,
+        "thinking": 0.0,
+        "tool_result": 96.4075,
+        "tool_use": 3.1586,
+        "user_text": 0.2661
+      },
+      "filter_ledger": null,
+      "guards": {
+        "G1_keep_last": 6,
+        "G2_min_bytes": 2,
+        "G3_errors": 1,
+        "G5_unpaired": 1
+      },
+      "message_content_bytes": 17286,
+      "path": "plan_demo.jsonl",
+      "records": {
+        "by_type": {
+          "assistant": 18,
+          "user": 17
+        },
+        "parse_errors": 0,
+        "total": 35,
+        "unrecognised": 0
+      },
+      "rules": {
+        "A1": {
+          "bytes": 2052,
+          "hits": 1,
+          "share": 11.8709,
+          "tier": "A"
+        },
+        "B1": {
+          "bytes": 2051,
+          "hits": 1,
+          "share": 11.8651,
+          "tier": "B"
+        },
+        "B2": {
+          "bytes": 2055,
+          "hits": 1,
+          "share": 11.8882,
+          "tier": "B"
+        },
+        "C1": {
+          "bytes": 2050,
+          "hits": 1,
+          "share": 11.8593,
+          "tier": "C"
+        },
+        "C2": {
+          "bytes": 2056,
+          "hits": 1,
+          "share": 11.894,
+          "tier": "C"
+        },
+        "C3": {
+          "bytes": 2054,
+          "hits": 1,
+          "share": 11.8824,
+          "tier": "C"
+        }
+      },
+      "session_id": "plan_demo",
+      "tiers": {
+        "C": {
+          "bytes": 6160,
+          "share": 35.6358
+        },
+        "CB": {
+          "bytes": 10266,
+          "share": 59.3891
+        },
+        "CBA": {
+          "bytes": 12318,
+          "share": 71.26
+        }
+      },
+      "tool_calls": 17,
+      "tool_result_bytes_by_tool": {
+        "Bash": 10472,
+        "Edit": 40,
+        "Glob": 2050,
+        "Read": 4103
+      },
+      "unanswered_tool_uses": 1,
+      "usage": {
+        "cache_creation_input_tokens": 12000,
+        "cache_read_input_tokens": 48000,
+        "ephemeral_1h_input_tokens": 12000,
+        "ephemeral_5m_input_tokens": 0,
+        "input_tokens": 7,
+        "output_tokens": 21,
+        "turns": 1,
+        "write_class": "1h"
+      },
+      "wire_content_bytes": 17286
+    },
+    "CB": {
+      "arithmetic": {
+        "break_even_turns": 11.9,
+        "cut_line": 2,
+        "removed_bytes": 10266,
+        "suffix_bytes": 17218,
+        "suffix_over_removed": 1.677,
+        "tier": "CB"
+      },
+      "compact_boundaries": {
+        "count": 0,
+        "lines": []
+      },
+      "content_bytes": {
+        "assistant_text": 29,
+        "thinking": 0,
+        "tool_result": 16665,
+        "tool_use": 546,
+        "user_text": 46
+      },
+      "content_share": {
+        "assistant_text": 0.1678,
+        "thinking": 0.0,
+        "tool_result": 96.4075,
+        "tool_use": 3.1586,
+        "user_text": 0.2661
+      },
+      "filter_ledger": null,
+      "guards": {
+        "G1_keep_last": 6,
+        "G2_min_bytes": 2,
+        "G3_errors": 1,
+        "G5_unpaired": 1
+      },
+      "message_content_bytes": 17286,
+      "path": "plan_demo.jsonl",
+      "records": {
+        "by_type": {
+          "assistant": 18,
+          "user": 17
+        },
+        "parse_errors": 0,
+        "total": 35,
+        "unrecognised": 0
+      },
+      "rules": {
+        "A1": {
+          "bytes": 2052,
+          "hits": 1,
+          "share": 11.8709,
+          "tier": "A"
+        },
+        "B1": {
+          "bytes": 2051,
+          "hits": 1,
+          "share": 11.8651,
+          "tier": "B"
+        },
+        "B2": {
+          "bytes": 2055,
+          "hits": 1,
+          "share": 11.8882,
+          "tier": "B"
+        },
+        "C1": {
+          "bytes": 2050,
+          "hits": 1,
+          "share": 11.8593,
+          "tier": "C"
+        },
+        "C2": {
+          "bytes": 2056,
+          "hits": 1,
+          "share": 11.894,
+          "tier": "C"
+        },
+        "C3": {
+          "bytes": 2054,
+          "hits": 1,
+          "share": 11.8824,
+          "tier": "C"
+        }
+      },
+      "session_id": "plan_demo",
+      "tiers": {
+        "C": {
+          "bytes": 6160,
+          "share": 35.6358
+        },
+        "CB": {
+          "bytes": 10266,
+          "share": 59.3891
+        },
+        "CBA": {
+          "bytes": 12318,
+          "share": 71.26
+        }
+      },
+      "tool_calls": 17,
+      "tool_result_bytes_by_tool": {
+        "Bash": 10472,
+        "Edit": 40,
+        "Glob": 2050,
+        "Read": 4103
+      },
+      "unanswered_tool_uses": 1,
+      "usage": {
+        "cache_creation_input_tokens": 12000,
+        "cache_read_input_tokens": 48000,
+        "ephemeral_1h_input_tokens": 12000,
+        "ephemeral_5m_input_tokens": 0,
+        "input_tokens": 7,
+        "output_tokens": 21,
+        "turns": 1,
+        "write_class": "1h"
+      },
+      "wire_content_bytes": 17286
+    },
+    "CBA": {
+      "arithmetic": {
+        "break_even_turns": 6.6,
+        "cut_line": 2,
+        "removed_bytes": 12318,
+        "suffix_bytes": 17218,
+        "suffix_over_removed": 1.398,
+        "tier": "CBA"
+      },
+      "compact_boundaries": {
+        "count": 0,
+        "lines": []
+      },
+      "content_bytes": {
+        "assistant_text": 29,
+        "thinking": 0,
+        "tool_result": 16665,
+        "tool_use": 546,
+        "user_text": 46
+      },
+      "content_share": {
+        "assistant_text": 0.1678,
+        "thinking": 0.0,
+        "tool_result": 96.4075,
+        "tool_use": 3.1586,
+        "user_text": 0.2661
+      },
+      "filter_ledger": null,
+      "guards": {
+        "G1_keep_last": 6,
+        "G2_min_bytes": 2,
+        "G3_errors": 1,
+        "G5_unpaired": 1
+      },
+      "message_content_bytes": 17286,
+      "path": "plan_demo.jsonl",
+      "records": {
+        "by_type": {
+          "assistant": 18,
+          "user": 17
+        },
+        "parse_errors": 0,
+        "total": 35,
+        "unrecognised": 0
+      },
+      "rules": {
+        "A1": {
+          "bytes": 2052,
+          "hits": 1,
+          "share": 11.8709,
+          "tier": "A"
+        },
+        "B1": {
+          "bytes": 2051,
+          "hits": 1,
+          "share": 11.8651,
+          "tier": "B"
+        },
+        "B2": {
+          "bytes": 2055,
+          "hits": 1,
+          "share": 11.8882,
+          "tier": "B"
+        },
+        "C1": {
+          "bytes": 2050,
+          "hits": 1,
+          "share": 11.8593,
+          "tier": "C"
+        },
+        "C2": {
+          "bytes": 2056,
+          "hits": 1,
+          "share": 11.894,
+          "tier": "C"
+        },
+        "C3": {
+          "bytes": 2054,
+          "hits": 1,
+          "share": 11.8824,
+          "tier": "C"
+        }
+      },
+      "session_id": "plan_demo",
+      "tiers": {
+        "C": {
+          "bytes": 6160,
+          "share": 35.6358
+        },
+        "CB": {
+          "bytes": 10266,
+          "share": 59.3891
+        },
+        "CBA": {
+          "bytes": 12318,
+          "share": 71.26
+        }
+      },
+      "tool_calls": 17,
+      "tool_result_bytes_by_tool": {
+        "Bash": 10472,
+        "Edit": 40,
+        "Glob": 2050,
+        "Read": 4103
+      },
+      "unanswered_tool_uses": 1,
+      "usage": {
+        "cache_creation_input_tokens": 12000,
+        "cache_read_input_tokens": 48000,
+        "ephemeral_1h_input_tokens": 12000,
+        "ephemeral_5m_input_tokens": 0,
+        "input_tokens": 7,
+        "output_tokens": 21,
+        "turns": 1,
+        "write_class": "1h"
+      },
+      "wire_content_bytes": 17286
+    }
+  },
+  "post_compact_recovery.jsonl": {
+    "C": {
+      "arithmetic": {
+        "break_even_turns": null,
+        "cut_line": null,
+        "removed_bytes": 0,
+        "suffix_bytes": 0,
+        "suffix_over_removed": null,
+        "tier": "C"
+      },
+      "compact_boundaries": {
+        "count": 0,
+        "lines": []
+      },
+      "content_bytes": {
+        "assistant_text": 22,
+        "thinking": 0,
+        "tool_result": 0,
+        "tool_use": 0,
+        "user_text": 32
+      },
+      "content_share": {
+        "assistant_text": 40.7407,
+        "thinking": 0.0,
+        "tool_result": 0.0,
+        "tool_use": 0.0,
+        "user_text": 59.2593
+      },
+      "filter_ledger": null,
+      "guards": {
+        "G1_keep_last": 0,
+        "G2_min_bytes": 0,
+        "G3_errors": 0,
+        "G5_unpaired": 0
+      },
+      "message_content_bytes": 54,
+      "path": "post_compact_recovery.jsonl",
+      "records": {
+        "by_type": {
+          "?": 2
+        },
+        "parse_errors": 0,
+        "total": 2,
+        "unrecognised": 2
+      },
+      "rules": {
+        "A1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "A"
+        },
+        "B1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "B"
+        },
+        "B2": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "B"
+        },
+        "C1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        },
+        "C2": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        },
+        "C3": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        }
+      },
+      "session_id": "post_compact_recovery",
+      "tiers": {
+        "C": {
+          "bytes": 0,
+          "share": 0.0
+        },
+        "CB": {
+          "bytes": 0,
+          "share": 0.0
+        },
+        "CBA": {
+          "bytes": 0,
+          "share": 0.0
+        }
+      },
+      "tool_calls": 0,
+      "tool_result_bytes_by_tool": {},
+      "unanswered_tool_uses": 0,
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "turns": 0,
+        "write_class": "unknown"
+      },
+      "wire_content_bytes": 54
+    },
+    "CB": {
+      "arithmetic": {
+        "break_even_turns": null,
+        "cut_line": null,
+        "removed_bytes": 0,
+        "suffix_bytes": 0,
+        "suffix_over_removed": null,
+        "tier": "CB"
+      },
+      "compact_boundaries": {
+        "count": 0,
+        "lines": []
+      },
+      "content_bytes": {
+        "assistant_text": 22,
+        "thinking": 0,
+        "tool_result": 0,
+        "tool_use": 0,
+        "user_text": 32
+      },
+      "content_share": {
+        "assistant_text": 40.7407,
+        "thinking": 0.0,
+        "tool_result": 0.0,
+        "tool_use": 0.0,
+        "user_text": 59.2593
+      },
+      "filter_ledger": null,
+      "guards": {
+        "G1_keep_last": 0,
+        "G2_min_bytes": 0,
+        "G3_errors": 0,
+        "G5_unpaired": 0
+      },
+      "message_content_bytes": 54,
+      "path": "post_compact_recovery.jsonl",
+      "records": {
+        "by_type": {
+          "?": 2
+        },
+        "parse_errors": 0,
+        "total": 2,
+        "unrecognised": 2
+      },
+      "rules": {
+        "A1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "A"
+        },
+        "B1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "B"
+        },
+        "B2": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "B"
+        },
+        "C1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        },
+        "C2": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        },
+        "C3": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        }
+      },
+      "session_id": "post_compact_recovery",
+      "tiers": {
+        "C": {
+          "bytes": 0,
+          "share": 0.0
+        },
+        "CB": {
+          "bytes": 0,
+          "share": 0.0
+        },
+        "CBA": {
+          "bytes": 0,
+          "share": 0.0
+        }
+      },
+      "tool_calls": 0,
+      "tool_result_bytes_by_tool": {},
+      "unanswered_tool_uses": 0,
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "turns": 0,
+        "write_class": "unknown"
+      },
+      "wire_content_bytes": 54
+    },
+    "CBA": {
+      "arithmetic": {
+        "break_even_turns": null,
+        "cut_line": null,
+        "removed_bytes": 0,
+        "suffix_bytes": 0,
+        "suffix_over_removed": null,
+        "tier": "CBA"
+      },
+      "compact_boundaries": {
+        "count": 0,
+        "lines": []
+      },
+      "content_bytes": {
+        "assistant_text": 22,
+        "thinking": 0,
+        "tool_result": 0,
+        "tool_use": 0,
+        "user_text": 32
+      },
+      "content_share": {
+        "assistant_text": 40.7407,
+        "thinking": 0.0,
+        "tool_result": 0.0,
+        "tool_use": 0.0,
+        "user_text": 59.2593
+      },
+      "filter_ledger": null,
+      "guards": {
+        "G1_keep_last": 0,
+        "G2_min_bytes": 0,
+        "G3_errors": 0,
+        "G5_unpaired": 0
+      },
+      "message_content_bytes": 54,
+      "path": "post_compact_recovery.jsonl",
+      "records": {
+        "by_type": {
+          "?": 2
+        },
+        "parse_errors": 0,
+        "total": 2,
+        "unrecognised": 2
+      },
+      "rules": {
+        "A1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "A"
+        },
+        "B1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "B"
+        },
+        "B2": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "B"
+        },
+        "C1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        },
+        "C2": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        },
+        "C3": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        }
+      },
+      "session_id": "post_compact_recovery",
+      "tiers": {
+        "C": {
+          "bytes": 0,
+          "share": 0.0
+        },
+        "CB": {
+          "bytes": 0,
+          "share": 0.0
+        },
+        "CBA": {
+          "bytes": 0,
+          "share": 0.0
+        }
+      },
+      "tool_calls": 0,
+      "tool_result_bytes_by_tool": {},
+      "unanswered_tool_uses": 0,
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "turns": 0,
+        "write_class": "unknown"
+      },
+      "wire_content_bytes": 54
+    }
+  },
+  "solo_bloated.jsonl": {
+    "C": {
+      "arithmetic": {
+        "break_even_turns": null,
+        "cut_line": null,
+        "removed_bytes": 0,
+        "suffix_bytes": 0,
+        "suffix_over_removed": null,
+        "tier": "C"
+      },
+      "compact_boundaries": {
+        "count": 0,
+        "lines": []
+      },
+      "content_bytes": {
+        "assistant_text": 72000,
+        "thinking": 108000,
+        "tool_result": 37560,
+        "tool_use": 0,
+        "user_text": 0
+      },
+      "content_share": {
+        "assistant_text": 33.0943,
+        "thinking": 49.6415,
+        "tool_result": 17.2642,
+        "tool_use": 0.0,
+        "user_text": 0.0
+      },
+      "filter_ledger": null,
+      "guards": {
+        "G1_keep_last": 0,
+        "G2_min_bytes": 0,
+        "G3_errors": 0,
+        "G5_unpaired": 0
+      },
+      "message_content_bytes": 217560,
+      "path": "solo_bloated.jsonl",
+      "records": {
+        "by_type": {
+          "?": 80
+        },
+        "parse_errors": 0,
+        "total": 80,
+        "unrecognised": 80
+      },
+      "rules": {
+        "A1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "A"
+        },
+        "B1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "B"
+        },
+        "B2": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "B"
+        },
+        "C1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        },
+        "C2": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        },
+        "C3": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        }
+      },
+      "session_id": "solo_bloated",
+      "tiers": {
+        "C": {
+          "bytes": 0,
+          "share": 0.0
+        },
+        "CB": {
+          "bytes": 0,
+          "share": 0.0
+        },
+        "CBA": {
+          "bytes": 0,
+          "share": 0.0
+        }
+      },
+      "tool_calls": 0,
+      "tool_result_bytes_by_tool": {},
+      "unanswered_tool_uses": 0,
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "turns": 0,
+        "write_class": "unknown"
+      },
+      "wire_content_bytes": 217560
+    },
+    "CB": {
+      "arithmetic": {
+        "break_even_turns": null,
+        "cut_line": null,
+        "removed_bytes": 0,
+        "suffix_bytes": 0,
+        "suffix_over_removed": null,
+        "tier": "CB"
+      },
+      "compact_boundaries": {
+        "count": 0,
+        "lines": []
+      },
+      "content_bytes": {
+        "assistant_text": 72000,
+        "thinking": 108000,
+        "tool_result": 37560,
+        "tool_use": 0,
+        "user_text": 0
+      },
+      "content_share": {
+        "assistant_text": 33.0943,
+        "thinking": 49.6415,
+        "tool_result": 17.2642,
+        "tool_use": 0.0,
+        "user_text": 0.0
+      },
+      "filter_ledger": null,
+      "guards": {
+        "G1_keep_last": 0,
+        "G2_min_bytes": 0,
+        "G3_errors": 0,
+        "G5_unpaired": 0
+      },
+      "message_content_bytes": 217560,
+      "path": "solo_bloated.jsonl",
+      "records": {
+        "by_type": {
+          "?": 80
+        },
+        "parse_errors": 0,
+        "total": 80,
+        "unrecognised": 80
+      },
+      "rules": {
+        "A1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "A"
+        },
+        "B1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "B"
+        },
+        "B2": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "B"
+        },
+        "C1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        },
+        "C2": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        },
+        "C3": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        }
+      },
+      "session_id": "solo_bloated",
+      "tiers": {
+        "C": {
+          "bytes": 0,
+          "share": 0.0
+        },
+        "CB": {
+          "bytes": 0,
+          "share": 0.0
+        },
+        "CBA": {
+          "bytes": 0,
+          "share": 0.0
+        }
+      },
+      "tool_calls": 0,
+      "tool_result_bytes_by_tool": {},
+      "unanswered_tool_uses": 0,
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "turns": 0,
+        "write_class": "unknown"
+      },
+      "wire_content_bytes": 217560
+    },
+    "CBA": {
+      "arithmetic": {
+        "break_even_turns": null,
+        "cut_line": null,
+        "removed_bytes": 0,
+        "suffix_bytes": 0,
+        "suffix_over_removed": null,
+        "tier": "CBA"
+      },
+      "compact_boundaries": {
+        "count": 0,
+        "lines": []
+      },
+      "content_bytes": {
+        "assistant_text": 72000,
+        "thinking": 108000,
+        "tool_result": 37560,
+        "tool_use": 0,
+        "user_text": 0
+      },
+      "content_share": {
+        "assistant_text": 33.0943,
+        "thinking": 49.6415,
+        "tool_result": 17.2642,
+        "tool_use": 0.0,
+        "user_text": 0.0
+      },
+      "filter_ledger": null,
+      "guards": {
+        "G1_keep_last": 0,
+        "G2_min_bytes": 0,
+        "G3_errors": 0,
+        "G5_unpaired": 0
+      },
+      "message_content_bytes": 217560,
+      "path": "solo_bloated.jsonl",
+      "records": {
+        "by_type": {
+          "?": 80
+        },
+        "parse_errors": 0,
+        "total": 80,
+        "unrecognised": 80
+      },
+      "rules": {
+        "A1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "A"
+        },
+        "B1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "B"
+        },
+        "B2": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "B"
+        },
+        "C1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        },
+        "C2": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        },
+        "C3": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        }
+      },
+      "session_id": "solo_bloated",
+      "tiers": {
+        "C": {
+          "bytes": 0,
+          "share": 0.0
+        },
+        "CB": {
+          "bytes": 0,
+          "share": 0.0
+        },
+        "CBA": {
+          "bytes": 0,
+          "share": 0.0
+        }
+      },
+      "tool_calls": 0,
+      "tool_result_bytes_by_tool": {},
+      "unanswered_tool_uses": 0,
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "turns": 0,
+        "write_class": "unknown"
+      },
+      "wire_content_bytes": 217560
+    }
+  },
+  "team_two_subagents.jsonl": {
+    "C": {
+      "arithmetic": {
+        "break_even_turns": null,
+        "cut_line": null,
+        "removed_bytes": 0,
+        "suffix_bytes": 0,
+        "suffix_over_removed": null,
+        "tier": "C"
+      },
+      "compact_boundaries": {
+        "count": 0,
+        "lines": []
+      },
+      "content_bytes": {
+        "assistant_text": 22000,
+        "thinking": 0,
+        "tool_result": 322,
+        "tool_use": 120,
+        "user_text": 15
+      },
+      "content_share": {
+        "assistant_text": 97.965,
+        "thinking": 0.0,
+        "tool_result": 1.4339,
+        "tool_use": 0.5344,
+        "user_text": 0.0668
+      },
+      "filter_ledger": null,
+      "guards": {
+        "G1_keep_last": 2,
+        "G2_min_bytes": 0,
+        "G3_errors": 0,
+        "G5_unpaired": 0
+      },
+      "message_content_bytes": 22457,
+      "path": "team_two_subagents.jsonl",
+      "records": {
+        "by_type": {
+          "?": 43
+        },
+        "parse_errors": 0,
+        "total": 43,
+        "unrecognised": 43
+      },
+      "rules": {
+        "A1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "A"
+        },
+        "B1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "B"
+        },
+        "B2": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "B"
+        },
+        "C1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        },
+        "C2": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        },
+        "C3": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        }
+      },
+      "session_id": "team_two_subagents",
+      "tiers": {
+        "C": {
+          "bytes": 0,
+          "share": 0.0
+        },
+        "CB": {
+          "bytes": 0,
+          "share": 0.0
+        },
+        "CBA": {
+          "bytes": 0,
+          "share": 0.0
+        }
+      },
+      "tool_calls": 2,
+      "tool_result_bytes_by_tool": {
+        "Task": 62
+      },
+      "unanswered_tool_uses": 0,
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "turns": 0,
+        "write_class": "unknown"
+      },
+      "wire_content_bytes": 22457
+    },
+    "CB": {
+      "arithmetic": {
+        "break_even_turns": null,
+        "cut_line": null,
+        "removed_bytes": 0,
+        "suffix_bytes": 0,
+        "suffix_over_removed": null,
+        "tier": "CB"
+      },
+      "compact_boundaries": {
+        "count": 0,
+        "lines": []
+      },
+      "content_bytes": {
+        "assistant_text": 22000,
+        "thinking": 0,
+        "tool_result": 322,
+        "tool_use": 120,
+        "user_text": 15
+      },
+      "content_share": {
+        "assistant_text": 97.965,
+        "thinking": 0.0,
+        "tool_result": 1.4339,
+        "tool_use": 0.5344,
+        "user_text": 0.0668
+      },
+      "filter_ledger": null,
+      "guards": {
+        "G1_keep_last": 2,
+        "G2_min_bytes": 0,
+        "G3_errors": 0,
+        "G5_unpaired": 0
+      },
+      "message_content_bytes": 22457,
+      "path": "team_two_subagents.jsonl",
+      "records": {
+        "by_type": {
+          "?": 43
+        },
+        "parse_errors": 0,
+        "total": 43,
+        "unrecognised": 43
+      },
+      "rules": {
+        "A1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "A"
+        },
+        "B1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "B"
+        },
+        "B2": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "B"
+        },
+        "C1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        },
+        "C2": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        },
+        "C3": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        }
+      },
+      "session_id": "team_two_subagents",
+      "tiers": {
+        "C": {
+          "bytes": 0,
+          "share": 0.0
+        },
+        "CB": {
+          "bytes": 0,
+          "share": 0.0
+        },
+        "CBA": {
+          "bytes": 0,
+          "share": 0.0
+        }
+      },
+      "tool_calls": 2,
+      "tool_result_bytes_by_tool": {
+        "Task": 62
+      },
+      "unanswered_tool_uses": 0,
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "turns": 0,
+        "write_class": "unknown"
+      },
+      "wire_content_bytes": 22457
+    },
+    "CBA": {
+      "arithmetic": {
+        "break_even_turns": null,
+        "cut_line": null,
+        "removed_bytes": 0,
+        "suffix_bytes": 0,
+        "suffix_over_removed": null,
+        "tier": "CBA"
+      },
+      "compact_boundaries": {
+        "count": 0,
+        "lines": []
+      },
+      "content_bytes": {
+        "assistant_text": 22000,
+        "thinking": 0,
+        "tool_result": 322,
+        "tool_use": 120,
+        "user_text": 15
+      },
+      "content_share": {
+        "assistant_text": 97.965,
+        "thinking": 0.0,
+        "tool_result": 1.4339,
+        "tool_use": 0.5344,
+        "user_text": 0.0668
+      },
+      "filter_ledger": null,
+      "guards": {
+        "G1_keep_last": 2,
+        "G2_min_bytes": 0,
+        "G3_errors": 0,
+        "G5_unpaired": 0
+      },
+      "message_content_bytes": 22457,
+      "path": "team_two_subagents.jsonl",
+      "records": {
+        "by_type": {
+          "?": 43
+        },
+        "parse_errors": 0,
+        "total": 43,
+        "unrecognised": 43
+      },
+      "rules": {
+        "A1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "A"
+        },
+        "B1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "B"
+        },
+        "B2": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "B"
+        },
+        "C1": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        },
+        "C2": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        },
+        "C3": {
+          "bytes": 0,
+          "hits": 0,
+          "share": 0.0,
+          "tier": "C"
+        }
+      },
+      "session_id": "team_two_subagents",
+      "tiers": {
+        "C": {
+          "bytes": 0,
+          "share": 0.0
+        },
+        "CB": {
+          "bytes": 0,
+          "share": 0.0
+        },
+        "CBA": {
+          "bytes": 0,
+          "share": 0.0
+        }
+      },
+      "tool_calls": 2,
+      "tool_result_bytes_by_tool": {
+        "Task": 62
+      },
+      "unanswered_tool_uses": 0,
+      "usage": {
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "turns": 0,
+        "write_class": "unknown"
+      },
+      "wire_content_bytes": 22457
+    }
+  }
+}

@@ -84,7 +84,7 @@ mistake the measurement exists to catch.
 | `src/winnow/plan.py` | `winnow plan` — the dry run: which results a fork would replace, the pointer that would replace each, what the pointers cost, the net, and `T*` for the cut. Guard G4 is decided here rather than at write time, so `plan` and `fork` agree. About 450 lines with 53 tests |
 | `src/winnow/fork.py` | `winnow fork` and `winnow recover` — the writer and the round trip. Consumes `plan`'s list rather than reclassifying, so the dry run is the fork you get. About 700 lines with 66 tests |
 | `src/winnow/cli.py`, `orchestrator_safe.py` | The `safe`, `inspect`, `plan`, `fork` and `recover` groups, and orchestrator-safe mode, about 1,450 lines with its tests |
-| `src/winnow/validate/` | The harnesses for milestone 2's three unanswered criteria: the 100-fork resume test, the stratified blind label with its sampler and scorer, and the disk-cost series. Not imported by any `winnow` command — a measurement that could change what it measures is not a measurement — and none of it runs in the suite except through its own fixtures. About 1,300 lines with 70 tests |
+| `src/winnow/validate/` | The harnesses for milestone 2's three unanswered criteria: the 100-fork resume test, the stratified blind label with its sampler and scorer, and the disk-cost series. Not imported by any `winnow` command — a measurement that could change what it measures is not a measurement — and none of it runs in the suite except through its own fixtures. About 1,900 lines with 76 tests |
 | `src/winnow/legacy/`, `plugin/`, `tests/` | The tree inherited from Cozempic 1.8.39, about 21,700 lines. Renamed into winnow by [docs/FORK.md](docs/FORK.md) phase 1; still not installed and not started |
 | `packaging/README.md` | The record of the six package channels, the npm shim and the PyPI release workflow that phase 2 deleted. **Winnow publishes to no channel**; installing means a checkout |
 | [web/README.md](web/README.md) | The site: four static routes over what this document says, checked against its own contract in [web/docs/design-language.md](web/docs/design-language.md). Not deployed anywhere yet, and it imports nothing from this tree |
@@ -368,7 +368,7 @@ python3 -m venv .venv && .venv/bin/pip install -q pytest
 .venv/bin/python -m pytest -q -p no:cacheprovider
 ```
 
-Measured on this tree, 2026-08-25: **2,337 passed, 9 failed, 25 skipped, 283 subtests passed**, in
+Measured on this tree, 2026-08-25: **2,344 passed, 8 failed, 25 skipped, 283 subtests passed**, in
 about 50 seconds. The failure count moves between 8 and 9 run to run, for the reason in the first row
 below. (2026-08-23, after the rename and before milestone 2: 1978 passed, 1 failed, 17 skipped.)
 

@@ -33,7 +33,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .inspect import Report, break_even_turns, inspect_session
+from .report import RULE_LABELS, _human, resolve_session
 from .rules import (
+    DEFAULT_KEEP_LAST,
+    DEFAULT_MIN_BYTES,
     OPT_IN_RULES,
     RULE_ORDER,
     RULE_TIER,
@@ -43,6 +46,7 @@ from .rules import (
     inflates,
     pointer_id,
     render_pointer,
+    resolve_rules,
 )
 
 # How much of a tool's arguments `--explain` prints. SPEC §8 asks for the
@@ -197,8 +201,6 @@ def resolve_selection(
     wrong"; a flag that guards the tier but not the rule inside it guards
     nothing, since `--tier CB --rule A1` reaches the same place.
     """
-    from .rules import resolve_rules
-
     try:
         selected = resolve_rules(tier, enable or (), disable or ())
     except RuleSelectionError as exc:
@@ -227,8 +229,6 @@ def build_plan(
     Reads the transcript once, through `inspect_session`, so that `plan` and
     `inspect` cannot disagree about what the file contains either.
     """
-    from .rules import DEFAULT_KEEP_LAST, DEFAULT_MIN_BYTES
-
     keep_last = DEFAULT_KEEP_LAST if keep_last is None else keep_last
     min_bytes = DEFAULT_MIN_BYTES if min_bytes is None else min_bytes
     if keep_last < 0:
@@ -386,18 +386,13 @@ def to_dict(plan: Plan, explain: bool = False) -> dict:
     return payload
 
 
-def _human(n: int) -> str:
-    """Byte sizes, laid out as `report._human` lays them out — one tool, one unit
-    convention."""
-    from .report import _human as human
-
-    return human(n)
-
-
 def render(plan: Plan, explain: bool = False) -> str:
-    """The human readout, laid out like `report.render` so the two read alike."""
-    from .report import RULE_LABELS
+    """The human readout, laid out like `report.render` so the two read alike.
 
+    `_human` and `RULE_LABELS` come from `report` rather than being redefined:
+    an operator reading `inspect` and then `plan` should not have to notice that
+    one says `2.0 KB` and the other `2048 B`.
+    """
     total = plan.report.message_content_bytes
     out: list[str] = []
     add = out.append
@@ -502,8 +497,6 @@ def plan_command(
     nothing, so it has nothing to refuse; its guards produce an outcome rather
     than a refusal, and the outcome is exit 2 when they leave nothing to do.
     """
-    from .report import resolve_session
-
     try:
         selection = resolve_selection(tier, rule, no_rule, i_know)
     except PlanError as exc:

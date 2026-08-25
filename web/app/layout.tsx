@@ -53,7 +53,10 @@ export const metadata: Metadata = {
     url: "/",
   },
   twitter: {
-    card: "summary",
+    /* `summary_large_image` since `app/opengraph-image.tsx` exists: a
+       large-image card with no image is a broken card, which is why this was
+       `summary` before it. See docs/design-language.md §2. */
+    card: "summary_large_image",
     title: `${SITE_NAME} — ${SITE_TAGLINE}`,
     description: SITE_DESCRIPTION,
   },

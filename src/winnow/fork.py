@@ -61,10 +61,17 @@ from .plan import (
     build_plan,
     render_body,
     resolve_selection,
+    suppression_note,
 )
 from .plan import to_dict as plan_to_dict
 from .report import _human, resolve_session
-from .rules import RULE_TIER, content_digest, parse_pointer_id, result_payload
+from .rules import (
+    RULE_TIER,
+    content_digest,
+    parse_pointer_id,
+    result_payload,
+    suppressed_by_default,
+)
 
 # SPEC §8's default. Seconds since the session's last request finished; below
 # this, the prefix may still be cached and the cut is not free.
@@ -641,6 +648,7 @@ def render(result: ForkResult, refusals: list[Refusal], explain: bool = False) -
     add(f"  source sha256  {result.source_sha256}  (unchanged; opened read-only)")
     add(f"  tier {plan.tier}   rules {', '.join(sorted(plan.rules)) or 'none'}   "
         f"keep-last {plan.keep_last}   min-bytes {plan.min_bytes:,}")
+    out.extend(suppression_note(plan))
     add("")
 
     add(f"pairing          {result.tool_uses:,} tool_use, {result.tool_results:,} "
@@ -728,6 +736,7 @@ def fork_command(
                           keep_last=keep_last, min_bytes=min_bytes)
     except PlanError as exc:
         return 1, f"winnow: {exc}"
+    plan.suppressed = suppressed_by_default(tier, rule or (), no_rule or ())
 
     destination = Path(out).expanduser() if out else None
     result, refusals = build_fork(plan, out=destination, now=now,

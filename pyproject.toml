@@ -52,6 +52,18 @@ mcp = [
     "fastmcp>=2.0",
 ]
 
+# What `uv sync` installs without being asked, so that the three commands the
+# work is verified with — `uv sync`, `uv run pytest`, `uv run ruff check .` —
+# work from a bare checkout. Before this, `uv sync` *removed* pytest (it is an
+# extra, and extras are opt-in) and ruff was declared nowhere at all, so the
+# second and third commands could only ever fail. ruff is pinned to a major
+# line because a lint that changes under you is a lint nobody runs.
+[dependency-groups]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.16,<0.17",
+]
+
 [project.scripts]
 winnow = "winnow.cli:main"
 

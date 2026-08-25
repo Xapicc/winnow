@@ -47,6 +47,7 @@ from .rules import (
     pointer_id,
     render_pointer,
     resolve_rules,
+    suppressed_by_default,
 )
 
 # How much of a tool's arguments `--explain` prints. SPEC §8 asks for the
@@ -115,6 +116,11 @@ class Plan:
     # more than the result is the one case where an operator's reaction should be
     # to lower --min-bytes' opposite — and they cannot react to a number.
     inflated: list[Strip] = field(default_factory=list)
+    # Rules the tier names that are off by default on their own measured
+    # precision (rules.DISABLED_BY_DEFAULT). Carried so the readout can say so:
+    # an operator comparing this run against last month's needs to be told the
+    # tier means fewer rules now, not left to work it out from a smaller share.
+    suppressed: tuple[str, ...] = ()
 
     @property
     def removed_bytes(self) -> int:
@@ -319,6 +325,7 @@ def to_dict(plan: Plan, explain: bool = False) -> dict:
             "rules": sorted(plan.rules),
             "keep_last": plan.keep_last,
             "min_bytes": plan.min_bytes,
+            "suppressed_by_default": list(plan.suppressed),
         },
         "message_content_bytes": total,
         "results": {
@@ -398,10 +405,26 @@ def render(plan: Plan, explain: bool = False) -> str:
         f"  {plan.path}",
         (f"  tier {plan.tier}   rules {', '.join(sorted(plan.rules)) or 'none'}   "
          f"keep-last {plan.keep_last}   min-bytes {plan.min_bytes:,}"),
+        *suppression_note(plan),
         "  writes nothing; this is what `winnow fork --write` would do",
         "",
     ]
     return "\n".join([*header, render_body(plan, explain)])
+
+
+def suppression_note(plan: Plan) -> list[str]:
+    """The line that says a tier meant fewer rules than its name lists, or nothing.
+
+    A list rather than a string so a caller can splice it into a header without
+    testing it, and so that the note is written once for `plan` and `fork` alike.
+    """
+    if not plan.suppressed:
+        return []
+    return [
+        f"  off by default: {', '.join(plan.suppressed)} — measured precision "
+        f"below the bar (MILESTONES milestone 2). Re-enable with "
+        f"--rule {' --rule '.join(plan.suppressed)}"
+    ]
 
 
 def render_body(plan: Plan, explain: bool = False) -> str:
@@ -522,6 +545,10 @@ def plan_command(
                           keep_last=keep_last, min_bytes=min_bytes)
     except PlanError as exc:
         return 1, f"winnow: {exc}"
+    # Set here rather than derived inside `build_plan`, which is handed a resolved
+    # rule set and cannot tell a rule the operator switched off from one the
+    # defaults did. The names were validated by `resolve_selection` above.
+    plan.suppressed = suppressed_by_default(tier, rule or (), no_rule or ())
 
     payload = (
         json.dumps(to_dict(plan, explain), indent=2)

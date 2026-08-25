@@ -39,8 +39,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 # ─── SPEC §4 rule patterns ───────────────────────────────────────────────────
@@ -102,33 +103,130 @@ OPT_IN_RULES = frozenset(rule for rule in RULE_ORDER if RULE_TIER[rule] == "A")
 DEFAULT_KEEP_LAST = 6
 DEFAULT_MIN_BYTES = 2048
 
+# ─── Rules a measurement is allowed to switch off ────────────────────────────
+
+# MILESTONES milestone 2: "a rule below 90% on its own is disabled by default
+# even if the aggregate passes". This is the defaults side of SPEC §8's
+# `--rule`/`--no-rule`, and the two halves are not the same thing: `--no-rule`
+# is one operator's choice on one run, this is what the tool believes about a
+# rule until a better measurement moves it.
+#
+# **Empty, and it stays empty until the 200-sample blind label has been scored.**
+# A rule turned off here without a number behind it would be the tool asserting
+# a precision nobody measured, which is the failure mode this whole milestone
+# exists to avoid. docs/MILESTONE-2-VALIDATION.md is the procedure that fills it.
+DISABLED_BY_DEFAULT: frozenset[str] = frozenset()
+
+# The override, so that the labelling result can be acted on the hour it lands
+# rather than waiting for a release. It *replaces* DISABLED_BY_DEFAULT rather
+# than adding to it, so `WINNOW_RULES_OFF=` (empty) is the way to run with every
+# rule its tier names — an override that could only ever subtract more would be
+# a switch with no off position.
+RULES_OFF_ENV = "WINNOW_RULES_OFF"
+
 
 class RuleSelectionError(ValueError):
     """A `--tier`, `--rule` or `--no-rule` that names something that is not a rule."""
+
+
+def default_disabled(env: Mapping[str, str] | None = None) -> frozenset[str]:
+    """The rules that are off by default: `DISABLED_BY_DEFAULT`, or `$WINNOW_RULES_OFF`.
+
+    Separators are commas or whitespace, so `B2,A1` and `"B2 A1"` both work. A
+    name that is not a rule raises rather than being skipped: an operator who
+    typed `WINNOW_RULES_OFF=B3` meant to turn something off, and silently
+    turning nothing off would leave them believing a rule was disabled when it
+    was firing.
+    """
+    environ = os.environ if env is None else env
+    raw = environ.get(RULES_OFF_ENV)
+    if raw is None:
+        return DISABLED_BY_DEFAULT
+    names = [token for token in re.split(r"[,\s]+", raw) if token]
+    try:
+        return frozenset(_valid_rule(name) for name in names)
+    except RuleSelectionError as exc:
+        raise RuleSelectionError(f"{RULES_OFF_ENV}: {exc}") from exc
 
 
 def resolve_rules(
     tier: str,
     enable: Iterable[str] = (),
     disable: Iterable[str] = (),
+    disabled_by_default: Iterable[str] | None = None,
 ) -> frozenset[str]:
-    """The rules that may fire, per SPEC §8: a tier, then the overrides.
+    """The rules that may fire, per SPEC §8: a tier, the defaults, then the overrides.
 
-    Disable is applied after enable, so `--rule B1 --no-rule B1` disables it
-    whatever order the two were typed in. Naming a rule that does not exist is a
-    usage error rather than a silent no-op — SPEC §10 forbids a fallback that
-    silently keeps a result the operator asked to strip.
+    The order is tier → minus the default-off set → plus `--rule` → minus
+    `--no-rule`, and each step is doing one job. A default-off rule is subtracted
+    before `--rule` so that naming it explicitly turns it back on: the default
+    says what the tool believes without instruction, not what it will refuse to
+    do. `--no-rule` is applied last so it always wins, which is why
+    `--rule B1 --no-rule B1` disables B1 whatever order the two were typed in.
+
+    `disabled_by_default=None` reads `default_disabled()`, which is the shipped
+    set unless `$WINNOW_RULES_OFF` overrides it. Pass an explicit iterable —
+    including `()` — to decide it at the call site instead; `inspect` does, because
+    SPEC §6's per-rule table is the ceiling of the mechanism and a rule switched
+    off for precision has not stopped being part of that ceiling.
+
+    Naming a rule that does not exist is a usage error rather than a silent
+    no-op — SPEC §10 forbids a fallback that silently keeps a result the operator
+    asked to strip.
     """
     if tier not in TIER_RULES:
         raise RuleSelectionError(
             f"unknown tier {tier!r}; expected one of {', '.join(TIER_RULES)}"
         )
-    selected = set(TIER_RULES[tier])
+    off = (
+        default_disabled()
+        if disabled_by_default is None
+        else frozenset(_valid_rule(rule) for rule in disabled_by_default)
+    )
+    selected = set(TIER_RULES[tier]) - off
     for rule in enable:
         selected.add(_valid_rule(rule))
     for rule in disable:
         selected.discard(_valid_rule(rule))
     return frozenset(selected)
+
+
+def suppressed_by_default(
+    tier: str,
+    enable: Iterable[str] = (),
+    disable: Iterable[str] = (),
+    disabled_by_default: Iterable[str] | None = None,
+) -> tuple[str, ...]:
+    """Which rules the tier named that the default-off set took away, in RULE_ORDER.
+
+    Exists so a readout can say it. A tier that quietly means fewer rules than
+    its own name lists is the silent-fallback SPEC §10 forbids, and the operator
+    who most needs to be told is the one reading a share that came in lower than
+    the last time they ran it.
+
+    A rule the operator also passed `--no-rule` for is not listed: they turned it
+    off themselves, and attributing their own choice to a default would misreport
+    where the decision came from.
+    """
+    if tier not in TIER_RULES:
+        raise RuleSelectionError(
+            f"unknown tier {tier!r}; expected one of {', '.join(TIER_RULES)}"
+        )
+    off = (
+        default_disabled()
+        if disabled_by_default is None
+        else frozenset(_valid_rule(rule) for rule in disabled_by_default)
+    )
+    restored = {_valid_rule(rule) for rule in enable}
+    chosen_off = {_valid_rule(rule) for rule in disable}
+    return tuple(
+        rule
+        for rule in RULE_ORDER
+        if rule in TIER_RULES[tier]
+        and rule in off
+        and rule not in restored
+        and rule not in chosen_off
+    )
 
 
 def _valid_rule(rule: str) -> str:

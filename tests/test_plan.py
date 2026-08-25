@@ -27,9 +27,14 @@ from winnow.plan import (
 from winnow.rules import (
     ALL_RULES,
     DEFAULT_MIN_BYTES,
+    DISABLED_BY_DEFAULT,
+    RuleSelectionError,
+    default_disabled,
     parse_pointer_id,
     pointer_id,
     render_pointer,
+    resolve_rules,
+    suppressed_by_default,
 )
 
 from .test_inspect import BIG, SMALL, call, padding, write
@@ -153,6 +158,76 @@ def test_rule_ids_are_case_insensitive_but_must_exist():
         resolve_selection("C", enable=["B9"])
     with pytest.raises(PlanError, match="unknown tier"):
         resolve_selection("D")
+
+
+# ─── A rule disabled by default on its own precision (MILESTONES milestone 2) ─
+
+
+def test_nothing_is_disabled_by_default_until_the_label_has_been_scored():
+    """The shipped default is empty, and that is a claim about evidence.
+
+    A rule switched off here without a measured precision behind it would be the
+    tool asserting a number nobody produced — the exact failure milestone 2 is
+    built to catch. When the 200-sample label lands, this test changes with it,
+    and the commit that changes it carries the number.
+    """
+    assert DISABLED_BY_DEFAULT == frozenset()
+    assert default_disabled({}) == frozenset()
+
+
+def test_a_default_off_rule_leaves_the_tier_it_belongs_to():
+    assert resolve_rules("CB", disabled_by_default=["B2"]) == {"C1", "C2", "C3", "B1"}
+    # Naming it explicitly turns it back on: the default says what the tool
+    # believes without instruction, not what it refuses to do.
+    assert "B2" in resolve_rules("CB", enable=["B2"], disabled_by_default=["B2"])
+    # --no-rule is still applied last, so it wins over the re-enable.
+    assert "B2" not in resolve_rules(
+        "CB", enable=["B2"], disable=["B2"], disabled_by_default=["B2"]
+    )
+
+
+def test_the_environment_replaces_the_default_list_rather_than_adding_to_it():
+    assert default_disabled({"WINNOW_RULES_OFF": "B2,A1"}) == {"B2", "A1"}
+    assert default_disabled({"WINNOW_RULES_OFF": " b2   a1 "}) == {"B2", "A1"}
+    # An override that could only subtract more would be a switch with no off
+    # position: an empty value is how an operator runs every rule the tier names.
+    assert default_disabled({"WINNOW_RULES_OFF": ""}) == frozenset()
+    with pytest.raises(RuleSelectionError, match="WINNOW_RULES_OFF"):
+        default_disabled({"WINNOW_RULES_OFF": "B9"})
+
+
+def test_a_suppressed_rule_is_named_rather_than_silently_missing():
+    """SPEC §10: no fallback that silently keeps a result the operator asked to strip.
+
+    A tier that quietly means fewer rules than its own name lists is that
+    fallback wearing a default's clothes, so the readout has to say it.
+    """
+    assert suppressed_by_default("CB", disabled_by_default=["B2"]) == ("B2",)
+    # A rule outside the tier was never going to fire; reporting it as suppressed
+    # would tell the operator a tier lost something it never had.
+    assert suppressed_by_default("C", disabled_by_default=["B2"]) == ()
+    # Neither an explicit --rule nor an explicit --no-rule is the default's doing.
+    assert suppressed_by_default("CB", enable=["B2"], disabled_by_default=["B2"]) == ()
+    assert suppressed_by_default("CB", disable=["B2"], disabled_by_default=["B2"]) == ()
+
+
+def test_the_suppression_reaches_the_readout_and_the_json(tmp_path, monkeypatch):
+    monkeypatch.setenv("WINNOW_RULES_OFF", "B2")
+    records = [
+        *call("i0", "Bash", {"command": "cat notes.md"}, BIG),
+        *call("i1", "Bash", {"command": "cat other.md"}, BIG),
+        *padding(8),
+    ]
+    path = write(tmp_path, records, f"{SESSION}.jsonl")
+    code, output = plan_command(str(path))
+    assert code == 2, output  # B2 was the only rule with anything to claim
+    assert "off by default: B2" in output
+    assert "--rule B2" in output
+
+    code, output = plan_command(str(path), as_json=True)
+    payload = json.loads(output.split("\n\nwinnow:")[0])
+    assert payload["selection"]["suppressed_by_default"] == ["B2"]
+    assert "B2" not in payload["selection"]["rules"]
 
 
 def test_disabling_a_rule_lets_a_later_one_claim_the_same_result(tmp_path):

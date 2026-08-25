@@ -344,7 +344,9 @@ def add_plan_subparser(sub) -> None:
     )
     p.add_argument(
         "--rule", action="append", default=[], metavar="ID",
-        help="enable one rule on top of the tier, repeatable (C1 C2 C3 B1 B2 A1)",
+        help="enable one rule on top of the tier, repeatable (C1 C2 C3 B1 B2 A1). "
+             "Also how a rule that is off by default is switched back on; "
+             f"${rules_mod.RULES_OFF_ENV} sets that default list",
     )
     p.add_argument(
         "--no-rule", action="append", default=[], metavar="ID",
@@ -420,7 +422,9 @@ def add_fork_subparser(sub) -> None:
     )
     p.add_argument(
         "--rule", action="append", default=[], metavar="ID",
-        help="enable one rule on top of the tier, repeatable (C1 C2 C3 B1 B2 A1)",
+        help="enable one rule on top of the tier, repeatable (C1 C2 C3 B1 B2 A1). "
+             "Also how a rule that is off by default is switched back on; "
+             f"${rules_mod.RULES_OFF_ENV} sets that default list",
     )
     p.add_argument(
         "--no-rule", action="append", default=[], metavar="ID",

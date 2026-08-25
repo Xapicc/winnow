@@ -93,12 +93,17 @@ const ASIDES: Record<string, ReactNode> = {
   savings: (
     <div>
       <TerminalBlock commands={SAVINGS_COMMANDS} />
+      {/* The second of the two things it has to get right. The first — that
+          summing a stateless filter's ledger reports 27× what was removed — is
+          the prose beside this, so the panel does not repeat it. */}
       <div className="mt-6">
-        <AsciiPanel label="modelled">
+        <AsciiPanel label="one turn">
           <p className="text-fg-muted">
-            The figure is modelled, not billed, and the command says so in its
-            own output. The bytes were never sent, so no invoice line
-            corresponds to them.
+            <Ticks>
+              {
+                "One API request is one turn, however many records it left on disk. Claude Code writes a response as one record per content-block group and stamps every one of them with the same `requestId` and the same `message.usage`; counting records instead of requests inflates both `T` and the bill it is compared against, by 1.7 to 2.4× on that install's transcripts."
+              }
+            </Ticks>
           </p>
         </AsciiPanel>
       </div>
@@ -118,17 +123,17 @@ const ASIDES: Record<string, ReactNode> = {
     </div>
   ),
 
+  /* The kill criteria are already the section's own prose, out of `SECTIONS`.
+     A panel restating them would be the title in longer words — so this one
+     carries the thing the prose does not: what "not started" costs to change. */
   unbuilt: (
-    <AsciiPanel label="the project" tone="accent">
+    <AsciiPanel label="milestone 2" tone="accent">
       <p className="text-fg-muted">
         <Ticks>
           {
-            "If the first milestone comes back saying the cache is already warm at a typical resume, or that the strippable share at tier CB does not reproduce, the kill criteria say to stop."
+            "`winnow fork` is the pruner, and the rules and guards it would apply are already specified and already measured by `winnow inspect`. What is missing is the part that writes: a copy-on-write fork, the pointer's `winnow recover`, and the pairing check that aborts rather than emitting a transcript the API would reject."
           }
         </Ticks>
-      </p>
-      <p className="text-fg-muted mt-3">
-        Stopping then is the intended outcome rather than a failure of it.
       </p>
     </AsciiPanel>
   ),

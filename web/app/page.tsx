@@ -204,9 +204,12 @@ export default function HomePage() {
                 href={`#${section.id}`}
                 className="group wn-state hover:bg-surface grid grid-cols-[4ch_1fr] items-start gap-x-[2ch] py-6"
               >
+                {/* fg-muted, not fg-faint. An ordinal is a numeral somebody
+                    reads, and 3.92:1 is not enough for one however decorative
+                    it is — axe measures it and calls it serious. §1. */}
                 <span
                   aria-hidden="true"
-                  className="wn-state text-small text-fg-faint group-hover:text-accent pt-1"
+                  className="wn-state text-small text-fg-muted group-hover:text-accent pt-1"
                 >
                   {section.index}
                 </span>

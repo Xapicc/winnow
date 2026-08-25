@@ -72,7 +72,9 @@ function logRow(line: LogLine): FigureRow {
     ? {
         cells: [
           { text: left, tone: "muted" },
-          { text: "    past the breakpoint", tone: "faint" },
+          // muted, not faint: this says what happened to the request, and §1
+          // does not let fg-faint carry information at 3.92:1.
+          { text: "    past the breakpoint", tone: "muted" },
         ],
       }
     : {
@@ -80,7 +82,8 @@ function logRow(line: LogLine): FigureRow {
           { text: left, tone: "muted" },
           // Three spaces so the rule id lands in the column "past" starts in
           // and both actions end flush: they are alternatives, not columns.
-          { text: `    ${pad(line.rule, 4)}`, tone: "faint" },
+          // The rule that fired is a name, not filler. Same reason as above.
+          { text: `    ${pad(line.rule, 4)}`, tone: "muted" },
           { text: "→ pointer", tone: "accent" },
         ],
       };

@@ -81,12 +81,21 @@ white  on accent-deep  #ffffff on #e8621f   3.39 : 1   fails AA
 Rules that follow from those numbers, and they are not negotiable:
 
 - **`--color-fg-faint` never carries information.** 3.92:1 fails AA for body text. It is
-  for box-drawing frames, grid lines, ASCII filler and disabled glyphs. If a sentence has
-  to be read, it is at least `--color-fg-muted`. The rule is easy to break by eye, because
-  3.92:1 looks like a tasteful grey on a good monitor. Every use of the token is inside an
-  `aria-hidden` element — frames, rules, the bracket glyphs on a ghost button, and the
-  `01`–`06` ordinals on the home page, which are decoration duplicating a visual order and
-  are not announced.
+  for box-drawing frames, grid lines, ASCII filler and disabled glyphs — shapes, not
+  words. If a sentence, a name or a numeral has to be read, it is at least
+  `--color-fg-muted`. The rule is easy to break by eye, because 3.92:1 looks like a
+  tasteful grey on a good monitor.
+
+  **`aria-hidden` is not a licence, and this paragraph used to say it was.** It listed the
+  `01`–`06` ordinals on the home page as a permitted use because they duplicate a visual
+  order and are not announced. That was wrong in the way §9 warns about: not being
+  announced says nothing about being legible, and a sighted reader reads `01` at 3.92:1
+  whatever the accessibility tree thinks. `e2e/a11y.spec.ts` measures the rendered result
+  and reported seven serious `color-contrast` nodes on the home page for exactly this. The
+  ordinals are `--color-fg-muted`, and so are the two labels in `FilterPositionDemo` that
+  said which rule fired and what happened to the request. Every remaining use of the token
+  is a shape: frames, rules, the bracket glyphs on a ghost button, the unfilled remainder
+  of a bar.
 - **White is never placed on either accent.** 2.15:1 and 3.39:1. A filled accent control is
   `--color-accent` with `--color-canvas` text → 7.59:1. Dark-on-bright is also the more
   terminal-looking of the two, so this costs nothing. The rule is *stronger* here than on

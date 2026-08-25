@@ -81,10 +81,18 @@ function ratioLabel(cut: Cut): string {
  * Filled and empty differ in glyph as well as in tone, and the overflow has a
  * glyph of its own, so every reading survives without colour.
  *
+ * **The bar itself carries no colour, and that is a correction.** The version
+ * ported from the reference drew the whole 18-cell bar in the verdict's own
+ * tone, which put four saturated slabs of red and green on one figure —
+ * §1 budgets roughly one accent element per viewport and reserves green and red
+ * for "status glyphs and the specific facts they describe". The verdict is a
+ * fact about the number, so it is the number that carries it, plus the `▸` that
+ * says the bar ran out of axis. The bar is shape.
+ *
  * The unfilled remainder is the only thing in this figure drawn in `faint`.
  * Every label, column head and note carries information and is therefore at
  * least `muted`; a bar's empty half is filler, and the number beside it is
- * where the reading actually comes from. docs/design-language.md §1.
+ * where the reading actually comes from.
  */
 function bar(turns: number): { filled: string; rest: string } {
   if (turns > BAR_WIDTH) {
@@ -105,7 +113,7 @@ function cutRow(cut: Cut): FigureRow {
       { text: ` ${pad(cut.label, CUT_COLS)}`, tone: "fg" },
       { text: padLeft(ratioLabel(cut), RATIO_COLS), tone: "muted" },
       { text: "  " },
-      { text: filled, tone: over ? "danger" : "ok" },
+      { text: filled, tone: "muted" },
       { text: rest, tone: over ? "danger" : "faint" },
       { text: padLeft(String(turns), TURNS_COLS), tone: over ? "danger" : "ok" },
     ],
@@ -124,7 +132,7 @@ function boundaryRow(): FigureRow {
       { text: ` ${pad("at a boundary", CUT_COLS)}`, tone: "fg" },
       { text: padLeft("2", RATIO_COLS), tone: "muted" },
       { text: "  " },
-      { text: filled, tone: "ok" },
+      { text: filled, tone: "muted" },
       { text: rest, tone: "faint" },
       { text: padLeft("0", TURNS_COLS), tone: "ok" },
     ],

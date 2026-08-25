@@ -131,6 +131,16 @@ viewport-height of scroll.** Green and red are reserved for status glyphs and th
 facts they describe — a green tick that means nothing is worse than no tick. Never colour a
 decoration with `--color-ok` because it looks nice there.
 
+**A bar is a decoration; the number beside it is the fact.** `PaybackDemo` was ported with
+its whole 18-cell bar drawn in the verdict's tone, and four rows of it put two saturated
+slabs of green and two of red on one figure — the hacker theme this document opens by
+forbidding, arrived at one honest step at a time. The rule that came out of looking at it:
+in a figure, the tone goes on the value and on any glyph that changes meaning (`▸` for "off
+the end of the axis"), and the bar is drawn in `--color-fg-muted` against a `--color-fg-faint`
+remainder. Filled and empty still differ in glyph, so the reading survives greyscale either
+way. The same edit applies to `FilterPositionDemo`, whose accent is spent on the `→ pointer`
+marks rather than on the twenty cells of cached prefix beside them.
+
 The wordmark is the largest accent object on the site and it spends the hero's whole
 budget on its own. That is why the mark in §4 is an outline and not a filled block: the
 first draft filled 11 × 5 characters with `█`, and at hero size it was a slab of orange
@@ -152,6 +162,16 @@ One family, everywhere: **JetBrains Mono**, variable weight axis 100–800, self
   rather than pulled from `next/font/google`. If a later run needs a character outside the
   subset, re-cut the font; do not let it fall back, because a fallback glyph breaks the
   grid.
+- **286 code points, and the list is now read out of the file rather than described.**
+  `lib/font.test.tsx` parses the WOFF2 container, brotli-decompresses it, walks the `cmap`
+  and fails on any character the site renders that the font does not carry. It found two on
+  the run that wrote it, both in body copy: **`§` U+00A7 and `±` U+00B1 are not in the
+  subset.** Write "section 4" and "3 points either way" until somebody re-cuts the font;
+  neither one can be re-cut from inside the harness container, which has no `fontTools` and
+  no network. Also outside it and worth knowing before reaching for one: `«»`, `‰`, `†`,
+  `≈`, `≤`, `≥`, `∞` and every emoji. Inside it and easy to miss: `▸` U+25B8, `●`, `■`, `▲`,
+  `○`, `□`, `▪`, `−` U+2212, `×`, `·`, `—`, `–`, `…`, `°`, `©`, and the four arrows
+  `←↑→↓` plus `↗`.
 - **Every glyph in the file has advance width 600/1000 = `0.6em`.** All character-grid
   arithmetic on this site depends on that constant.
 - No italics. The italic face is not shipped; use weight or colour for emphasis instead of
@@ -416,16 +436,26 @@ ones.
   tall.
 - `Ascii` / `DecodeAscii` — fixed and decoding character art, both `aria-hidden`.
 - `AsciiRule` — a `─` or `═` run that fills the width it is given.
-- `Ticks` — renders `` `backticked` `` spans in a plain string as accent-coloured code.
-  Because the whole site is monospace, a code span cannot be marked by family — colour is
-  the only signal available, and body copy is the one place the accent is allowed to appear
-  for that reason.
+- `Ticks` — renders the two marks the copy is written with. `` `backticked` `` spans become
+  accent-coloured code: the whole site is monospace, so a code span cannot be marked by
+  family, colour is the only signal available, and body copy is the one place the accent is
+  allowed to appear for that reason. `*starred*` spans become emphasis in **weight and tone,
+  never slope** — there is no italic face in the subset, so an `<em>` left alone would be a
+  synthesised oblique. The star mark exists because the copy is lifted out of markdown
+  documents that use it, and an unhandled `*word*` renders as two pieces of punctuation that
+  look like markdown nobody compiled. Backticks resolve first, so a star inside a code span
+  stays literal. **`**double**` is not a mark**, and a page carrying an odd star fails
+  `app/routes.test.tsx` rather than quietly swallowing the rest of its sentence.
 - `SpecList` — a term and its meaning, two columns where there is room.
-- `AsciiFigure` / `ScriptedFigure` / `useScriptedSteps` — the figure vocabulary. **These
-  three ship unused.** They are here because the figures a later run draws belong in them
-  rather than in something invented on the spot, and because `ScriptedFigure` is where the
-  reduced-motion and off-screen rules of §5 are already enforced. A figure written any
-  other way has to re-argue both.
+- `ComparisonTable` — a real `<table>`, for the one set of real numbers on the site that is
+  shaped like one. **It is deliberately not a figure.** Rule 13 below makes every figure an
+  illustration and hides its drawing from screen readers; the intake filter's replay is a
+  measurement, and a measurement a screen reader cannot read is not a measurement it has
+  been told. Its `<caption>` sits below the rows and is the only place the source is named.
+- `AsciiFigure` / `ScriptedFigure` / `useScriptedSteps` — the figure vocabulary, and the
+  four figures in `components/demos/` are written in it. `ScriptedFigure` is where the
+  reduced-motion and off-screen rules of §5 are enforced, so a figure written any other way
+  has to re-argue both.
 
 Focus is always visible: `outline: 2px solid var(--color-accent)` with a `2px` offset. Do
 not remove it, do not replace it with a colour change alone, and **do not transition it** —
@@ -438,8 +468,14 @@ an `inline-flex` to make the box real rather than nominal.
 The header drops its `source ↗` link below `640px`; four items do not fit a 390px row, and
 the same link is in the hero and in the footer. **There is deliberately no mobile
 disclosure menu.** Three items fit a 320px row with the brand, so a hamburger would hide
-two links behind a control, cost a focus trap and an Escape handler, and buy nothing. If
-the nav ever grows a fourth item, that is the moment to revisit it — not before.
+two links behind a control, cost a focus trap and an Escape handler, and buy nothing.
+
+**The fourth item arrived, and the answer is still no.** `/filter` made four, which this
+section said was the moment to revisit. Revisited: `source ↗` is already gone below `640px`,
+so a phone still carries three links, and three fit 320px **once each label loses its
+article** — "the arithmetic" and "the filter" became `arithmetic` and `filter`, and the row's
+gap tightens from `2ch` to `1.5ch` below `sm`. Measured in a browser at 320px, not computed.
+A fifth item is a different conversation, and the articles are already spent.
 
 Routes come from `NAV_LINKS` in `lib/site.ts`, and `ROUTES` is derived from it rather than
 listed twice: a page nothing links to is a page that does not belong in the sitemap either.
@@ -508,27 +544,38 @@ Claude Code session saves money has been made, by anyone."*
 
 ## 9. Checking the work
 
-`npm run typecheck` and `npm run build` both pass on a clean checkout with no `.env`, and
-every route prerenders static. That is the whole of what is checked today.
+`npm run typecheck`, `npm test` and `npm run build` all pass on a clean checkout with no
+`.env`, and every route prerenders static.
 
-**The test layer is not written yet.** `npm test` and `npm run test:e2e` are wired —
-`vitest.config.mts` and `playwright.config.ts` are configured, the latter pointing at an
-`e2e/` directory a later run creates — but the only test in the tree is
-`lib/ascii.test.ts`, which asserts the geometry of art that was invented in this repository
-and is therefore not checkable against anything upstream. A later run writes the rest. What
-it has to cover, from the claims made above that markup alone cannot prove:
+**Half the test layer is written.** `npm test` runs five files under `vitest`; `npm run
+test:e2e` is still wired to an `e2e/` directory that does not exist, and everything needing a
+real browser is still owed.
+
+Written, and what each one is for:
+
+- `lib/ascii.test.ts` — the geometry of art invented in this repository, so not checkable
+  against anything upstream.
+- `lib/payback.test.ts` — the break-even formula, ported with the code it tests. Every way
+  of getting `19·(S/D) − 20` wrong typechecks, and all of them produce a smaller, friendlier
+  number.
+- `lib/font.test.tsx` — every character every route renders is in the shipped `cmap` (§2).
+  Not "every character in `lib/ascii.ts`" as this list originally asked: the pages turned out
+  to be where the misses were.
+- `components/Ticks.test.tsx` — both copy marks, including that emphasis is upright.
+- `app/routes.test.tsx` — every route renders, has exactly one `<h1>`, hides its character
+  art behind it (§4), links only to routes in `ROUTES`, links only to anchors that exist on
+  the page they name, and leaves no unresolved emphasis star (§7). Every `SECTIONS[].href` is
+  resolved against the rendered markup of the page it points at.
+
+Still owed, and all of it needs a browser:
 
 - the hero scrambles and then resolves, and the reduced-motion path never enters the
   animation (§5)
-- the art is `aria-hidden` behind a real `<h1>` (§4)
 - the first tab stop is a visible skip link (§7)
-- no internal link or in-page anchor is dead (§7) — every `SECTIONS[].href` resolves to a
-  heading that exists
-- nothing overflows sideways at six widths (§3)
+- nothing overflows sideways at six widths (§3) — the 320px header was checked by
+  screenshot on the run that widened the nav, which is not the same as a check
 - axe finds no serious or critical violation on any route at either width
 - the filled button is canvas-on-accent and never white-on-accent (§1)
-- every character in `lib/ascii.ts` is inside the shipped font subset, read out of the
-  font's own `cmap` (§2)
 
 Two of those are written the way they are because the eye is bad at them, and whatever
 implements them should inherit the reasoning. A contrast check composites through ancestors

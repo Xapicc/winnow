@@ -96,8 +96,10 @@ function cacheRows(): FigureRow[] {
     {
       cells: [
         { text: " req 25  ", tone: "muted" },
-        { text: "▓".repeat(PREFIX_WIDTH), tone: "accent" },
-        { text: "│", tone: "fg" },
+        // Shape, not colour: §1's accent budget on this figure is already spent
+        // on `[on]` and the three `→ pointer` marks, which are the mechanism.
+        { text: "▓".repeat(PREFIX_WIDTH), tone: "muted" },
+        { text: "│", tone: "accent" },
         { text: "░".repeat(TAIL_WIDTH), tone: "faint" },
       ],
     },

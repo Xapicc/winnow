@@ -12,7 +12,9 @@
     "start": "next start -p 8010",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "check": "node scripts/check.mjs",
+    "shoot": "node scripts/shoot.mjs"
   },
   "dependencies": {
     "next": "^15.5.4",

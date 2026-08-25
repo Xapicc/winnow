@@ -41,6 +41,63 @@ test.describe("the decode", () => {
   });
 });
 
+test("reduced motion schedules no work, rather than animating and hiding it", async ({
+  browser,
+}) => {
+  /* §5 asks for more than a still hero: the component reads the media query
+     *before* scheduling anything, so no frame is requested and no timer is set.
+     A component that requests a frame and then bails honours the preference on
+     paper only — it has already paid for a paint.
+
+     Asserted against a control rather than against a number. React and Next
+     schedule work of their own on both paths, so "zero" is not the claim and a
+     magic threshold would only be this machine's frame rate written down; what
+     the decode adds is one frame per tick for 900 ms, which is an order of
+     magnitude, not a margin. */
+  const count = async (reducedMotion: "reduce" | "no-preference") => {
+    const context = await browser.newContext({ reducedMotion });
+    const page = await context.newPage();
+    await page.addInitScript(() => {
+      const scheduled = { frames: 0, timers: 0 };
+      (window as { __wnScheduled?: typeof scheduled }).__wnScheduled = scheduled;
+
+      const frame = window.requestAnimationFrame.bind(window);
+      window.requestAnimationFrame = (callback) => {
+        scheduled.frames += 1;
+        return frame(callback);
+      };
+
+      const timer = window.setTimeout.bind(window);
+      window.setTimeout = ((handler: TimerHandler, delay?: number, ...rest: unknown[]) => {
+        scheduled.timers += 1;
+        return timer(handler, delay, ...rest);
+      }) as typeof window.setTimeout;
+    });
+
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(1500);
+    const scheduled = await page.evaluate(
+      () =>
+        (window as { __wnScheduled?: { frames: number; timers: number } })
+          .__wnScheduled ?? { frames: 0, timers: 0 },
+    );
+    await context.close();
+    return scheduled;
+  };
+
+  const [still, animating] = await Promise.all([count("reduce"), count("no-preference")]);
+
+  expect(animating.frames, "the control never decoded").toBeGreaterThan(20);
+  expect(
+    still.frames,
+    `reduced motion requested ${still.frames} frames against the control's ${animating.frames}`,
+  ).toBeLessThan(animating.frames / 4);
+  expect(
+    still.timers,
+    "reduced motion scheduled more timers than the animating path",
+  ).toBeLessThanOrEqual(animating.timers);
+});
+
 test.describe("prefers-reduced-motion: reduce", () => {
   // 1.62 moved the media emulation options under `contextOptions`.
   test.use({ contextOptions: { reducedMotion: "reduce" } });
@@ -65,42 +122,6 @@ test.describe("prefers-reduced-motion: reduce", () => {
       (await heroFrames(page)).filter((frame) => noisePattern.test(frame)),
       "the hero entered the decode under reduced motion",
     ).toEqual([]);
-  });
-
-  test("no frame is requested and no timer is scheduled", async ({ page }) => {
-    /* §5 asks for more than a still hero: the component reads the media query
-       *before* scheduling work, so nothing is queued at all. A component that
-       requests a frame and then bails honours the preference on paper only —
-       it has already paid for a paint. Counted by replacing the two schedulers
-       before any site script runs. */
-    await page.addInitScript(() => {
-      const counts = { frames: 0, timers: 0 };
-      (window as { __wnScheduled?: typeof counts }).__wnScheduled = counts;
-
-      const rAF = window.requestAnimationFrame.bind(window);
-      window.requestAnimationFrame = (callback) => {
-        counts.frames += 1;
-        return rAF(callback);
-      };
-
-      const timeout = window.setTimeout.bind(window);
-      window.setTimeout = ((handler: TimerHandler, delay?: number, ...rest: unknown[]) => {
-        counts.timers += 1;
-        return timeout(handler, delay, ...rest);
-      }) as typeof window.setTimeout;
-    });
-
-    await page.goto("/", { waitUntil: "domcontentloaded" });
-    await page.waitForTimeout(1200);
-
-    // React and Next schedule their own work, so this cannot assert zero. The
-    // decode alone would add a frame per tick for 900ms — 50-plus at 60Hz.
-    const scheduled = await page.evaluate(
-      () =>
-        (window as { __wnScheduled?: { frames: number; timers: number } })
-          .__wnScheduled ?? { frames: 0, timers: 0 },
-    );
-    expect(scheduled.frames, "animation frames requested").toBeLessThan(10);
   });
 
   test("no element anywhere on the page is mid-scramble", async ({ page }) => {

@@ -393,16 +393,28 @@ def render(plan: Plan, explain: bool = False) -> str:
     an operator reading `inspect` and then `plan` should not have to notice that
     one says `2.0 KB` and the other `2048 B`.
     """
+    header = [
+        f"plan for session {plan.session_id}",
+        f"  {plan.path}",
+        (f"  tier {plan.tier}   rules {', '.join(sorted(plan.rules)) or 'none'}   "
+         f"keep-last {plan.keep_last}   min-bytes {plan.min_bytes:,}"),
+        "  writes nothing; this is what `winnow fork --write` would do",
+        "",
+    ]
+    return "\n".join([*header, render_body(plan, explain)])
+
+
+def render_body(plan: Plan, explain: bool = False) -> str:
+    """Everything below the heading: the rules, the bytes, the guards, the T*.
+
+    Split from `render` so that `fork` can print the same arithmetic under its own
+    heading. A fork that has just written a file cannot say "writes nothing", and
+    a second copy of this table would be a second chance for the dry run and the
+    write to disagree about what they removed.
+    """
     total = plan.report.message_content_bytes
     out: list[str] = []
     add = out.append
-
-    add(f"plan for session {plan.session_id}")
-    add(f"  {plan.path}")
-    add(f"  tier {plan.tier}   rules {', '.join(sorted(plan.rules)) or 'none'}   "
-        f"keep-last {plan.keep_last}   min-bytes {plan.min_bytes:,}")
-    add("  writes nothing; this is what `winnow fork --write` would do")
-    add("")
 
     add(f"would strip       {len(plan.strips):>10,} of {plan.report.tool_calls:,} "
         "tool results")

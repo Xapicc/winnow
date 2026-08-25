@@ -420,11 +420,12 @@ def suppression_note(plan: Plan) -> list[str]:
     """
     if not plan.suppressed:
         return []
-    return [
+    note = (
         f"  off by default: {', '.join(plan.suppressed)} — measured precision "
         f"below the bar (MILESTONES milestone 2). Re-enable with "
         f"--rule {' --rule '.join(plan.suppressed)}"
-    ]
+    )
+    return [note]
 
 
 def render_body(plan: Plan, explain: bool = False) -> str:

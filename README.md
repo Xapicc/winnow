@@ -10,15 +10,22 @@ winnow is an attempt to answer that question and, if the answer comes back the r
 that only fires when the arithmetic says it pays.
 
 > [!IMPORTANT]
-> **The pruner does not exist yet, but the instrument does.** `winnow inspect` runs, and milestone
+> **The pruner exists. Whether it is safe to use is not yet known.** `winnow inspect` runs, and
+> milestone
 > 1's number has been produced: **tier CB strips 10.2% of message content pooled, 8.8% at the median**
 > — against the 22.6% / 21.6% [docs/SPEC.md](docs/SPEC.md) §6 recorded and the ±3 points §9 asked it
 > to reproduce within. It misses by 12.4, and 8.7 of those are one rule whose measured number was
 > taken with a looser definition than the same document specifies
 > ([docs/COZEMPIC.md](docs/COZEMPIC.md) §3.4). Netted against the cache — `0.1·D` earned on each turn
 > that followed the cut, `1.9·S − 2·D` paid once — a tier-CB cut **pays off in 58% of sessions and is
-> worth +3.27% of the bill**, on an optimistic bound, against the 15% SPEC §9 set as the target. There
-> is still no `winnow fork` and no `winnow bench`. What there is instead is
+> worth +3.27% of the bill**, on an optimistic bound, against the 15% SPEC §9 set as the target.
+> `winnow plan`, `winnow fork --write` and `winnow recover` are built — milestone 2 — but **three of
+> that milestone's definition-of-done items have not been answered**: whether 100 real forks all
+> resume, whether ≥90% of what the rules strip was genuinely needed once, and what a week of
+> accumulated forks costs on disk. Each needs production data, a person, or elapsed time rather than
+> more code, and until they land the milestone is built and not passed — the commands that answer them
+> are in [docs/MILESTONE-2-VALIDATION.md](docs/MILESTONE-2-VALIDATION.md). There
+> is still no `winnow bench`. What there is instead is
 > [`winnow filter`](#the-intake-filter): the same rules applied *before* the cache write, which never
 > pays the invalidation and is worth **+3.76%** — 1.1× the pruner, and positive in every session
 > rather than 58% of them.
@@ -66,6 +73,7 @@ mistake the measurement exists to catch.
 | [docs/SPEC.md](docs/SPEC.md) | The specification. Content split by class, the classification rules and what they cannot decide, the six universal guards, the retrieval path, the CLI surface, and success criteria whose primary metric is deliberately not token reduction. **Not yet reconciled against the vendored code**; [docs/COZEMPIC.md](docs/COZEMPIC.md) is that reconciliation |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | Eight decisions with the alternatives rejected and the cost of being wrong, plus §0, which decides what Cozempic is doing in this repository |
 | [docs/MILESTONES.md](docs/MILESTONES.md) | Ten working days in three milestones, and the kill criteria, decided in advance while nobody is attached to the outcome |
+| [docs/MILESTONE-2-VALIDATION.md](docs/MILESTONE-2-VALIDATION.md) | The procedure for milestone 2's three unanswered criteria, written for a session with no memory of the one that built the harnesses: the commands in order, the corpus each needs, the bar each has to clear, and the kill criteria restated where the person running them will see them |
 | [docs/COZEMPIC.md](docs/COZEMPIC.md) | The vendored tool against the spec, decision by decision: six questions its code already answers, eight places the two disagree with a verdict and a reason on each, and what is still open |
 | [docs/USAGEFOUNDRY.md](docs/USAGEFOUNDRY.md) | Eleven collisions between the vendored tool and the orchestrator that would run it, with evidence on both sides; §8 is orchestrator-safe mode as built, including what it does not yet prove |
 | [docs/behavioral-digest-design.md](docs/behavioral-digest-design.md) | Cozempic's own design note, arrived with the merge |
@@ -76,17 +84,43 @@ mistake the measurement exists to catch.
 | `src/winnow/plan.py` | `winnow plan` — the dry run: which results a fork would replace, the pointer that would replace each, what the pointers cost, the net, and `T*` for the cut. Guard G4 is decided here rather than at write time, so `plan` and `fork` agree. About 450 lines with 53 tests |
 | `src/winnow/fork.py` | `winnow fork` and `winnow recover` — the writer and the round trip. Consumes `plan`'s list rather than reclassifying, so the dry run is the fork you get. About 700 lines with 66 tests |
 | `src/winnow/cli.py`, `orchestrator_safe.py` | The `safe`, `inspect`, `plan`, `fork` and `recover` groups, and orchestrator-safe mode, about 1,450 lines with its tests |
+| `src/winnow/validate/` | The harnesses for milestone 2's three unanswered criteria: the 100-fork resume test, the stratified blind label with its sampler and scorer, and the disk-cost series. Not imported by any `winnow` command — a measurement that could change what it measures is not a measurement — and none of it runs in the suite except through its own fixtures. About 1,300 lines with 70 tests |
 | `src/winnow/legacy/`, `plugin/`, `tests/` | The tree inherited from Cozempic 1.8.39, about 21,700 lines. Renamed into winnow by [docs/FORK.md](docs/FORK.md) phase 1; still not installed and not started |
 | `packaging/README.md` | The record of the six package channels, the npm shim and the PyPI release workflow that phase 2 deleted. **Winnow publishes to no channel**; installing means a checkout |
 | [web/README.md](web/README.md) | The site: four static routes over what this document says, checked against its own contract in [web/docs/design-language.md](web/docs/design-language.md). Not deployed anywhere yet, and it imports nothing from this tree |
 
 **No `winnow bench`.** Milestone 2 — `plan`, `fork` and `recover` — is here; milestone 3 is not,
-so nothing in this tree has yet run a model against a forked session. Two of milestone 2's own
-acceptance criteria are also outstanding, and both need real production transcripts rather than
-code: **the 100-fork resume test** (fork 100 real sessions, `claude --resume` each, 0 failures) and
-**the 200-sample blind label** that puts a number on rule precision. Nothing in the test suite
-reads `~/.claude/projects/` or shells out to `claude`, deliberately — those two validations are
-run separately and reported separately. `inspect` is milestone 1. Its
+so nothing in this tree has yet run a model against a forked session. **Three of milestone 2's own
+acceptance criteria are also outstanding**, and none of them is short of code:
+
+- **The 100-fork resume test.** Fork 100 real sessions, `claude --resume` each, 0 failures
+  ([docs/SPEC.md](docs/SPEC.md) §9). Needs production transcripts and real model calls.
+- **The 200-sample blind label.** ≥90% of stripped results confirmed once-only, per-rule precision
+  reported separately. Needs production transcripts and a person reading turns.
+- **A week of accumulated disk cost**, measured rather than estimated. Needs a week.
+
+Nothing in the test suite reads `~/.claude/projects/` or shells out to `claude`, deliberately, so
+that a green suite cannot be mistaken for a passed milestone. What is committed instead is a harness
+for each, and [docs/MILESTONE-2-VALIDATION.md](docs/MILESTONE-2-VALIDATION.md) as the procedure:
+
+```sh
+uv run python -m winnow.validate resume --corpus ~/.claude/projects \
+  --ledger resume.jsonl --results resume.json --forks 100
+uv run python -m winnow.validate sample --corpus ~/.claude/projects \
+  --sheet sheet.md --key key.jsonl --target 200 --seed 0   # then fill sheet.md in blind
+uv run python -m winnow.validate score --sheet sheet.md --key key.jsonl \
+  --results label-score.json
+uv run python -m winnow.validate disk --corpus ~/.claude/projects \
+  --series disk-series.jsonl --results disk.json           # and again in seven days
+```
+
+`resume` has a `--dry-run` that forks, writes and records exactly as the real run does and
+substitutes only the model call. The labelling sheet's schema and its scoring rule are committed in
+`src/winnow/validate/schema.py` **before any labelling**, so the bar cannot be settled after the
+numbers are in. **No disk-cost figure appears anywhere in this repository**, because the first
+observation and the second are a week apart and only the second one is a measurement.
+
+`inspect` is milestone 1. Its
 *population* lands where SPEC §6's method says it should — 174 sessions over 400 KB of message
 content, 129.6 MB pooled, against a recorded 161 and 120.1 MB one day earlier — so the denominator is
 not the disagreement. Its *rule shares* come in 12.4 points under at tier CB, and milestone 1 was
@@ -107,6 +141,18 @@ python -m winnow fork <session-id> --write       # write the fork. The original 
 python -m winnow fork <session-id> --write --out f.jsonl   # somewhere other than beside the source
 python -m winnow recover <session-id> b7         # the original bytes pointer b7 stands in for
 ```
+
+**A rule can also be off by default**, on the strength of its own measured precision rather than one
+operator's choice on one run. `winnow.rules.DISABLED_BY_DEFAULT` is that list and
+`WINNOW_RULES_OFF=B2,A1` replaces it without a code change, which is how the 200-sample label above
+gets acted on the hour it lands. It **ships empty**: a rule switched off with no number behind it
+would be the tool asserting a precision nobody measured. A default-off rule is subtracted from the
+tier before `--rule` is applied, so naming it explicitly turns it back on, and `plan` and `fork` both
+say in their readout which rules the default took away and print the `--rule` that restores them — a
+tier that quietly means fewer rules than its own name lists is the silent fallback
+[docs/SPEC.md](docs/SPEC.md) §10 forbids. `inspect` ignores the list entirely, because SPEC §6's
+per-rule table is the ceiling of the mechanism and a rule switched off for precision has not stopped
+being part of that ceiling.
 
 `inspect` reports the ceiling of the mechanism — every rule, no pointer overhead. `plan` reports one
 operator's actual selection with the pointers priced in, so its `T*` is the longer and the honest of
@@ -307,18 +353,51 @@ Two suites: the inherited one, and winnow's own tests for the mode.
 > after will tell you. Evidence and the exact diff: [docs/USAGEFOUNDRY.md](docs/USAGEFOUNDRY.md) §7.
 
 ```sh
+uv sync
+uv run pytest
+uv run ruff check .
+```
+
+`uv sync` installs pytest and ruff, which it did not until recently: they were an *optional* extra
+and a nothing respectively, so `uv sync` on a bare checkout actively removed pytest and the other two
+commands could only fail. Both are now a dependency group, which `uv sync` installs without being
+asked. The venv-and-pip recipe still works if you prefer it:
+
+```sh
 python3 -m venv .venv && .venv/bin/pip install -q pytest
 .venv/bin/python -m pytest -q -p no:cacheprovider
 ```
 
-Measured on this tree, 2026-08-23, after the rename: **1978 passed, 1 failed, 17 skipped, 283
-subtests passed**, in about 40 seconds. (Before the rename, and before the tests it added, the same
-command gave 1960 passed, 1 failed, 17 skipped.) The
-failure is in `tests/test_guard_hardening.py::TestG4_PidfileWriteIsAtomic`, it is pre-existing on the
-merge commit, and it is not attributable to the code with confidence: **which of that class's two
-tests fails alternates between runs on an unchanged tree**, the same race reproduced outside pytest
-behaves correctly, and the guard's pidfile path is hardcoded to `/tmp` where it cannot be redirected.
-The honest pass criterion is at most one of that pair failing.
+Measured on this tree, 2026-08-25: **2,337 passed, 9 failed, 25 skipped, 283 subtests passed**, in
+about 50 seconds. The failure count moves between 8 and 9 run to run, for the reason in the first row
+below. (2026-08-23, after the rename and before milestone 2: 1978 passed, 1 failed, 17 skipped.)
+
+**Every failure is pre-existing.** Running the same four files on `18d3123`, the commit milestone 2
+branched from, gives nine failures and the same nine test names — the only difference is which member
+of the `TestG4_PidfileWriteIsAtomic` pair happens to be the one that fails. None of the four files,
+and none of `src/winnow/legacy/`, is touched by this branch. Every one of them is in the inherited
+suite, reading process state this container does not provide the way the tests assume:
+
+| Where | Why it fails here |
+|---|---|
+| `test_guard_hardening.py::TestG4_PidfileWriteIsAtomic` | Documented before the rename, and the one that moves the count. **Which of that class's two tests fails alternates between runs on an unchanged tree, and some runs neither does**; the same race reproduced outside pytest behaves correctly, and the guard's pidfile path is hardcoded to `/tmp` where it cannot be redirected |
+| `test_guard_pid_recycling.py` (5) | Reads a process's start time out of `/proc`, which returns nothing usable here |
+| `test_guard_reload_watcher_poll.py` (1) | Asserts a `pgrep` pattern matches no unrelated process. In a container running several agents at once it matches theirs |
+| `test_digest.py::TestPurgePersistsToDisk` | Intermittent; present and absent across runs of the same tree |
+
+The honest pass criterion is: at most one of the `TestG4_PidfileWriteIsAtomic` pair failing, and
+nothing failing outside that table. Everything in `tests/test_inspect*.py`, `test_plan.py`,
+`test_fork.py` and `test_validate_*.py` passes.
+
+`uv run ruff check .` reports **883 findings**, and that is exactly the count before milestone 2 as
+well. 869 are in `src/winnow/legacy/`, `plugin/` and the inherited test files — 295 unsorted imports,
+100 blind excepts, 88 unused imports and a long tail. The other 14 are 11 in
+`src/winnow/orchestrator_safe.py` and 3 in its tests, and predate this work too. **Everything
+milestone 1 and 2 wrote is clean** — `rules.py`, `inspect.py`, `report.py`, `plan.py`, `fork.py`,
+`cli.py`, `filter.py`, `proxy.py`, `savings.py`, `src/winnow/validate/`, and every test file that
+goes with them — and nothing has been silenced with a `noqa` to make that true. The inherited
+findings are a [docs/FORK.md](docs/FORK.md) phase-1 item and are not fixed piecemeal: an 869-finding
+reformat of code nobody has read is a change with no reviewer.
 
 winnow's own tests are `unittest.TestCase` classes rather than pytest functions, against the usual
 preference and for one reason: they have to run where the mode runs. The harness container has no
@@ -351,15 +430,26 @@ Full list with reasons: [docs/SPEC.md](docs/SPEC.md) §3.
 | Specification, decisions, milestone plan and kill criteria | **written** |
 | Content-composition measurement, 563 transcripts | **done**, in earlier analysis; not reproducible from this checkout |
 | Orchestrator-safe mode | **built and tested**; never run inside a real orchestrated cycle |
-| Milestone 1, `winnow inspect` and the cache readout | **built**, and it produced its number — 12.4 points under SPEC §6 at tier CB ([docs/COZEMPIC.md](docs/COZEMPIC.md) §3.4) |
-| Milestone 2, the rules, the guards and `winnow fork` | **`winnow plan` built**: the rule engine, the pointer, and guard G4 decided at plan time. No writer, no `winnow recover` |
+| Milestone 1, `winnow inspect` and the cache readout | **built, and it answered.** Tier CB reproduces at 10.2% pooled against SPEC §6's 22.6% — **12.4 points under**, of which 8.7 are one rule whose recorded number used a looser definition than the same document specifies ([docs/COZEMPIC.md](docs/COZEMPIC.md) §3.4). Above the 10% kill line, and not by much |
+| Milestone 2, the rules, the guards, `winnow fork` and `winnow recover` | **built; every acceptance criterion a test suite can settle is met and checked.** G5 with `--force` unable to reach it, the cold-age refusal at exit 3, G4, byte-identical determinism including the filename, the original's bytes and mtime unchanged, the fork → recover round trip digest-checked on every pointer. Q4 decided ([docs/DECISIONS.md](docs/DECISIONS.md) §Q4) and `--explain` documented with its secrets warning |
+| — the 100-fork resume test | **not validated.** Harness committed, `--dry-run` tested. Needs production transcripts and real model calls |
+| — the 200-sample blind label, ≥90% once-only | **not validated.** Sampler, sheet, scorer and the scoring rule committed; **no result has been labelled**. Needs production transcripts and a person |
+| — the week of accumulated disk cost | **not measured.** Script committed; the series has no observations. Needs a week |
+| Per-rule precision defaults (`rules.DISABLED_BY_DEFAULT`) | **mechanism built, set empty** — and it stays empty until the label above fills it |
 | Milestone 3, `winnow bench` and the quality arm | **not started** |
 | Any claim that pruning a Claude Code session saves money | **unmade, by anyone** |
 
-The last row is the project. If the first milestone comes back saying the cache is already warm at a
-typical resume, or that the strippable share at tier CB does not reproduce, the kill criteria in
-[docs/MILESTONES.md](docs/MILESTONES.md) say to stop, and stopping then is the intended outcome
-rather than a failure of it.
+The three `not validated` rows are the honest state of milestone 2: the code exists and the criteria
+that could still kill it are the ones nobody has run. Each is one command, and they are in
+[docs/MILESTONE-2-VALIDATION.md](docs/MILESTONE-2-VALIDATION.md) with the corpus each needs, the bar
+each has to clear, and what to do when one is missed. **No row above is marked met on the strength of
+code existing.**
+
+The last row is the project. The kill criteria in [docs/MILESTONES.md](docs/MILESTONES.md) are what
+those three rows are measured against — aggregate rule precision under 80% stops milestone 2
+outright, one unresumable fork stops it unless a same-day G5 change fixes it, and loosening
+`--min-cold-age` to get a population is itself a kill condition. Stopping on any of them is the
+intended outcome rather than a failure of it.
 
 ## Licence and attribution
 

@@ -137,6 +137,34 @@ accumulated forks measured over a week rather than estimated.
 > time and cannot be taken in a build. Until all three land, milestone 2's kill criteria below
 > — rule precision under 80%, an unresumable fork, a refusal path with no population — are
 > untested, which is to say the milestone is built but not yet passed.
+>
+> **What there now is for them is a harness each**, in `src/winnow/validate/`, with
+> [MILESTONE-2-VALIDATION.md](MILESTONE-2-VALIDATION.md) as the procedure — the commands in
+> order, the corpus each needs, the bar each has to clear, and these kill criteria restated
+> where the person running them will see them. In short:
+>
+> ```sh
+> uv run python -m winnow.validate resume --corpus ~/.claude/projects \
+>   --ledger resume.jsonl --results resume.json --forks 100
+> uv run python -m winnow.validate sample --corpus ~/.claude/projects \
+>   --sheet sheet.md --key key.jsonl --target 200 --seed 0
+> uv run python -m winnow.validate score --sheet sheet.md --key key.jsonl \
+>   --results label-score.json
+> uv run python -m winnow.validate disk --corpus ~/.claude/projects \
+>   --series disk-series.jsonl --results disk.json
+> ```
+>
+> The labelling sheet's schema and its scoring rule are committed in
+> `src/winnow/validate/schema.py` **before any labelling**, so the bar cannot be settled after
+> the numbers are in. The per-rule half of the criterion — "a rule below 90% on its own is
+> disabled by default" — has its mechanism: `winnow.rules.DISABLED_BY_DEFAULT`, overridable by
+> `$WINNOW_RULES_OFF`, which ships **empty** and stays empty until a measurement fills it.
+>
+> **The disk-cost figure is pending, and there is no number for it anywhere in this
+> repository.** One observation is not a week, so `winnow.validate disk` appends to a series
+> and states a rate only once that series spans seven days. Run the command above now and
+> again a week later against the same `--series` file; the difference is the measurement. Any
+> disk-cost figure found in these documents before that second run was fabricated.
 
 ## Milestone 3a — the frozen task set
 

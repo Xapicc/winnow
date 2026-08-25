@@ -120,6 +120,24 @@ committed; `--explain` documented with its secrets warning; a written decision o
 (sessions that have already compacted — refuse or proceed); and the disk cost of
 accumulated forks measured over a week rather than estimated.
 
+> **Where this stands, 2026-08-25.** `fork` and `recover` are built, with 74 tests. Met and
+> checked in the suite: the original's mtime and SHA-256 unchanged across a `--write`; G5 on
+> every fixture, with a violation aborting at exit 3 having written nothing and `--force` not
+> reaching it; the cold-age refusal at exit 3; whole-fork G4; byte-identical output across two
+> runs including the new session ID; the fork → recover round trip digest-checked on every
+> pointer. Q4 is decided and implemented — refuse, `--force` proceeds ([DECISIONS.md](DECISIONS.md)
+> §Q4) — and `--explain` carries its secrets warning in the readout and in
+> [README.md](../README.md).
+>
+> **Three criteria are outstanding and none of them is code.** The **100-fork resume test**
+> and the **200-sample blind label** both need real production transcripts and, for the first,
+> real model calls; they are run and reported separately, and nothing in the test suite reads
+> `~/.claude/projects/` or shells out to `claude` so that the suite stays honest about what it
+> has and has not checked. The **week of accumulated disk cost** is a measurement over elapsed
+> time and cannot be taken in a build. Until all three land, milestone 2's kill criteria below
+> — rule precision under 80%, an unresumable fork, a refusal path with no population — are
+> untested, which is to say the milestone is built but not yet passed.
+
 ## Milestone 3a — the frozen task set
 
 Separate from milestone 3 because it must be finished, hashed and committed **before any

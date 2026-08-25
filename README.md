@@ -71,18 +71,22 @@ mistake the measurement exists to catch.
 | [docs/behavioral-digest-design.md](docs/behavioral-digest-design.md) | Cozempic's own design note, arrived with the merge |
 | `src/winnow/filter.py`, `proxy.py` | `winnow filter` — the intake filter and the local proxy that carries it. Stdlib only, about 450 lines with 39 tests |
 | `src/winnow/savings.py` | `winnow savings` — prices the filter's own ledger against the transcripts, de-duped on `tool_use_id` so a stateless filter's repeats are not counted as removals. Stdlib only, about 575 lines with 34 tests |
-| `src/winnow/rules.py` | SPEC §4 itself: the six rules, the guards, the pointer and its ID scheme. Imported by `inspect`, by `plan`, and by the `fork` that does not exist yet — one engine, so the three cannot disagree about what B1 means |
+| `src/winnow/rules.py` | SPEC §4 itself: the six rules, the guards, the pointer and its ID scheme. Imported by `inspect`, by `plan` and by `fork` — one engine, so the three cannot disagree about what B1 means |
 | `src/winnow/inspect.py`, `report.py` | `winnow inspect` — the reading, the byte accounting, the cache readout and `T*`. About 600 lines with 54 tests. Its `--json` output is pinned byte-for-byte in `tests/fixtures/inspect_golden.json`, because milestone 1's deliverable is a number and a number should not move by accident |
 | `src/winnow/plan.py` | `winnow plan` — the dry run: which results a fork would replace, the pointer that would replace each, what the pointers cost, the net, and `T*` for the cut. Guard G4 is decided here rather than at write time, so `plan` and `fork` agree. About 450 lines with 53 tests |
-| `src/winnow/cli.py`, `orchestrator_safe.py` | The `safe`, `inspect` and `plan` groups, and orchestrator-safe mode, about 1,300 lines with its tests |
+| `src/winnow/fork.py` | `winnow fork` and `winnow recover` — the writer and the round trip. Consumes `plan`'s list rather than reclassifying, so the dry run is the fork you get. About 700 lines with 66 tests |
+| `src/winnow/cli.py`, `orchestrator_safe.py` | The `safe`, `inspect`, `plan`, `fork` and `recover` groups, and orchestrator-safe mode, about 1,450 lines with its tests |
 | `src/winnow/legacy/`, `plugin/`, `tests/` | The tree inherited from Cozempic 1.8.39, about 21,700 lines. Renamed into winnow by [docs/FORK.md](docs/FORK.md) phase 1; still not installed and not started |
 | `packaging/README.md` | The record of the six package channels, the npm shim and the PyPI release workflow that phase 2 deleted. **Winnow publishes to no channel**; installing means a checkout |
 | [web/README.md](web/README.md) | The site: four static routes over what this document says, checked against its own contract in [web/docs/design-language.md](web/docs/design-language.md). Not deployed anywhere yet, and it imports nothing from this tree |
 
-**No `winnow fork`, no `winnow recover`, no `winnow bench`.** Milestone 2 is the actuator and
-`plan` is the first third of it: it says exactly what a fork would remove and what the removal is
-worth, and it writes nothing anywhere. Nothing in this tree yet writes a forked transcript or
-recovers from one. `inspect` is milestone 1. Its
+**No `winnow bench`.** Milestone 2 — `plan`, `fork` and `recover` — is here; milestone 3 is not,
+so nothing in this tree has yet run a model against a forked session. Two of milestone 2's own
+acceptance criteria are also outstanding, and both need real production transcripts rather than
+code: **the 100-fork resume test** (fork 100 real sessions, `claude --resume` each, 0 failures) and
+**the 200-sample blind label** that puts a number on rule precision. Nothing in the test suite
+reads `~/.claude/projects/` or shells out to `claude`, deliberately — those two validations are
+run separately and reported separately. `inspect` is milestone 1. Its
 *population* lands where SPEC §6's method says it should — 174 sessions over 400 KB of message
 content, 129.6 MB pooled, against a recorded 161 and 120.1 MB one day earlier — so the denominator is
 not the disagreement. Its *rule shares* come in 12.4 points under at tier CB, and milestone 1 was
@@ -97,12 +101,54 @@ python -m winnow inspect <session-id> --tier CBA # include the opt-in tier in th
 python -m winnow plan <session-id>               # what a fork would strip, and the arithmetic
 python -m winnow plan <session-id> --explain     # one line per result: rule, tool, arguments, bytes
 python -m winnow plan <session-id> --no-rule B1  # override the tier, one rule at a time
+
+python -m winnow fork <session-id>               # dry run: everything --write would do
+python -m winnow fork <session-id> --write       # write the fork. The original is not touched
+python -m winnow fork <session-id> --write --out f.jsonl   # somewhere other than beside the source
+python -m winnow recover <session-id> b7         # the original bytes pointer b7 stands in for
 ```
 
 `inspect` reports the ceiling of the mechanism — every rule, no pointer overhead. `plan` reports one
 operator's actual selection with the pointers priced in, so its `T*` is the longer and the honest of
-the two. `--explain` prints tool arguments verbatim, and a transcript routinely contains credentials
-pasted into a Bash command; treat that output as sensitive.
+the two. `fork` prints the same arithmetic under its own heading, because it consumes `plan`'s list
+rather than reclassifying: the dry run is the fork you get.
+
+**`--explain` prints tool arguments verbatim, on `plan` and on `fork` alike, and a transcript
+routinely contains credentials pasted into a Bash command** ([docs/SPEC.md](docs/SPEC.md) §10).
+Treat that output as sensitive: do not paste it into an issue, a chat, or a CI log. Winnow writes no
+log file of its own, so the only copy is the one you make. The flag also names the rule, the tool
+and the byte count of each stripped result, and `--json --explain` carries the same fields
+machine-readably along with the warning itself.
+
+### `fork` — the writer
+
+`--write` is the opt-in and there is no `--dry-run`: without `--write` the command reports exactly
+what it would do and touches nothing. **The source transcript is opened read-only and is never
+modified** — its bytes and its mtime are the same after a fork as before, which is what makes
+`recover` worth having. The fork goes to a temporary file in the destination directory and is
+renamed into place, so a crash leaves either nothing or a complete file.
+
+The fork's session ID is **derived from the input, not drawn from a clock or a random source**: a
+UUIDv5 over the source session ID, the source file's sha256, the resolved rule selection, and one
+line per strip. The same session and the same flags therefore produce a byte-identical fork twice,
+filename included ([docs/SPEC.md](docs/SPEC.md) §10) — and two forks that differ in content get
+different names rather than silently overwriting one another.
+
+Four things refuse, with exit code 3:
+
+| Guard | What it means | `--force`? |
+|---|---|---|
+| **G5 pairing preserved** | The fork's `tool_use` ↔ `tool_result` pairing must be identical to the source's. Re-derived from the bytes about to be written and compared | **Never.** A hard failure, and nothing was written |
+| `--min-cold-age S` (default 3600) | The last request finished less than `S` seconds ago, so the prefix may still be cached and the cut is not free ([docs/SPEC.md](docs/SPEC.md) §7) | Yes |
+| **G4 no net inflation** | The fork would remove fewer bytes than the pointers it adds, or would leave a larger file than it started with | Yes |
+| `compacted` | The session has already compacted, so a resume starts from the summary and the pre-boundary bytes this fork prices are not in the prefix it would be cutting ([docs/DECISIONS.md](docs/DECISIONS.md) §Q4) | Yes |
+
+Exit 2 is the different thing: no result met a rule, so there was nothing to do. Exit 1 is a usage
+error.
+
+`winnow recover <session> <pointer-id>` takes the **original** session — the one the pointer names —
+and prints the exact bytes that pointer replaced, which hash to the sha256 the pointer records. It
+reads the source and not the fork, so a recovery works even after the fork has been deleted.
 
 ## The intake filter
 

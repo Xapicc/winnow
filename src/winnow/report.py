@@ -17,11 +17,10 @@ from pathlib import Path
 from . import savings as savings_mod
 from .inspect import (
     CONTENT_CLASSES,
-    RULE_ORDER,
-    RULE_TIER,
     Report,
     inspect_session,
 )
+from .rules import RULE_ORDER, RULE_TIER
 
 # What each rule is, in the fewest words that still let an operator argue with
 # the rule rather than with the tool (SPEC §4's pointer rationale, applied to

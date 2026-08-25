@@ -19,9 +19,9 @@ import json
 import sys
 from pathlib import Path
 
-from . import inspect as inspect_mod
 from . import orchestrator_safe as safe
 from . import proxy as proxy_mod
+from . import rules as rules_mod
 from . import savings as savings_mod
 
 EXIT_OK = 0
@@ -283,11 +283,11 @@ def add_inspect_subparser(sub) -> None:
         help="which rule tiers the arithmetic is computed for (default: CB)",
     )
     p.add_argument(
-        "--keep-last", type=int, default=inspect_mod.DEFAULT_KEEP_LAST,
+        "--keep-last", type=int, default=rules_mod.DEFAULT_KEEP_LAST,
         metavar="N", help="guard G1: never strip the last N tool results",
     )
     p.add_argument(
-        "--min-bytes", type=int, default=inspect_mod.DEFAULT_MIN_BYTES,
+        "--min-bytes", type=int, default=rules_mod.DEFAULT_MIN_BYTES,
         metavar="N", help="guard G2: never strip a result under N bytes",
     )
     p.add_argument(

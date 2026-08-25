@@ -13,14 +13,9 @@ import json
 
 import pytest
 
-from winnow.inspect import (
-    DEFAULT_MIN_BYTES,
-    _bash_head,
-    _is_inspection,
-    _read_range,
-    inspect_session,
-)
+from winnow.inspect import inspect_session
 from winnow.report import resolve_session, to_dict
+from winnow.rules import DEFAULT_MIN_BYTES, bash_head, is_inspection, read_range
 
 # Comfortably over the 2,048-byte G2 floor, so a rule rather than a guard decides.
 BIG = "x" * (DEFAULT_MIN_BYTES + 100)
@@ -193,7 +188,7 @@ def test_b1_does_not_fire_across_different_paths(tmp_path):
     ],
 )
 def test_bash_head_is_the_first_token_of_the_first_segment(command, expected):
-    assert _bash_head(command) == expected
+    assert bash_head(command) == expected
 
 
 @pytest.mark.parametrize(
@@ -209,7 +204,7 @@ def test_bash_head_is_the_first_token_of_the_first_segment(command, expected):
     ],
 )
 def test_b2_matches_on_the_head_whatever_follows(command, inspection):
-    assert _is_inspection(command) is inspection
+    assert is_inspection(command) is inspection
 
 
 def test_b2_fires_on_a_passing_inspection(tmp_path):
@@ -472,7 +467,7 @@ def test_json_shares_are_percentages_of_message_content(tmp_path):
     ],
 )
 def test_read_range_treats_a_missing_range_as_the_whole_file(tool_input, expected):
-    assert _read_range(tool_input) == expected
+    assert read_range(tool_input) == expected
 
 
 def test_the_readout_says_none_rather_than_nothing_when_no_guard_fired(tmp_path):

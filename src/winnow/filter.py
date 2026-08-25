@@ -35,12 +35,12 @@ import json
 import re
 from dataclasses import dataclass, field
 
-from .inspect import (
+from .rules import (
     LOCATOR_GREP_MODES,
     LOCATOR_TOOLS,
     VERIFICATION_RE,
-    _is_inspection,
-    _result_size,
+    is_inspection,
+    result_size,
 )
 
 # SPEC §4 G2. The same floor the pruner uses, for the same reason: below it the
@@ -115,7 +115,7 @@ def rule_for(name: str, tool_input: dict, is_error: bool) -> str | None:
         command = tool_input.get("command")
         if isinstance(command, str) and VERIFICATION_RE.search(command):
             return "C3"
-        if _is_inspection(command):
+        if is_inspection(command):
             return "B2"
     return None
 
@@ -262,7 +262,7 @@ def apply(
                 continue
             name, tool_input = uses.get(block.get("tool_use_id", ""), ("", {}))
             rule = rule_for(name, tool_input, bool(block.get("is_error")))
-            size = _result_size(content)
+            size = result_size(content)
             results.append((m_index, b_index, block, rule, size))
 
     candidates = [r for r in results if r[3] is not None and r[4] >= min_bytes]

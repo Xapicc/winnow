@@ -618,6 +618,101 @@ def add_filter_subparser(sub) -> None:
     p.set_defaults(func=cmd_filter)
 
 
+def cmd_trial(args: argparse.Namespace) -> int:
+    """`winnow trial` — the A/B, priced from the bill rather than from the model."""
+    from . import trial as trial_mod
+
+    if args.trial_action == "arm":
+        path = Path(args.ledger).expanduser() if args.ledger else trial_mod.DEFAULT_ARMS
+        arm = trial_mod.record_arm(path, args.label, args.note or "")
+        print(f"arm '{arm.label}' in force from now. Sessions whose first billed turn "
+              f"lands after this are attributed to it.")
+        print(f"  {path}")
+        return 0
+
+    from .report import trial_command
+
+    code, output = trial_command(
+        corpus=args.corpus,
+        arms=args.ledger,
+        tasks=args.tasks,
+        as_json=args.json,
+    )
+    print(output, file=sys.stderr if code == EXIT_USAGE else sys.stdout)
+    return code
+
+
+def add_trial_subparser(sub) -> None:
+    """Register `winnow trial` — which configuration actually costs less here.
+
+    Its own group because it answers a question neither `inspect` nor `savings`
+    can. Those two price a cut against COZEMPIC §3.5's cost model: one prices a
+    cut that has not happened, the other the cuts that have, and both report a
+    counterfactual because the bytes were never sent. That is the right shape for
+    "what would this have saved" and the wrong shape for "which of these should I
+    run", because both candidates are scored by the same model and a model cannot
+    referee itself — the two figures it separates differ by 1.1×.
+
+    So this one models nothing. It reads `message.usage` off the transcripts,
+    attributes each session to whichever arm was switched on at the time, and
+    divides. It writes only its own arm ledger and never touches a transcript.
+    """
+    p = sub.add_parser(
+        "trial",
+        help="compare configurations on what they were actually billed",
+        description="Mark which configuration is live, then compare arms on "
+                    "billed usage rather than on the cost model. Nothing here is "
+                    "modelled and nothing here is a saving: it is what each arm "
+                    "cost. Interleave the arms — day on, day off — so the "
+                    "difference between them is noise rather than the week.",
+    )
+    trial_sub = p.add_subparsers(dest="trial_action", required=True)
+
+    arm = trial_sub.add_parser(
+        "arm",
+        help="record that a configuration went live now",
+        description="Append one line to the arm ledger. A session is attributed "
+                    "to whichever arm was in force when its first turn was "
+                    "billed, so this has to be run when the configuration "
+                    "changes — a transcript does not carry the configuration "
+                    "that produced it, and nothing can reconstruct it later.",
+    )
+    arm.add_argument("--label", required=True, metavar="NAME",
+                     help="what is running now, e.g. pruner-only, filter-only, "
+                          "fork, none")
+    arm.add_argument("--note", default=None,
+                     help="the exact settings, for when you read this back")
+    arm.add_argument("--ledger", default=None, metavar="PATH",
+                     help=f"arm ledger (default {trial_mod_default()})")
+    arm.set_defaults(func=cmd_trial)
+
+    rep = trial_sub.add_parser(
+        "report",
+        help="what each arm cost, per session, per turn and per task",
+        description="Read every transcript under --corpus, attribute each to an "
+                    "arm, and report billed tokens and dollars. $/task is the "
+                    "only column that decides anything and the only one a "
+                    "transcript cannot supply, so pass --tasks.",
+    )
+    rep.add_argument("--corpus", required=True, metavar="DIR",
+                     help="a projects directory, a directory of transcripts, or "
+                          "one file. No default: a trial that silently pointed at "
+                          "the wrong tree would produce numbers that look right.")
+    rep.add_argument("--ledger", default=None, metavar="PATH",
+                     help=f"arm ledger (default {trial_mod_default()})")
+    rep.add_argument("--tasks", action="append", metavar="ARM=N",
+                     help="how many tasks that arm actually finished. Repeatable. "
+                          "Without it $/task is blank and the report says why.")
+    rep.add_argument("--json", action="store_true")
+    rep.set_defaults(func=cmd_trial)
+
+
+def trial_mod_default() -> str:
+    from . import trial as trial_mod
+
+    return str(trial_mod.DEFAULT_ARMS)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """A parser for the groups implemented in this tree.
 
@@ -642,11 +737,13 @@ def build_parser() -> argparse.ArgumentParser:
     add_recover_subparser(sub)
     add_filter_subparser(sub)
     add_savings_subparser(sub)
+    add_trial_subparser(sub)
     return parser
 
 
 # Groups this tree owns. Everything else falls through to the inherited CLI.
-_OWN_GROUPS = ("safe", "inspect", "plan", "fork", "recover", "filter", "savings")
+_OWN_GROUPS = ("safe", "inspect", "plan", "fork", "recover", "filter", "savings",
+               "trial")
 
 
 def main(argv: list[str] | None = None) -> int:

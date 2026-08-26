@@ -15,6 +15,7 @@ import json
 from pathlib import Path
 
 from . import savings as savings_mod
+from . import trial as trial_mod
 from .inspect import (
     CONTENT_CLASSES,
     Report,
@@ -473,3 +474,157 @@ def savings_command(
     # Exit 2 is "nothing to do — the filter has removed nothing yet". Not an error,
     # and the readout still prints, for the same reason `inspect` does.
     return (2 if not result.priced else 0), payload
+
+
+# ─── `winnow trial` ──────────────────────────────────────────────────────────
+
+
+def _money(value: float | None) -> str:
+    """A dollar figure, or a dash where there is no number rather than a zero.
+
+    `savings_to_dict`'s rule about unknowns, applied to a column: an arm with no
+    priced session has *no* cost per session, and printing $0.00 there would put
+    the cheapest-looking arm in the column an operator is scanning for exactly
+    that.
+    """
+    return "—" if value is None else f"${value:,.2f}"
+
+
+def trial_to_dict(trial: trial_mod.Trial) -> dict:
+    return {
+        "corpus": trial.corpus,
+        "unattributed_sessions": trial.unattributed_sessions,
+        "straddling_sessions": trial.straddling_sessions,
+        "unpriced_sessions": trial.unpriced_sessions,
+        "billed_not_modelled": True,
+        "arms": [
+            {
+                "label": arm.label,
+                "sessions": arm.sessions,
+                "priced_sessions": arm.priced_sessions,
+                "turns": arm.turns,
+                "billed_input_tokens": arm.billed_input,
+                "output_tokens": arm.output_tokens,
+                "dollars": round(arm.dollars, 4),
+                "dollars_per_session": arm.dollars_per_session,
+                "median_session_dollars": arm.median_session_dollars,
+                "dollars_per_turn": arm.dollars_per_turn,
+                "tasks": arm.tasks,
+                "dollars_per_task": arm.dollars_per_task,
+                "tool_calls": arm.tool_calls,
+                "repeat_tool_calls": arm.repeat_tool_calls,
+                "repeat_rate": arm.repeat_rate,
+            }
+            for arm in trial.arms
+        ],
+    }
+
+
+def render_trial(trial: trial_mod.Trial) -> str:
+    """The human readout, laid out like `render_savings`."""
+    out: list[str] = []
+    add = out.append
+
+    add("winnow trial — what each arm actually cost, from the bill")
+    add(f"  {trial.corpus}")
+    add("")
+
+    if not trial.arms:
+        add("no arms declared. `winnow trial arm --label <name>` marks the moment a")
+        add("configuration went live; a session is attributed to whichever arm was in")
+        add("force when its first turn was billed, so the marks have to come first.")
+        return "\n".join(out)
+
+    add(f"{'arm':<16}{'sessions':>9}{'turns':>8}{'billed $':>11}"
+        f"{'$/session':>11}{'median':>10}{'$/turn':>9}{'$/task':>9}")
+    for arm in trial.arms:
+        add(f"{arm.label[:15]:<16}{arm.sessions:>9,}{arm.turns:>8,}"
+            f"{_money(arm.dollars):>11}{_money(arm.dollars_per_session):>11}"
+            f"{_money(arm.median_session_dollars):>10}"
+            f"{_money(arm.dollars_per_turn):>9}{_money(arm.dollars_per_task):>9}")
+    add("")
+
+    add(f"{'arm':<16}{'tool calls':>11}{'repeats':>9}{'repeat rate':>13}")
+    for arm in trial.arms:
+        rate = "—" if arm.repeat_rate is None else f"{arm.repeat_rate * 100:.1f}%"
+        add(f"{arm.label[:15]:<16}{arm.tool_calls:>11,}{arm.repeat_tool_calls:>9,}"
+            f"{rate:>13}")
+    add(f"  repeats: {trial_mod.REPEAT_NOTE}")
+    add("")
+
+    # Everything below is the reader being told what the table above cannot carry.
+    # A trial that printed only the table would be the thing this project exists
+    # to argue against — a number with its assumptions left off.
+    missing = [arm.label for arm in trial.arms if arm.tasks is None]
+    if missing:
+        add(f"$/task is blank for {', '.join(missing)} — pass --tasks "
+            "<arm>=<count>.")
+        add("  It is the only column that decides anything. A tool that made the")
+        add("  model cheaper per turn and worse at finishing would win every other")
+        add("  column here, and SPEC §9 denominates milestone 3 per *successful*")
+        add("  task for that reason. Nothing in a transcript records whether the")
+        add("  work was any good, so the count has to come from you.")
+        add("")
+
+    if trial.straddling_sessions:
+        add(f"{trial.straddling_sessions} session(s) were still running when the arm "
+            "changed, and are")
+        add("  counted under the arm they started in. They carry both configurations.")
+    if trial.unattributed_sessions:
+        add(f"{trial.unattributed_sessions} session(s) predate the first arm and are "
+            "in no column.")
+    if trial.unpriced_sessions:
+        add(f"{trial.unpriced_sessions} session(s) ran on a model with no price here; "
+            "their turns are")
+        add("  counted and their dollars are not, so $/turn and $/session differ in "
+            "population.")
+
+    add("")
+    add("These are billed figures — `message.usage`, priced at list. Nothing here")
+    add("is modelled, and nothing here is a saving: it is what each arm cost. The")
+    add("arms ran on different days over different work, so interleave them and")
+    add("read the medians, not one week against the next.")
+    return "\n".join(out)
+
+
+def trial_command(
+    corpus: str | None,
+    arms: str | None,
+    tasks: list[str] | None,
+    as_json: bool,
+) -> tuple[int, str]:
+    """`(exit code, output)`. Exit codes follow SPEC §8: 1 usage, 2 nothing to do."""
+    if not corpus:
+        return 1, "winnow: --corpus is required; there is no default."
+    corpus_path = Path(corpus).expanduser()
+    if not corpus_path.exists():
+        return 1, f"winnow: no corpus at {corpus_path}."
+    arms_path = Path(arms).expanduser() if arms else trial_mod.DEFAULT_ARMS
+
+    counts: dict[str, int] = {}
+    for pair in tasks or []:
+        label, _, raw = pair.partition("=")
+        if not label or not raw.isdigit():
+            return 1, (f"winnow: --tasks wants <arm>=<count>, got {pair!r}. The count "
+                       "is how many tasks that arm actually finished.")
+        counts[label] = int(raw)
+
+    declared = trial_mod.read_arms(arms_path)
+    unknown = sorted(set(counts) - {a.label for a in declared})
+    if unknown:
+        # Refused rather than ignored: a task count silently attached to nothing
+        # produces a report whose most important column is empty for a reason the
+        # operator has no way to see.
+        return 1, (f"winnow: --tasks names {', '.join(unknown)}, which no arm in "
+                   f"{arms_path} declares.")
+
+    result = trial_mod.build_trial(trial_mod.collect(corpus_path), declared, counts)
+    result.corpus = str(corpus_path)
+    payload = (
+        json.dumps(trial_to_dict(result), indent=2)
+        if as_json
+        else render_trial(result)
+    )
+    # Exit 2 is "nothing to do" — no arm has been declared, so nothing can be
+    # attributed. Not an error, and the readout still says what to do about it.
+    return (2 if not result.arms else 0), payload

@@ -21,6 +21,7 @@ from pathlib import Path
 
 from . import fork as fork_mod
 from . import orchestrator_safe as safe
+from . import plan as plan_mod
 from . import proxy as proxy_mod
 from . import rules as rules_mod
 from . import savings as savings_mod
@@ -324,6 +325,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
         i_know=args.i_know,
         as_json=args.json,
         explain=args.explain,
+        max_break_even=args.max_break_even,
     )
     print(output, file=sys.stderr if code == EXIT_USAGE else sys.stdout)
     return code
@@ -375,6 +377,14 @@ def add_plan_subparser(sub) -> None:
         help="acknowledge that tier A strips reads the session may still need; "
              "required by any selection containing A1 (SPEC §4, §8)",
     )
+    p.add_argument(
+        "--max-break-even", type=int, default=plan_mod.DEFAULT_MAX_BREAK_EVEN,
+        metavar="T",
+        help="how many further turns this session is expected to run. A cut needs "
+             "T* = 19·(S/D) − 20 of them before it has paid for the cache "
+             "invalidation it causes (SPEC §7); above T that is a cut which is "
+             f"never earned back (default {plan_mod.DEFAULT_MAX_BREAK_EVEN})",
+    )
     p.add_argument("--json", action="store_true", help="machine-readable output")
     p.add_argument(
         "--explain", action="store_true",
@@ -396,6 +406,7 @@ def cmd_fork(args: argparse.Namespace) -> int:
         keep_last=args.keep_last,
         min_bytes=args.min_bytes,
         min_cold_age=args.min_cold_age,
+        max_break_even=args.max_break_even,
         i_know=args.i_know,
         write=args.write,
         out=args.out,
@@ -456,6 +467,14 @@ def add_fork_subparser(sub) -> None:
              "may still be cached and the cut is not free (SPEC §7)",
     )
     p.add_argument(
+        "--max-break-even", type=int, default=plan_mod.DEFAULT_MAX_BREAK_EVEN,
+        metavar="T",
+        help="how many further turns this session is expected to run. A cut needs "
+             "T* = 19·(S/D) − 20 of them before it has paid for the cache "
+             "invalidation it causes (SPEC §7); above T that is a cut which is "
+             f"never earned back (default {plan_mod.DEFAULT_MAX_BREAK_EVEN})",
+    )
+    p.add_argument(
         "--i-know", action="store_true",
         help="acknowledge that tier A strips reads the session may still need; "
              "required by any selection containing A1 (SPEC §4, §8)",
@@ -471,8 +490,9 @@ def add_fork_subparser(sub) -> None:
     )
     p.add_argument(
         "--force", action="store_true",
-        help="proceed past a soft refusal — cold age, an already-compacted "
-             "session, a malformed source record, or whole-fork G4. Never past G5",
+        help="proceed past a soft refusal — cold age, break-even, an "
+             "already-compacted session, a malformed source record, or "
+             "whole-fork G4. Never past G5",
     )
     p.add_argument("--json", action="store_true", help="machine-readable output")
     p.add_argument(

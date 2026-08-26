@@ -35,6 +35,15 @@ story:
   content.
 * **Q4, a session that has already compacted** — soft, `--force` proceeds. See
   DECISIONS.md §Q4, decided in this run: refuse by default.
+* **--max-break-even** — soft, `--force` proceeds. The one refusal that is about
+  arithmetic rather than safety, and the only one that can refuse a *correct*
+  fork. SPEC §7's `T* = 19·(S/D) − 20` says how many further turns a cut needs
+  before it has paid for the cache invalidation it causes; this refuses a fork
+  whose T* is above the turns the operator says the session has left. Without it
+  `fork` writes whenever a rule fires, and a rule firing is not evidence that
+  cutting pays. Over 396 local sessions scored against what they actually went
+  on to do, an ungated fork is **net negative**; see `plan.DEFAULT_MAX_BREAK_EVEN`
+  for the table and README for the reading.
 
 The original is opened read-only and never written. The fork goes to a temporary
 file in the destination directory and is `os.replace`d into place, so a crash
@@ -55,6 +64,7 @@ from pathlib import Path
 from .inspect import inspect_session
 from .legacy.session import load_messages
 from .plan import (
+    DEFAULT_MAX_BREAK_EVEN,
     EXPLAIN_WARNING,
     Plan,
     PlanError,
@@ -122,6 +132,7 @@ class ForkResult:
     last_activity_source: str
     cold_age: float
     min_cold_age: int
+    max_break_even: int | None
     tool_uses: int
     tool_results: int
     parse_errors: int
@@ -293,6 +304,7 @@ def build_fork(
     out: Path | None = None,
     now: float | None = None,
     min_cold_age: int = DEFAULT_MIN_COLD_AGE,
+    max_break_even: int | None = DEFAULT_MAX_BREAK_EVEN,
 ) -> tuple[ForkResult, list[Refusal]]:
     """Render the forked transcript in memory and collect every refusal.
 
@@ -331,13 +343,15 @@ def build_fork(
         last_activity_source=how,
         cold_age=age,
         min_cold_age=min_cold_age,
+        max_break_even=max_break_even,
         tool_uses=len(before[0]),
         tool_results=len(before[1]),
         parse_errors=plan.report.parse_errors,
         compact_boundaries=list(plan.report.compact_boundaries),
         lines=forked_lines,
     )
-    return result, _refusals(result, before, after, applied, mismatched, age, min_cold_age)
+    return result, _refusals(result, before, after, applied, mismatched, age,
+                             min_cold_age, max_break_even)
 
 
 def _parse_all(lines: list[str]) -> list[dict]:
@@ -466,6 +480,7 @@ def _refusals(
     mismatched: list[str],
     age: float,
     min_cold_age: int,
+    max_break_even: int | None = None,
 ) -> list[Refusal]:
     """Everything standing between this fork and the disk, hard refusals first."""
     out: list[Refusal] = []
@@ -518,6 +533,23 @@ def _refusals(
             f"boundary/boundaries, first at line {result.compact_boundaries[0]}). A "
             "resume starts from the summary, so the pre-boundary results this plan "
             "prices are not in the prefix it would be cutting (DECISIONS §Q4).",
+            forceable=True,
+        ))
+    if result.plan.pays_within(max_break_even) is False:
+        plan = result.plan
+        turns = plan.break_even_turns()
+        out.append(Refusal(
+            "break-even",
+            f"this cut needs {turns:,.0f} further turns to pay for the cache "
+            f"invalidation it causes, and --max-break-even says the session has "
+            f"{max_break_even:,}. It removes {plan.net_bytes:,} bytes net from "
+            f"behind a {plan.suffix_bytes:,}-byte suffix, so S/D is "
+            f"{plan.suffix_bytes / plan.net_bytes:,.1f} and T* = 19·(S/D) − 20 "
+            f"(SPEC §7): the edit costs 1.9·S once and earns back 0.1·D on each "
+            f"later turn."
+            + (f" This session has run {plan.report.usage.turns:,} turns so far."
+               if plan.report.usage.turns else "")
+            + " Nothing was written; --force writes it anyway.",
             forceable=True,
         ))
     if not result.plan.strips and result.plan.inflated:
@@ -618,6 +650,12 @@ def to_dict(result: ForkResult, refusals: list[Refusal], explain: bool = False) 
             "threshold": result.min_cold_age,
             "measured_from": result.last_activity_source,
         },
+        "break_even": {
+            "turns": (round(result.plan.break_even_turns(), 1)
+                      if result.plan.break_even_turns() is not None else None),
+            "budget": result.max_break_even,
+            "pays": result.plan.pays_within(result.max_break_even),
+        },
         "pairing": {
             "tool_uses": result.tool_uses,
             "tool_results": result.tool_results,
@@ -630,7 +668,7 @@ def to_dict(result: ForkResult, refusals: list[Refusal], explain: bool = False) 
             {"guard": r.guard, "forceable": r.forceable, "reason": r.reason}
             for r in refusals
         ],
-        "plan": plan_to_dict(result.plan, explain),
+        "plan": plan_to_dict(result.plan, explain, result.max_break_even),
     }
 
 
@@ -654,6 +692,11 @@ def render(result: ForkResult, refusals: list[Refusal], explain: bool = False) -
     add(f"pairing          {result.tool_uses:,} tool_use, {result.tool_results:,} "
         f"tool_result — G5 "
         f"{'preserved' if not any(r.guard == 'G5' for r in refusals) else 'VIOLATED'}")
+    turns = plan.break_even_turns()
+    verdict = plan.pays_within(result.max_break_even)
+    if verdict is not None:
+        add(f"break-even       T* {turns:,.0f} further turns against a budget of "
+            f"{result.max_break_even:,} — {'pays' if verdict else 'DOES NOT PAY'}")
     add(f"cold age         {_duration(result.cold_age)} since the last request, "
         f"threshold {_duration(result.min_cold_age)}")
     add(f"                 measured from {result.last_activity_source}")
@@ -666,7 +709,7 @@ def render(result: ForkResult, refusals: list[Refusal], explain: bool = False) -
         f"{result.file_delta:+,} bytes")
     add("")
 
-    add(render_body(plan, explain))
+    add(render_body(plan, explain, result.max_break_even))
 
     if refusals:
         add("")
@@ -698,6 +741,7 @@ def fork_command(
     keep_last: int | None = None,
     min_bytes: int | None = None,
     min_cold_age: int = DEFAULT_MIN_COLD_AGE,
+    max_break_even: int | None = DEFAULT_MAX_BREAK_EVEN,
     i_know: bool = False,
     write: bool = False,
     out: str | None = None,
@@ -714,10 +758,16 @@ def fork_command(
     §10's determinism is a property of the file, and the clock only decides
     whether the file is written.
 
-    SPEC §8 lists three exit-3 refusals: too warm, live, and G5. There is no
-    separate liveness guard here because `--min-cold-age` subsumes it — a session
-    Claude Code still has open is being appended to, so its last activity is by
-    definition recent, and any threshold worth setting catches it. A second guard
+    SPEC §8 lists three exit-3 refusals: too warm, live, and G5. `--max-break-even`
+    is a fourth this repository adds, and it is the only one that refuses a fork
+    that is *correct* — it says the cut would be paid for and never earned back.
+    It is soft, so `--force` reaches it, and it is a budget rather than a
+    measurement: T* is a property of the transcript, the turns the session has
+    left are not, and only the operator knows them.
+
+    There is no separate liveness guard here because `--min-cold-age` subsumes
+    it — a session Claude Code still has open is being appended to, so its last
+    activity is by definition recent, and any threshold worth setting catches it. A second guard
     firing on the same evidence would only give the operator two things to force
     past.
     """
@@ -731,6 +781,9 @@ def fork_command(
         return 1, f"winnow: {exc}"
     if min_cold_age < 0:
         return 1, f"winnow: --min-cold-age must not be negative, got {min_cold_age}"
+    if max_break_even is not None and max_break_even < 0:
+        return 1, ("winnow: --max-break-even is a number of further turns and must "
+                   f"not be negative, got {max_break_even}")
     try:
         plan = build_plan(path, tier=tier, rules=selection,
                           keep_last=keep_last, min_bytes=min_bytes)
@@ -740,7 +793,8 @@ def fork_command(
 
     destination = Path(out).expanduser() if out else None
     result, refusals = build_fork(plan, out=destination, now=now,
-                                  min_cold_age=min_cold_age)
+                                  min_cold_age=min_cold_age,
+                                  max_break_even=max_break_even)
 
     hard = [r for r in refusals if not r.forceable]
     soft = [r for r in refusals if r.forceable]

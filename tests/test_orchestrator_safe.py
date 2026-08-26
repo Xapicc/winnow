@@ -156,6 +156,24 @@ class TestSubcommandMirror(unittest.TestCase):
         self.assertEqual(self._parser_subcommands() - set(_SUBCOMMANDS), {"nudge"})
         self.assertIn("nudge", safe.LEGACY_SUBCOMMANDS)
 
+    def test_this_trees_own_groups_are_mirrored_too(self):
+        # The same argument as `test_the_mirror_matches_the_parser`, for the
+        # other parser. A group added to `winnow.cli` and not here is a command
+        # `refusal_for` cannot see, and one it cannot see is one it allows —
+        # which is how `fork --write` was allowed while a session was live.
+        from winnow.cli import _OWN_GROUPS
+
+        self.assertEqual(
+            set(safe.WINNOW_SUBCOMMANDS), set(_OWN_GROUPS) - {"safe"},
+        )
+
+    def test_the_two_sets_do_not_overlap(self):
+        # An overlap would make `subcommand_of` ambiguous about which parser a
+        # token belongs to, and the two gates disagree about what is refused.
+        self.assertEqual(
+            safe.LEGACY_SUBCOMMANDS & safe.WINNOW_SUBCOMMANDS, frozenset()
+        )
+
     def test_finds_the_subcommand_the_way_the_cli_does(self):
         self.assertEqual(safe.subcommand_of(["treat", "abc", "--execute"]), "treat")
         self.assertEqual(safe.subcommand_of(["--context-window", "1", "list"]), "list")
@@ -233,6 +251,34 @@ class TestArgvGate(unittest.TestCase):
         self.assert_allowed(["treat", "abc"], live_pid=4242)
         self.assert_allowed(["diagnose", "abc"], live_pid=4242)
         self.assert_allowed(["list"], live_pid=4242)
+
+    def test_forking_is_refused_during_a_cycle_even_though_it_edits_nothing(self):
+        # The gap this closes. `fork --write` opens the original read-only and
+        # writes a new transcript beside it, so it is not "mutating" in the
+        # sense the other five entries are — which is exactly why it was not on
+        # the list, and why leaving it off was wrong.
+        #
+        # It reads a file Claude Code is still appending to. A `tool_use` whose
+        # `tool_result` has not landed yet is copied without it, and G5 then
+        # either aborts the fork or writes a file whose contents no single
+        # moment of the source ever held. It also lands a new file in the bind
+        # mount while the harness is working, which invariant 4 forbids.
+        self.assert_allowed(["fork", "abc", "--write"], live_pid=None)
+        reason = self.assert_refused(["fork", "abc", "--write"], live_pid=4242)
+        self.assertIn("4242", reason)
+
+    def test_a_fork_dry_run_is_allowed_during_a_cycle(self):
+        # Without `--write` a fork writes nothing, so it is a read like `plan`.
+        # This is what lets an orchestrator price the new engine's cut every
+        # cycle without waiting for a boundary.
+        self.assert_allowed(["fork", "abc"], live_pid=4242)
+
+    def test_plan_and_inspect_are_reads_and_are_never_refused(self):
+        # The whole point of their being separate commands. An orchestrator can
+        # ask what would be removed at any moment, including mid-cycle, because
+        # asking costs nothing and changes nothing.
+        for argv in (["plan", "abc"], ["plan", "abc", "--json"], ["inspect", "abc"]):
+            self.assert_allowed(argv, live_pid=4242)
 
     def test_an_argv_with_no_subcommand_is_not_refused(self):
         self.assert_allowed(["--version"])
@@ -960,3 +1006,60 @@ def _temp_dir():
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSafeRunDispatch(unittest.TestCase):
+    """What `winnow safe run --` can actually reach.
+
+    It dispatched to `winnow.legacy.cli` alone, so every command this repository
+    added failed under the mode as an unknown subcommand. That was invisible
+    while the only thing a harness ran under the mode was `treat --execute`, and
+    became load-bearing the moment one wanted to *price* a cut each cycle:
+    `plan` and a `fork` without `--write` write nothing and are the two commands
+    `refusal_for` allows while a session is live, and they were also the two the
+    dispatcher could not run.
+    """
+
+    def setUp(self):
+        from winnow.legacy.registry import PRESCRIPTIONS
+
+        self._saved = os.environ.get(safe.ENV_SWITCH)
+        os.environ[safe.ENV_SWITCH] = "1"
+        # `run_under_mode` calls `apply_strategy_exclusions`, which mutates the
+        # prescription lists **in place** — the module-level dict `cli.py` and
+        # `guard.py` bound at import time. A test that dispatches for real
+        # therefore edits global state that later tests count, and the failure
+        # lands in an unrelated file with no hint of where it came from.
+        self._prescriptions = {k: list(v) for k, v in PRESCRIPTIONS.items()}
+
+    def tearDown(self):
+        from winnow.legacy.registry import PRESCRIPTIONS
+
+        if self._saved is None:
+            os.environ.pop(safe.ENV_SWITCH, None)
+        else:
+            os.environ[safe.ENV_SWITCH] = self._saved
+        # Restored in place for the same reason it is mutated in place.
+        for name, strategies in self._prescriptions.items():
+            PRESCRIPTIONS[name][:] = strategies
+
+    def test_this_trees_commands_are_reachable_under_the_mode(self):
+        from winnow import cli
+
+        code = cli.main(["safe", "run", "--", "plan", "--help"])
+        self.assertEqual(code, 0)
+
+    def test_the_mode_refuses_to_nest(self):
+        # `run_under_mode` dispatches through `winnow.cli.main`, which routes
+        # `safe` back to the same function. Unbounded rather than merely
+        # pointless: each round re-applies the environment overlay and the
+        # strategy exclusion before recursing.
+        from winnow import cli
+
+        code = cli.main(["safe", "run", "--", "safe", "check"])
+        self.assertEqual(code, cli.EXIT_USAGE)
+
+    def test_an_empty_argv_is_still_a_usage_error(self):
+        from winnow import cli
+
+        self.assertEqual(cli.main(["safe", "run"]), cli.EXIT_USAGE)

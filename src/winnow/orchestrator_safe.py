@@ -217,6 +217,25 @@ LEGACY_SUBCOMMANDS = frozenset({
     "dashboard", "uninstall", "nudge",
 })
 
+# This tree's own groups, which the gate has to classify for the same reason it
+# classifies the inherited ones.
+#
+# It did not, and the omission was structural rather than an oversight in the
+# list: `subcommand_of` matched `LEGACY_SUBCOMMANDS` alone, so **every** command
+# this repository added — `fork` included — fell through `refusal_for` as
+# unclassified and therefore allowed. Nothing exploited it, because `run_under_mode`
+# hands argv to the inherited CLI and `fork` is not a command there, so the
+# argv could not reach the code it named. That is a reason it was never a live
+# bug and not a reason to leave it: the gate's own test asserts that a new
+# *inherited* subcommand cannot default to allowed, and the same argument
+# applies here with more force, since these commands write transcripts.
+#
+# `safe` stays absent for the reason above — winnow.cli dispatches it before any
+# of this runs.
+WINNOW_SUBCOMMANDS = frozenset({
+    "inspect", "plan", "fork", "recover", "filter", "savings", "trial",
+})
+
 # Refused whatever the arguments, keyed by subcommand.
 _REFUSED_SUBCOMMANDS: dict[str, str] = {
     "guard": (
@@ -289,6 +308,23 @@ _MUTATING_ARGV: tuple[tuple[str, str], ...] = (
     ("digest", "clear"),
     ("digest", "flush"),
     ("digest", "recover"),
+    # `fork --write` never touches the original — it opens it read-only and
+    # writes a new transcript beside it — so it does not belong here for the
+    # reason the five above do. It belongs here for a different one: it *reads*
+    # a file Claude Code is still appending to.
+    #
+    # A fork taken while a session is live is a fork of a torn transcript. The
+    # last line may be half-written (`session.py` already tolerates that on the
+    # read side), but the real damage is quieter: a `tool_use` whose
+    # `tool_result` has not landed yet is copied into the fork without it, and
+    # G5 either aborts the whole fork or — if the pairing happened to complete
+    # between the two reads — writes a file whose contents no single moment of
+    # the source ever held.
+    #
+    # It also writes into `~/.claude/projects/`, which USAGEFOUNDRY §1.7 records
+    # as a bind mount onto the operator's own machine, and invariant 4 is that
+    # this mode does not put files there while the harness is working.
+    ("fork", "--write"),
 )
 
 _LIVE_SESSION_REASON = (
@@ -300,15 +336,19 @@ _LIVE_SESSION_REASON = (
 
 
 def subcommand_of(argv: list[str]) -> str | None:
-    """The inherited subcommand in `argv`, by the same rule the CLI uses.
+    """The subcommand in `argv`, by the same rule the CLI uses.
 
     cli.py:1945 takes the first token that is a known subcommand, so a value
     that happens to read like one (`--protect-pattern init`) is only mistaken
     for the subcommand if it precedes the real one, which argparse would reject
     anyway.
+
+    Both sets, because a gate that only knew the inherited names classified none
+    of this tree's commands and so allowed all of them by default.
     """
+    known = LEGACY_SUBCOMMANDS | WINNOW_SUBCOMMANDS
     for token in argv:
-        if token in LEGACY_SUBCOMMANDS:
+        if token in known:
             return token
     return None
 
@@ -1044,28 +1084,38 @@ def redirect_home_writes(target_dir: Path) -> dict[str, Path]:
     return applied
 
 
-def run_legacy(argv: list[str]) -> int:
-    """Run the inherited CLI in this process, under the mode.
+def run_under_mode(argv: list[str]) -> int:
+    """Run a winnow command in this process, under the mode.
 
-    Named for what it runs, not for the program it belongs to: `winnow safe
-    run --` hands argv to `winnow.legacy.cli`, and `run_winnow` inside winnow
-    would name everything and distinguish nothing.
+    Dispatches through `winnow.cli.main`, which routes this tree's own groups to
+    `build_parser()` and everything else to the inherited CLI. It used to call
+    `winnow.legacy.cli.main` directly, which made `winnow safe run -- plan …`
+    fail at the inherited parser as an unknown command — so the only commands
+    reachable under the mode were the inherited ones, and none of this tree's.
+
+    That mattered once an orchestrator wanted to *price* a cut every cycle.
+    `plan` and a `fork` without `--write` write nothing and are allowed while a
+    session is live (`refusal_for`), which makes them the two commands a harness
+    can call at any moment; they were also the two it could not call at all.
 
     In-process because the exclusion in `apply_strategy_exclusions` is an
     in-memory edit to a module-level dict — a subprocess would import a fresh,
     unexcluded copy. The environment overlay is applied before `main()` because
-    `_maybe_global_init` reads os.environ at call time (cli.py:2076).
+    `_maybe_global_init` reads os.environ at call time (cli.py:2076). Both still
+    apply to this tree's commands even though neither has a prescription to
+    exclude: `redirect_home_writes` is what keeps `~/.winnow` out of the bind
+    mount, and that is a property of the process, not of the subcommand.
     """
     apply_safe_environment()
     apply_strategy_exclusions()
     redirect_home_writes(data_dir())
 
-    from winnow.legacy.cli import main as legacy_main
+    from winnow.cli import main as winnow_main
 
     saved = sys.argv
     sys.argv = ["winnow", *argv]
     try:
-        legacy_main()
+        return winnow_main(argv)
     except SystemExit as exc:
         if exc.code is None:
             return 0
@@ -1075,4 +1125,3 @@ def run_legacy(argv: list[str]) -> int:
         return 1
     finally:
         sys.argv = saved
-    return 0

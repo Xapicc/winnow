@@ -131,15 +131,25 @@ def cmd_run(args: argparse.Namespace) -> int:
     # inherited CLI's, whose own prescan would carry it into argparse as a token.
     argv = args.argv[1:] if args.argv[:1] == ["--"] else list(args.argv)
     if not argv:
-        _say("safe run needs an inherited subcommand: "
+        _say("safe run needs a subcommand: "
              "winnow safe run -- diagnose <session>")
+        return EXIT_USAGE
+
+    # `run_under_mode` dispatches through this module's own `main`, which routes
+    # `safe` straight back to this function. Refused rather than guarded further
+    # in, because the only thing a nested `safe` could mean is a mistake, and an
+    # unbounded one: each round would re-apply the environment overlay and the
+    # strategy exclusion before recursing.
+    if argv[0] == "safe":
+        _say("`winnow safe run -- safe …` is refused: the mode does not nest, "
+             "and a nested run would recurse rather than do anything.")
         return EXIT_USAGE
 
     refusal = safe.refusal_for(argv, live_pid=safe.live_claude_pid())
     if refusal:
         _say(refusal)
         return EXIT_REFUSED
-    return safe.run_legacy(argv)
+    return safe.run_under_mode(argv)
 
 
 def cmd_checkpoint(args: argparse.Namespace) -> int:

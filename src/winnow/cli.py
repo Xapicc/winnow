@@ -21,6 +21,7 @@ from pathlib import Path
 
 from . import fork as fork_mod
 from . import orchestrator_safe as safe
+from . import plan as plan_mod
 from . import proxy as proxy_mod
 from . import rules as rules_mod
 from . import savings as savings_mod
@@ -37,6 +38,31 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 # stderr line (logLine.ts). The bound exists so that a path or a session name
 # arriving from outside cannot turn one hook line into a large database row.
 _MAX_LINE_CHARS = 500
+
+
+def _break_even_budget(value: str) -> int | None:
+    """`--max-break-even`: further turns, or `none` to not gate at all.
+
+    `none` is not `0`, and the difference is the reason this parser exists. Zero
+    admits only a cut that has already paid for itself at the moment it is made;
+    `none` says the question does not arise. A caller that knows the invalidation
+    is refunded — an orchestrator forking at a cycle boundary, where `--resume`
+    was going to rewrite the prefix regardless — wants the second, and expressing
+    it as a very large number would be the same instruction written as a lie.
+    """
+    if value.strip().lower() in ("none", "off"):
+        return None
+    try:
+        turns = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"expected a number of further turns or 'none', got {value!r}"
+        ) from None
+    if turns < 0:
+        raise argparse.ArgumentTypeError(
+            f"a number of further turns must not be negative, got {turns}"
+        )
+    return turns
 
 
 def _say(message: str) -> None:
@@ -324,6 +350,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
         i_know=args.i_know,
         as_json=args.json,
         explain=args.explain,
+        max_break_even=args.max_break_even,
     )
     print(output, file=sys.stderr if code == EXIT_USAGE else sys.stdout)
     return code
@@ -375,6 +402,16 @@ def add_plan_subparser(sub) -> None:
         help="acknowledge that tier A strips reads the session may still need; "
              "required by any selection containing A1 (SPEC §4, §8)",
     )
+    p.add_argument(
+        "--max-break-even", type=_break_even_budget,
+        default=plan_mod.DEFAULT_MAX_BREAK_EVEN, metavar="T",
+        help="how many further turns this session is expected to run. A cut needs "
+             "T* = 19·(S/D) − 20 of them before it has paid for the cache "
+             "invalidation it causes (SPEC §7); above T that is a cut which is "
+             f"never earned back (default {plan_mod.DEFAULT_MAX_BREAK_EVEN}). "
+             "`none` does not gate at all, for a caller that knows the "
+             "invalidation is refunded",
+    )
     p.add_argument("--json", action="store_true", help="machine-readable output")
     p.add_argument(
         "--explain", action="store_true",
@@ -396,6 +433,7 @@ def cmd_fork(args: argparse.Namespace) -> int:
         keep_last=args.keep_last,
         min_bytes=args.min_bytes,
         min_cold_age=args.min_cold_age,
+        max_break_even=args.max_break_even,
         i_know=args.i_know,
         write=args.write,
         out=args.out,
@@ -456,6 +494,16 @@ def add_fork_subparser(sub) -> None:
              "may still be cached and the cut is not free (SPEC §7)",
     )
     p.add_argument(
+        "--max-break-even", type=_break_even_budget,
+        default=plan_mod.DEFAULT_MAX_BREAK_EVEN, metavar="T",
+        help="how many further turns this session is expected to run. A cut needs "
+             "T* = 19·(S/D) − 20 of them before it has paid for the cache "
+             "invalidation it causes (SPEC §7); above T that is a cut which is "
+             f"never earned back (default {plan_mod.DEFAULT_MAX_BREAK_EVEN}). "
+             "`none` does not gate at all, for a caller that knows the "
+             "invalidation is refunded",
+    )
+    p.add_argument(
         "--i-know", action="store_true",
         help="acknowledge that tier A strips reads the session may still need; "
              "required by any selection containing A1 (SPEC §4, §8)",
@@ -471,8 +519,9 @@ def add_fork_subparser(sub) -> None:
     )
     p.add_argument(
         "--force", action="store_true",
-        help="proceed past a soft refusal — cold age, an already-compacted "
-             "session, a malformed source record, or whole-fork G4. Never past G5",
+        help="proceed past a soft refusal — cold age, break-even, an "
+             "already-compacted session, a malformed source record, or "
+             "whole-fork G4. Never past G5",
     )
     p.add_argument("--json", action="store_true", help="machine-readable output")
     p.add_argument(

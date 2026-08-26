@@ -58,6 +58,27 @@ from .rules import (
 # SPEC §8 asked for.
 EXPLAIN_ARGUMENT_CHARS = 160
 
+# How many further turns `fork` assumes the session has left, when the operator
+# does not say. SPEC §7 gives the formula and names the quantity; this is the
+# other half of it, and it is a **budget rather than a measurement**: T* is a
+# property of the transcript and can be computed, the turns the session has left
+# are not and cannot.
+#
+# 60 is where the corpus puts it. Over 396 local sessions truncated at the moment
+# they first pass 150k of context, forked through this code path and scored
+# against the API requests each session actually went on to make:
+#
+#     fork whenever a rule fires   396 cuts, 30% of them paid, net −$10.85
+#     T* <= 60                     114 cuts, 64% of them paid, net +$56.06
+#
+# The ungated row is the finding — writing a fork because a rule fired is, on this
+# corpus, worse than not forking at all, because a rule firing is evidence that a
+# result *can* go and no evidence at all that removing it pays. The budget sweep
+# is flat across the middle (+$55.95, +$56.06, +$58.46 at 40, 60, 100) and falls
+# away outside it, so the sign is load-bearing and the exact value is not; 60 is
+# taken because the median session in that set had 64 turns left.
+DEFAULT_MAX_BREAK_EVEN = 60
+
 EXPLAIN_WARNING = (
     "These lines carry tool arguments verbatim, and a transcript routinely "
     "contains credentials pasted into a Bash command (SPEC §10). Treat this "
@@ -192,6 +213,20 @@ class Plan:
         """
         return break_even_turns(self.suffix_bytes, self.net_bytes)
 
+    def pays_within(self, turns: int | None) -> bool | None:
+        """Does this cut clear its own invalidation inside `turns` further turns?
+
+        None when there is no cut to price, or no budget to price it against —
+        the two cases a caller must not read as "yes". Kept here rather than
+        spelled at each call site so `plan`'s readout and `fork`'s refusal cannot
+        come to different verdicts on the same number, which is the same reason
+        the rule engine has one home.
+        """
+        if turns is None:
+            return None
+        needed = self.break_even_turns()
+        return None if needed is None else needed <= turns
+
 
 def resolve_selection(
     tier: str,
@@ -311,7 +346,8 @@ def _arguments(tool_input: dict) -> str:
 # ─── Rendering ───────────────────────────────────────────────────────────────
 
 
-def to_dict(plan: Plan, explain: bool = False) -> dict:
+def to_dict(plan: Plan, explain: bool = False,
+            max_break_even: int | None = None) -> dict:
     """The `--json` shape. Deterministic: every list is ordered, every map is
     built in a fixed key order (SPEC §10)."""
     total = plan.report.message_content_bytes
@@ -361,6 +397,8 @@ def to_dict(plan: Plan, explain: bool = False) -> dict:
                 round(plan.suffix_bytes / plan.net_bytes, 3) if plan.net_bytes else None
             ),
             "break_even_turns": round(turns, 1) if turns is not None else None,
+            "max_break_even": max_break_even,
+            "pays_within_budget": plan.pays_within(max_break_even),
         },
         "pointers": [
             {
@@ -393,7 +431,8 @@ def to_dict(plan: Plan, explain: bool = False) -> dict:
     return payload
 
 
-def render(plan: Plan, explain: bool = False) -> str:
+def render(plan: Plan, explain: bool = False,
+           max_break_even: int | None = None) -> str:
     """The human readout, laid out like `report.render` so the two read alike.
 
     `_human` and `RULE_LABELS` come from `report` rather than being redefined:
@@ -409,7 +448,7 @@ def render(plan: Plan, explain: bool = False) -> str:
         "  writes nothing; this is what `winnow fork --write` would do",
         "",
     ]
-    return "\n".join([*header, render_body(plan, explain)])
+    return "\n".join([*header, render_body(plan, explain, max_break_even)])
 
 
 def suppression_note(plan: Plan) -> list[str]:
@@ -428,7 +467,8 @@ def suppression_note(plan: Plan) -> list[str]:
     return [note]
 
 
-def render_body(plan: Plan, explain: bool = False) -> str:
+def render_body(plan: Plan, explain: bool = False,
+                max_break_even: int | None = None) -> str:
     """Everything below the heading: the rules, the bytes, the guards, the T*.
 
     Split from `render` so that `fork` can print the same arithmetic under its own
@@ -504,6 +544,10 @@ def render_body(plan: Plan, explain: bool = False) -> str:
         add(f"  S/D            {plan.suffix_bytes / plan.net_bytes:>10.1f}")
         add(f"  T* = 19·(S/D) − 20 = {turns:,.0f} further turns to pay for itself")
         add(f"  ({plan.report.usage.turns:,} assistant turns in this session so far)")
+        verdict = plan.pays_within(max_break_even)
+        if verdict is not None:
+            add(f"  against a budget of {max_break_even:,} further turns "
+                f"(--max-break-even): {'PAYS' if verdict else 'DOES NOT PAY'}")
 
     if explain:
         add("")
@@ -525,6 +569,7 @@ def plan_command(
     i_know: bool = False,
     as_json: bool = False,
     explain: bool = False,
+    max_break_even: int | None = DEFAULT_MAX_BREAK_EVEN,
 ) -> tuple[int, str]:
     """`(exit code, output)`. SPEC §8: 0 success, 1 usage error, 2 nothing to do.
 
@@ -532,6 +577,13 @@ def plan_command(
     violated", and all three are properties of writing a file. `plan` writes
     nothing, so it has nothing to refuse; its guards produce an outcome rather
     than a refusal, and the outcome is exit 2 when they leave nothing to do.
+
+    `--max-break-even` is on the same footing: `plan` **reports** the verdict the
+    gate would reach and does not change its exit code for it, because a dry run
+    that exited non-zero on an economic judgement would be indistinguishable from
+    one that found nothing to strip. The number it prints is the number `fork`
+    refuses on, computed by `Plan.pays_within` in both — the same reason the rule
+    engine has one home.
     """
     try:
         selection = resolve_selection(tier, rule, no_rule, i_know)
@@ -551,10 +603,14 @@ def plan_command(
     # defaults did. The names were validated by `resolve_selection` above.
     plan.suppressed = suppressed_by_default(tier, rule or (), no_rule or ())
 
+    if max_break_even is not None and max_break_even < 0:
+        return 1, ("winnow: --max-break-even is a number of further turns and must "
+                   f"not be negative, got {max_break_even}")
+
     payload = (
-        json.dumps(to_dict(plan, explain), indent=2)
+        json.dumps(to_dict(plan, explain, max_break_even), indent=2)
         if as_json
-        else render(plan, explain)
+        else render(plan, explain, max_break_even)
     )
     if plan.strips:
         return 0, payload

@@ -14,6 +14,7 @@ numbers, and a test that proved it by waiting an hour would prove it once.
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import shutil
@@ -32,7 +33,7 @@ from winnow.fork import (
     source_lines,
     write_fork,
 )
-from winnow.plan import build_plan
+from winnow.plan import DEFAULT_MAX_BREAK_EVEN, build_plan, plan_command
 from winnow.rules import content_digest
 
 from .test_inspect import BIG
@@ -98,6 +99,30 @@ def strippable() -> list[dict]:
         + call("b", "Glob", {"pattern": "**/*.py"})
         + padding(8)
     )
+
+
+def prose(n: int, size: int = 4_000) -> list[dict]:
+    """`n` assistant turns of plain text: suffix that holds nothing a rule can
+    strip.
+
+    The shape SPEC §7's arithmetic is actually about. Each one grows S — the
+    bytes a cut has to pay to rewrite — and none of them grows D, so appending
+    them raises S/D and with it the number of further turns the cut needs before
+    it has earned its own invalidation back.
+    """
+    return [
+        {
+            "type": "assistant",
+            "uuid": f"prose-{i}",
+            "sessionId": SESSION,
+            "message": {
+                "role": "assistant",
+                "model": "claude-opus-5",
+                "content": [{"type": "text", "text": "x" * size}],
+            },
+        }
+        for i in range(n)
+    ]
 
 
 def session_at(directory, records) -> Path:
@@ -464,6 +489,151 @@ def test_a_session_with_nothing_to_strip_exits_2_rather_than_refusing(tmp_path):
     assert code == 2
     assert "nothing to do" in output
     assert [p.name for p in path.parent.iterdir()] == [path.name]
+
+
+# ─── --max-break-even ────────────────────────────────────────────────────────
+#
+# The gate this repository adds to SPEC §8's three refusals. Everything here is
+# about one distinction: a rule firing says a result *can* go, and says nothing
+# about whether removing it is worth the cache invalidation. Replayed over 1,453
+# local transcripts, cutting whenever a rule fires is net negative.
+
+
+def expensive() -> list[dict]:
+    """A cut worth ~4 KB standing behind ~90 KB of suffix: S/D ≈ 22, T* ≈ 400."""
+    return strippable() + prose(22)
+
+
+def test_a_cut_that_cannot_pay_inside_the_budget_is_refused_with_exit_3(tmp_path):
+    path = session_at(tmp_path, expensive())
+    code, output = fork_command(str(path), write=True, now=path.stat().st_mtime + A_DAY)
+
+    assert code == 3
+    assert "break-even" in output
+    assert "further turns to pay for" in output
+    assert [p.name for p in path.parent.iterdir()] == [path.name]
+
+
+def test_the_same_cut_proceeds_when_the_session_has_the_turns_for_it(tmp_path):
+    """The gate is a budget, not a property of the transcript: the same fork is
+    right or wrong depending on how much session is left, and only the operator
+    knows that."""
+    path = session_at(tmp_path, expensive())
+    cold = path.stat().st_mtime + A_DAY
+
+    assert fork_command(str(path), now=cold, max_break_even=60)[0] == 3
+    assert fork_command(str(path), now=cold, max_break_even=1_000)[0] == 0
+
+
+def test_a_cheap_cut_passes_the_default_budget(tmp_path):
+    """No suffix to speak of, so the cut clears in a couple of turns and the gate
+    has nothing to say about it."""
+    path = session_at(tmp_path, strippable())
+    plan = build_plan(path, tier="CB")
+
+    assert plan.break_even_turns() < DEFAULT_MAX_BREAK_EVEN
+    code, output = fork_command(str(path), write=True, now=path.stat().st_mtime + A_DAY)
+    assert code == 0
+    assert "break-even" in output and "pays" in output
+
+
+def test_force_proceeds_past_the_gate_and_says_so(tmp_path):
+    path = session_at(tmp_path, expensive())
+    code, output = fork_command(str(path), write=True, force=True,
+                                now=path.stat().st_mtime + A_DAY)
+
+    assert code == 0
+    assert "forced past" in output
+    assert "break-even" in output
+
+
+def test_the_refusal_shows_the_arithmetic_it_refused_on(tmp_path):
+    """An operator told "no" is owed the two numbers that said so, because the
+    action they can take — wait, or raise the budget — depends on which of them
+    is the problem."""
+    path = session_at(tmp_path, expensive())
+    plan = build_plan(path, tier="CB")
+    _, output = fork_command(str(path), now=path.stat().st_mtime + A_DAY)
+
+    assert f"{plan.net_bytes:,} bytes net" in output
+    assert f"{plan.suffix_bytes:,}-byte suffix" in output
+    assert "S/D" in output and "T* = 19·(S/D) − 20" in output
+
+
+def test_a_negative_budget_is_a_usage_error(tmp_path):
+    path = session_at(tmp_path, strippable())
+    code, output = fork_command(str(path), max_break_even=-1)
+
+    assert code == 1
+    assert "--max-break-even" in output
+
+
+def test_no_budget_at_all_disables_the_gate(tmp_path):
+    """`None` is "the operator did not say", which is not the same as zero — zero
+    would admit only a cut that is free."""
+    path = session_at(tmp_path, expensive())
+    code, output = fork_command(str(path), write=True, max_break_even=None,
+                                now=path.stat().st_mtime + A_DAY)
+
+    assert code == 0
+    assert "break-even" not in output
+
+
+def test_the_cli_spells_no_gate_as_none_rather_than_a_large_number(tmp_path):
+    """`none` and `0` are different instructions and the parser keeps them apart:
+    zero admits only a cut that is free, `none` says do not ask."""
+    from winnow.cli import _break_even_budget
+
+    assert _break_even_budget("none") is None
+    assert _break_even_budget("off") is None
+    assert _break_even_budget("60") == 60
+    assert _break_even_budget("0") == 0
+    for bad in ("bananas", "-1"):
+        with pytest.raises(argparse.ArgumentTypeError):
+            _break_even_budget(bad)
+
+
+def test_plan_reaches_the_same_verdict_the_fork_refuses_on(tmp_path):
+    """The property that makes the dry run worth reading, applied to the gate:
+    both sides call `Plan.pays_within`, so they cannot disagree."""
+    path = session_at(tmp_path, expensive())
+
+    plan_code, plan_output = plan_command(str(path))
+    fork_code, _ = fork_command(str(path), now=path.stat().st_mtime + A_DAY)
+
+    assert "DOES NOT PAY" in plan_output
+    assert plan_code == 0, "plan reports the verdict; it does not refuse on it"
+    assert fork_code == 3
+
+
+def test_the_gate_reaches_json(tmp_path):
+    path = session_at(tmp_path, expensive())
+    _, output = fork_command(str(path), as_json=True, now=path.stat().st_mtime + A_DAY)
+    payload = json.loads(output)
+
+    assert payload["break_even"]["budget"] == DEFAULT_MAX_BREAK_EVEN
+    assert payload["break_even"]["pays"] is False
+    assert payload["break_even"]["turns"] > DEFAULT_MAX_BREAK_EVEN
+    assert payload["plan"]["arithmetic"]["pays_within_budget"] is False
+    assert [r["guard"] for r in payload["refusals"]] == ["break-even"]
+    assert all(r["forceable"] for r in payload["refusals"])
+
+
+def test_the_gate_does_not_change_what_a_forced_fork_writes(tmp_path):
+    """SPEC §10's determinism: the budget decides whether the file is written,
+    never what is in it."""
+    gated = session_at(tmp_path / "a", expensive())
+    ungated = session_at(tmp_path / "b", expensive())
+    cold = gated.stat().st_mtime + A_DAY
+
+    fork_command(str(gated), write=True, force=True, now=cold)
+    fork_command(str(ungated), write=True, max_break_even=None, now=cold)
+
+    def written(directory):
+        return sorted(p.read_bytes() for p in directory.iterdir()
+                      if p.name != gated.name and p.name != ungated.name)
+
+    assert written(gated.parent) == written(ungated.parent)
 
 
 # ─── Determinism ─────────────────────────────────────────────────────────────

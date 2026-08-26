@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "winnow"
-version = "1.8.39"
+version = "1.9.0"
 description = "Decide what to drop from a Claude Code session transcript, and say whether dropping it paid"
 readme = "README.md"
 license = "MIT"

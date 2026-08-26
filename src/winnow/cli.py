@@ -40,6 +40,31 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _MAX_LINE_CHARS = 500
 
 
+def _break_even_budget(value: str) -> int | None:
+    """`--max-break-even`: further turns, or `none` to not gate at all.
+
+    `none` is not `0`, and the difference is the reason this parser exists. Zero
+    admits only a cut that has already paid for itself at the moment it is made;
+    `none` says the question does not arise. A caller that knows the invalidation
+    is refunded — an orchestrator forking at a cycle boundary, where `--resume`
+    was going to rewrite the prefix regardless — wants the second, and expressing
+    it as a very large number would be the same instruction written as a lie.
+    """
+    if value.strip().lower() in ("none", "off"):
+        return None
+    try:
+        turns = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"expected a number of further turns or 'none', got {value!r}"
+        ) from None
+    if turns < 0:
+        raise argparse.ArgumentTypeError(
+            f"a number of further turns must not be negative, got {turns}"
+        )
+    return turns
+
+
 def _say(message: str) -> None:
     """Emit one bounded ``winnow: `` line on stderr.
 
@@ -378,12 +403,14 @@ def add_plan_subparser(sub) -> None:
              "required by any selection containing A1 (SPEC §4, §8)",
     )
     p.add_argument(
-        "--max-break-even", type=int, default=plan_mod.DEFAULT_MAX_BREAK_EVEN,
-        metavar="T",
+        "--max-break-even", type=_break_even_budget,
+        default=plan_mod.DEFAULT_MAX_BREAK_EVEN, metavar="T",
         help="how many further turns this session is expected to run. A cut needs "
              "T* = 19·(S/D) − 20 of them before it has paid for the cache "
              "invalidation it causes (SPEC §7); above T that is a cut which is "
-             f"never earned back (default {plan_mod.DEFAULT_MAX_BREAK_EVEN})",
+             f"never earned back (default {plan_mod.DEFAULT_MAX_BREAK_EVEN}). "
+             "`none` does not gate at all, for a caller that knows the "
+             "invalidation is refunded",
     )
     p.add_argument("--json", action="store_true", help="machine-readable output")
     p.add_argument(
@@ -467,12 +494,14 @@ def add_fork_subparser(sub) -> None:
              "may still be cached and the cut is not free (SPEC §7)",
     )
     p.add_argument(
-        "--max-break-even", type=int, default=plan_mod.DEFAULT_MAX_BREAK_EVEN,
-        metavar="T",
+        "--max-break-even", type=_break_even_budget,
+        default=plan_mod.DEFAULT_MAX_BREAK_EVEN, metavar="T",
         help="how many further turns this session is expected to run. A cut needs "
              "T* = 19·(S/D) − 20 of them before it has paid for the cache "
              "invalidation it causes (SPEC §7); above T that is a cut which is "
-             f"never earned back (default {plan_mod.DEFAULT_MAX_BREAK_EVEN})",
+             f"never earned back (default {plan_mod.DEFAULT_MAX_BREAK_EVEN}). "
+             "`none` does not gate at all, for a caller that knows the "
+             "invalidation is refunded",
     )
     p.add_argument(
         "--i-know", action="store_true",

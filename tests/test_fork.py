@@ -14,6 +14,7 @@ numbers, and a test that proved it by waiting an hour would prove it once.
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import shutil
@@ -576,6 +577,20 @@ def test_no_budget_at_all_disables_the_gate(tmp_path):
 
     assert code == 0
     assert "break-even" not in output
+
+
+def test_the_cli_spells_no_gate_as_none_rather_than_a_large_number(tmp_path):
+    """`none` and `0` are different instructions and the parser keeps them apart:
+    zero admits only a cut that is free, `none` says do not ask."""
+    from winnow.cli import _break_even_budget
+
+    assert _break_even_budget("none") is None
+    assert _break_even_budget("off") is None
+    assert _break_even_budget("60") == 60
+    assert _break_even_budget("0") == 0
+    for bad in ("bananas", "-1"):
+        with pytest.raises(argparse.ArgumentTypeError):
+            _break_even_budget(bad)
 
 
 def test_plan_reaches_the_same_verdict_the_fork_refuses_on(tmp_path):

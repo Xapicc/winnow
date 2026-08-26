@@ -186,7 +186,7 @@ Five things refuse, with exit code 3:
 |---|---|---|
 | **G5 pairing preserved** | The fork's `tool_use` ↔ `tool_result` pairing must be identical to the source's. Re-derived from the bytes about to be written and compared | **Never.** A hard failure, and nothing was written |
 | `--min-cold-age S` (default 3600) | The last request finished less than `S` seconds ago, so the prefix may still be cached and the cut is not free ([docs/SPEC.md](docs/SPEC.md) §7) | Yes |
-| `--max-break-even T` (default 60) | The cut needs more than `T` further turns before it has earned back the invalidation it causes — `T* = 19·(S/D) − 20` above the turns the session has left. See [the break-even gate](#the-break-even-gate) | Yes |
+| `--max-break-even T` (default 60) | The cut needs more than `T` further turns before it has earned back the invalidation it causes — `T* = 19·(S/D) − 20` above the turns the session has left. `--max-break-even none` does not gate at all, for a caller that knows the invalidation is refunded. See [the break-even gate](#the-break-even-gate) | Yes |
 | **G4 no net inflation** | The fork would remove fewer bytes than the pointers it adds, or would leave a larger file than it started with | Yes |
 | `compacted` | The session has already compacted, so a resume starts from the summary and the pre-boundary bytes this fork prices are not in the prefix it would be cutting ([docs/DECISIONS.md](docs/DECISIONS.md) §Q4) | Yes |
 

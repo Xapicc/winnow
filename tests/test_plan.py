@@ -584,3 +584,109 @@ def test_plan_writes_nothing(tmp_path):
     plan_command(str(path), as_json=True)
     after = {p: p.read_bytes() for p in sorted(tmp_path.rglob("*")) if p.is_file()}
     assert before == after
+
+
+# ─── The filter ledger reaches the pruner ────────────────────────────────────
+#
+# There was no fixture anywhere in this repository representing a session the
+# intake filter had run over. These are it. 79.0% of what `winnow plan --tier CB`
+# proposes to remove is content the filter claims too, so on such a session the
+# denominator, the shares and the break-even gate were all answering a question
+# about a session that did not happen.
+
+
+def _filtered_session(tmp_path, dropped_bytes: int):
+    """A transcript with a request id, plus a ledger claiming bytes on that request."""
+    records = (
+        call("g", "Glob", {"pattern": "**/*.py"})
+        + [
+            {
+                "type": "assistant",
+                "uuid": "u-req",
+                "requestId": "req_filtered",
+                "message": {"role": "assistant", "model": "claude-opus-5",
+                            "content": [{"type": "text", "text": "ok"}],
+                            "usage": {"input_tokens": 1, "output_tokens": 1}},
+            }
+        ]
+        + padding(8)
+    )
+    ledger = tmp_path / "filter.jsonl"
+    ledger.write_text(json.dumps({
+        "request_id": "req_filtered",
+        "bytes_dropped": dropped_bytes,
+        "dropped": [{"rule": "B2", "tool": "Bash", "bytes": dropped_bytes,
+                     "tool_use_id": "toolu_gone"}],
+    }) + "\n")
+    return write_session(tmp_path, records), ledger
+
+
+def test_plan_takes_the_ledger_and_moves_its_denominator(tmp_path):
+    """The filter never touches the transcript, so Claude Code writes what it
+    held and every share `plan` computes from disk is of a session that did not
+    happen. The correction existed, was tested and was rendered, and was reachable
+    only from the one command that writes nothing."""
+    path, ledger = _filtered_session(tmp_path, 800)
+    plain = build_plan(path)
+    corrected = build_plan(path, filter_ledger=ledger)
+
+    assert corrected.report.filtered.bytes_dropped == 800
+    assert (corrected.report.wire_content_bytes
+            == plain.report.message_content_bytes - 800)
+    payload = to_dict(corrected)
+    assert payload["wire_content_bytes"] == corrected.report.wire_content_bytes
+    assert payload["message_content_bytes"] == plain.report.message_content_bytes
+    assert payload["filter_ledger"]["requests"] == 1
+    # Every share is against the wire figure, not the disk one.
+    assert payload["bytes"]["removed_share"] == pytest.approx(
+        round(corrected.removed_bytes / corrected.report.wire_content_bytes * 100, 4)
+    )
+
+
+def test_without_a_ledger_nothing_moves(tmp_path):
+    """A session that was never filtered must read exactly as it did before."""
+    path, _ = _filtered_session(tmp_path, 4_000)
+    plan = build_plan(path)
+    payload = to_dict(plan)
+    assert plan.report.filtered is None
+    assert payload["filter_ledger"] is None
+    assert payload["wire_content_bytes"] == payload["message_content_bytes"]
+
+
+def test_the_readout_names_the_base_it_used_and_what_it_did_not_correct(tmp_path):
+    """A share that silently changed base is worse than one that is consistently
+    conservative. And `S` is still measured from disk — the positional correction
+    needs a join `inspect` does not do, so the readout says so rather than
+    leaving an operator to assume it was applied."""
+    path, ledger = _filtered_session(tmp_path, 800)
+    rendered = render(build_plan(path, filter_ledger=ledger))
+    assert "kept" in rendered and "off the wire" in rendered
+    assert "the API saw" in rendered
+    assert "S is still measured from disk" in rendered
+
+
+def test_the_flag_reaches_plan_and_fork_from_the_command_line(tmp_path):
+    from winnow.fork import fork_command
+
+    path, ledger = _filtered_session(tmp_path, 800)
+    code, output = plan_command(str(path), filter_ledger=ledger, as_json=True)
+    assert code in (0, 2)
+    assert json.loads(output)["filter_ledger"]["requests"] == 1
+
+    code, output = fork_command(str(path), filter_ledger=ledger, as_json=True)
+    assert code in (0, 2, 3)
+    assert "req_filtered" not in output  # ids are not leaked into the readout
+
+
+def test_an_overstated_correction_clamps_rather_than_going_negative(tmp_path):
+    """`wire_content_bytes` clamps at zero, which is why defect 3 had to be fixed
+    before this parameter was threaded: a ledger read that overstated by 8.6x
+    would have produced a denominator of nothing and a share of nothing, silently,
+    in a gate."""
+    path, ledger = _filtered_session(tmp_path, 10_000_000)
+    plan = build_plan(path, filter_ledger=ledger)
+    assert plan.report.wire_content_bytes == 0
+    payload = to_dict(plan)
+    assert payload["wire_content_bytes"] == 0
+    assert payload["bytes"]["removed_share"] == 0.0
+    render(plan)  # must not divide by zero

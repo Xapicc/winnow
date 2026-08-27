@@ -351,6 +351,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
         as_json=args.json,
         explain=args.explain,
         max_break_even=args.max_break_even,
+        filter_ledger=Path(args.filter_ledger) if args.filter_ledger else None,
     )
     print(output, file=sys.stderr if code == EXIT_USAGE else sys.stdout)
     return code
@@ -412,6 +413,15 @@ def add_plan_subparser(sub) -> None:
              "`none` does not gate at all, for a caller that knows the "
              "invalidation is refunded",
     )
+    p.add_argument(
+        "--filter-ledger", default=None, metavar="PATH",
+        help="a `winnow filter --ledger` file. Joined on requestId, it says what "
+             "the intake filter already kept off the wire for this session — "
+             "which the transcript still contains and every share here otherwise "
+             "counts. 79%% of what tier CB proposes to remove is content the "
+             "filter claims too, so on a filtered session this is not a rounding "
+             "correction",
+    )
     p.add_argument("--json", action="store_true", help="machine-readable output")
     p.add_argument(
         "--explain", action="store_true",
@@ -440,6 +450,7 @@ def cmd_fork(args: argparse.Namespace) -> int:
         force=args.force,
         as_json=args.json,
         explain=args.explain,
+        filter_ledger=Path(args.filter_ledger) if args.filter_ledger else None,
     )
     print(output, file=sys.stdout if code in (EXIT_OK, EXIT_NOTHING) else sys.stderr)
     return code
@@ -522,6 +533,15 @@ def add_fork_subparser(sub) -> None:
         help="proceed past a soft refusal — cold age, break-even, an "
              "already-compacted session, a malformed source record, or "
              "whole-fork G4. Never past G5",
+    )
+    p.add_argument(
+        "--filter-ledger", default=None, metavar="PATH",
+        help="a `winnow filter --ledger` file. Joined on requestId, it says what "
+             "the intake filter already kept off the wire for this session — "
+             "which the transcript still contains and every share here otherwise "
+             "counts. 79%% of what tier CB proposes to remove is content the "
+             "filter claims too, so on a filtered session this is not a rounding "
+             "correction",
     )
     p.add_argument("--json", action="store_true", help="machine-readable output")
     p.add_argument(

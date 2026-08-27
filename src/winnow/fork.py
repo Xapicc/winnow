@@ -749,6 +749,7 @@ def fork_command(
     as_json: bool = False,
     explain: bool = False,
     now: float | None = None,
+    filter_ledger: Path | None = None,
 ) -> tuple[int, str]:
     """`(exit code, output)`. SPEC §8: 0 success, 1 usage, 2 nothing to do, 3 refused.
 
@@ -786,7 +787,8 @@ def fork_command(
                    f"not be negative, got {max_break_even}")
     try:
         plan = build_plan(path, tier=tier, rules=selection,
-                          keep_last=keep_last, min_bytes=min_bytes)
+                          keep_last=keep_last, min_bytes=min_bytes,
+                          filter_ledger=filter_ledger)
     except PlanError as exc:
         return 1, f"winnow: {exc}"
     plan.suppressed = suppressed_by_default(tier, rule or (), no_rule or ())

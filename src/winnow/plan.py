@@ -264,11 +264,20 @@ def build_plan(
     rules: frozenset[str] | None = None,
     keep_last: int | None = None,
     min_bytes: int | None = None,
+    filter_ledger: Path | None = None,
 ) -> Plan:
     """Classify one session under one selection and pair each hit with its pointer.
 
     Reads the transcript once, through `inspect_session`, so that `plan` and
     `inspect` cannot disagree about what the file contains either.
+
+    `filter_ledger` is `winnow filter --ledger`, joined on `requestId`. Without it
+    every figure below is computed from a transcript that still contains bytes the
+    API never received — the filter does not touch the transcript, so Claude Code
+    writes what it held. On a filtered session that is up to 8.49% of message
+    content, and 79.0% of what `winnow plan --tier CB` proposes to remove is
+    content the filter claims too. The correction existed, was tested and was
+    rendered, and was reachable only from the one command that writes nothing.
     """
     keep_last = DEFAULT_KEEP_LAST if keep_last is None else keep_last
     min_bytes = DEFAULT_MIN_BYTES if min_bytes is None else min_bytes
@@ -279,7 +288,8 @@ def build_plan(
     if rules is None:
         rules = frozenset(TIER_RULES[tier]) if tier in TIER_RULES else frozenset()
 
-    report = inspect_session(path, keep_last=keep_last, min_bytes=min_bytes)
+    report = inspect_session(path, keep_last=keep_last, min_bytes=min_bytes,
+                             filter_ledger=filter_ledger)
     assigned, _ = classify(report.calls, keep_last, min_bytes, enabled=rules)
 
     plan = Plan(
@@ -350,7 +360,12 @@ def to_dict(plan: Plan, explain: bool = False,
             max_break_even: int | None = None) -> dict:
     """The `--json` shape. Deterministic: every list is ordered, every map is
     built in a fixed key order (SPEC §10)."""
-    total = plan.report.message_content_bytes
+    # The wire denominator, not the disk one. On a session the intake filter ran
+    # over, the transcript still holds bytes the API never received, so a share
+    # against `message_content_bytes` is a share of a session that did not happen.
+    # Equal to the disk figure when no ledger was supplied, so nothing moves for a
+    # session that was never filtered.
+    total = plan.report.wire_content_bytes
     share = (lambda n: round(n / total * 100, 4)) if total else (lambda n: 0.0)
     turns = plan.break_even_turns()
     payload = {
@@ -363,7 +378,23 @@ def to_dict(plan: Plan, explain: bool = False,
             "min_bytes": plan.min_bytes,
             "suppressed_by_default": list(plan.suppressed),
         },
-        "message_content_bytes": total,
+        "message_content_bytes": plan.report.message_content_bytes,
+        # The denominator every share in this payload is against.
+        "wire_content_bytes": total,
+        "filter_ledger": (
+            {
+                "requests": plan.report.filtered.requests,
+                "bytes_dropped": plan.report.filtered.bytes_dropped,
+                "by_rule": plan.report.filtered.by_rule,
+                # `S` is the suffix after the cut and it is still measured from
+                # disk. Correcting it needs the ledger's per-result ids matched
+                # against positions in this session, which is a join `inspect`
+                # does not do. Named here rather than left to be inferred.
+                "suffix_corrected": False,
+            }
+            if plan.report.filtered is not None
+            else None
+        ),
         "results": {
             "tool_calls": plan.report.tool_calls,
             "stripped": len(plan.strips),
@@ -476,12 +507,26 @@ def render_body(plan: Plan, explain: bool = False,
     a second copy of this table would be a second chance for the dry run and the
     write to disagree about what they removed.
     """
-    total = plan.report.message_content_bytes
+    total = plan.report.wire_content_bytes
     out: list[str] = []
     add = out.append
 
     add(f"would strip       {len(plan.strips):>10,} of {plan.report.tool_calls:,} "
         "tool results")
+    # A share that silently changed base is worse than one that is consistently
+    # conservative, so when the base moves the readout says so — and says which
+    # figure did *not* move with it.
+    if plan.report.filtered is not None and plan.report.filtered.bytes_dropped:
+        seen = plan.report.filtered
+        add("")
+        add(f"the intake filter kept {_human(seen.bytes_dropped)} off the wire on "
+            f"{seen.requests:,} of this session's requests")
+        add(f"  every share below is of the {_human(total)} the API saw, not of "
+            f"the {_human(plan.report.message_content_bytes)} on disk")
+        add("  S is still measured from disk: the positional correction needs the "
+            "ledger's")
+        add("  per-result ids matched against this session, and that join is not "
+            "implemented")
     add("")
 
     add("by rule")
@@ -570,6 +615,7 @@ def plan_command(
     as_json: bool = False,
     explain: bool = False,
     max_break_even: int | None = DEFAULT_MAX_BREAK_EVEN,
+    filter_ledger: Path | None = None,
 ) -> tuple[int, str]:
     """`(exit code, output)`. SPEC §8: 0 success, 1 usage error, 2 nothing to do.
 
@@ -595,7 +641,8 @@ def plan_command(
         return 1, f"winnow: {exc}"
     try:
         plan = build_plan(path, tier=tier, rules=selection,
-                          keep_last=keep_last, min_bytes=min_bytes)
+                          keep_last=keep_last, min_bytes=min_bytes,
+                          filter_ledger=filter_ledger)
     except PlanError as exc:
         return 1, f"winnow: {exc}"
     # Set here rather than derived inside `build_plan`, which is handed a resolved
@@ -643,5 +690,5 @@ def _nothing_to_do(plan: Plan) -> str:
                 "configurable.")
     return (f"winnow: nothing to do — no result met a rule at tier {plan.tier} "
             f"({', '.join(sorted(plan.rules))}). The session is carrying "
-            f"{_human(plan.report.message_content_bytes)} of message content that "
+            f"{_human(plan.report.wire_content_bytes)} of message content that "
             "these rules cannot classify as once-only.")

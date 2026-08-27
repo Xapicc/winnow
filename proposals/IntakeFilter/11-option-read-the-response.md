@@ -70,9 +70,13 @@ without opening a response. **Measured here, 2026-08-27**, the join is not the b
 might appear to be: all 48,835 distinct `requestId`s across this container's 866 main-session
 transcripts carry a `message.usage`, so a ledger line for any of those requests would join.
 
-The failure rate on the one *real* ledger is 15 unjoinable of 49 unique removals — 30.6%
-([docs/COZEMPIC.md](../../docs/COZEMPIC.md) §3.5.2) — and that is the number this option is
-usually justified by. It is not intrinsic. Two candidate causes are visible in the code and
+On the one *real* ledger, [docs/COZEMPIC.md](../../docs/COZEMPIC.md) §3.5.2 reports
+**"34 priced, 15 unjoinable, 0 unpriceable"**, and that is the number this option is usually
+justified by. Read it with the caveat that the same sentence says those buckets *"sum to the
+line count"* while the line count on that ledger is 403 and the three buckets sum to 49 — which
+is its unique-removal count, so the figures are almost certainly per unique removal and the
+sentence around them is wrong about which. On either reading, roughly three joins in ten
+failed. **It is not intrinsic.** Two candidate causes are visible in the code and
 neither needs a response:
 
 - **`find_transcripts` globs `*/*.jsonl`** (`savings.py:295`), so a request made by a sub-agent

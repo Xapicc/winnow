@@ -30,7 +30,22 @@ variance, not size.
 **Measured here, 2026-08-27.** The same three rules, evaluated by importing
 `winnow.filter.rule_for` and `winnow.rules.result_size` directly, over all 866 main-session
 transcripts under `~/.claude/projects/` on this container — every session, with no 400 KB
-floor, so a different and larger population than §3.5's:
+floor, so a different and larger population than §3.5's.
+
+> **Method, and it applies to every figure in this proposal set marked [measured here].** All
+> `*/*.jsonl` under `~/.claude/projects/`, which is main sessions only — the 352 files under
+> `*/*/subagents/` are excluded, matching `winnow inspect`'s population and
+> `savings.find_transcripts`'s glob. Content is measured with `rules.result_size`, SPEC §6's
+> `len()` of the string or of `json.dumps()` of a structure, so the numbers are comparable with
+> SPEC §6 and COZEMPIC §3.4. API requests are reconstructed by grouping on `requestId`, one
+> request per id, per COZEMPIC §3.5.2. Tokens are SPEC §6's bytes ÷ 4 wherever a token figure
+> appears, except where stated otherwise, and dollars use `savings.PRICES` list prices.
+>
+> **The corpus is live.** Other sessions were being written to it while it was measured:
+> re-running the headline forty minutes later gave 274,004,786 bytes of message content against
+> 273,722,399, a drift of +0.10%, with the filter-claimed figure identical at 23,229,292 and the
+> share moving 8.49% → 8.48%. Every figure here is a snapshot, reproducible to about a tenth of
+> a percent and not to the digit.
 
 | | Bytes | Share of message content |
 | --- | ---: | ---: |
@@ -145,3 +160,50 @@ below states its reach in bytes or says why it cannot.
 never silently keep or silently strip, never write to the original, and — the one this
 component adds — forward the original bytes unchanged on any failure to parse or rewrite. A
 capability that cannot be given up on mid-request does not belong in this process.
+
+## What is in this directory, and what is not yet
+
+Eleven options, `03` through `13`. Each file argues one of them on its own terms and says what
+it strains, what it breaks and what the strongest case against it is. **None of them weighs the
+options against each other, and none of them recommends anything** — that is the comparison and
+the recommendation, which are not written.
+
+| | Option | File |
+| --- | --- | --- |
+| A | Fire C2, B1 and A1 at a boundary where the invalidation is already paid | [03](03-option-hindsight-rules-at-a-paid-boundary.md) |
+| B | Count the deferral in turns, not in results | [04](04-option-defer-by-turn-not-by-result.md) |
+| C | Head/tail elision instead of an all-or-nothing drop | [05](05-option-truncate-instead-of-drop.md) |
+| D | A per-tool byte cap, enforced on the wire | [06](06-option-per-tool-byte-cap.md) |
+| E | Per-tool `min_bytes` and `keep_newest` | [07](07-option-per-tool-thresholds.md) |
+| F | MCP tool results and delegated-agent output | [08](08-option-mcp-and-subagent-output.md) |
+| G | Rewrite `tool_use` inputs, not only `tool_result`s | [09](09-option-tool-use-inputs.md) |
+| H | A content-addressed recall store keyed on `tool_use_id` | [10](10-option-recall-store.md) |
+| I | Read `usage` off the response | [11](11-option-read-the-response.md) |
+| J | A readout of the fixed prefix | [12](12-option-prefix-readout.md) |
+| K | Filter `/v1/messages/count_tokens` too | [13](13-option-count-tokens-parity.md) |
+
+Still to be written, starting at `14`: the comparison, the recommendation, an implementation
+sketch, a validation plan, and a `README.md` index.
+
+Three things a continuation should know.
+
+**The option verdicts in these files are local, not comparative.** Each says "adopt" or
+"reject" against the constraints and its own arithmetic, in isolation. Several interact —
+C is the mechanism D needs, F depends on D, and H's rejection *inverts* if D or F is taken —
+and the interactions are named in the files but not resolved anywhere.
+
+**Four things found in the code are defects rather than options**, and are recorded where they
+were found rather than proposed: `inspect.read_filter_ledger` sums `bytes_dropped` without
+de-duplicating on `tool_use_id` while `savings.read_ledger` does (§K7);
+`savings.find_transcripts` globs `*/*.jsonl` so a sub-agent's ledger line can never join
+([08](08-option-mcp-and-subagent-output.md)); `filter._count_breakpoints` counts only the
+breakpoints in `messages`, not any the client placed on `system` or `tools`
+([12](12-option-prefix-readout.md)); and `filter.py:46-48` justifies its 2,048-byte floor with
+a reason that is checkably wrong for this component
+([07](07-option-per-tool-thresholds.md)). Each needs its own change and its own tests.
+
+**The measurements were taken with throwaway scripts and the scripts are not committed.** The
+method note above is the reproduction recipe: it names the population, the glob, the size
+measure, the request grouping and the price table, and every figure in the set is derivable
+from those five choices plus `winnow.filter.rule_for`, `winnow.rules.classify` and
+`winnow.rules.result_size` imported directly. Nothing was computed by hand.

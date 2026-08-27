@@ -85,7 +85,8 @@ Three caveats, none of which the store fixes better:
   editing a live session; it does not matter for a lookup taken after the fact, which is the
   only kind of recovery either the store or the transcript can serve.
 - **`request_id` does not always join.** [docs/COZEMPIC.md](../../docs/COZEMPIC.md) §3.5.2
-  reports 15 of 49 unique removals unjoinable on the one real ledger, and
+  reports "34 priced, 15 unjoinable, 0 unpriceable" on the one real ledger — about three joins
+  in ten failing — and
   [08-option-mcp-and-subagent-output.md](08-option-mcp-and-subagent-output.md) names a
   candidate cause — `find_transcripts` globs `*/*.jsonl` and so cannot see a sub-agent
   session. That is a bug in the join, and fixing a join is cheaper than operating a store.

@@ -147,8 +147,10 @@ today, and nothing in the design says so.** Nothing needs to change for that to 
 **3. And `winnow savings` cannot see any of it.** `savings.find_transcripts`
 (`savings.py:295`) globs `projects_dir.glob("*/*.jsonl")` — main sessions only. A ledger line
 written for a sub-agent's request joins to nothing and lands in the "unjoinable" bucket.
-[docs/COZEMPIC.md](../../docs/COZEMPIC.md) §3.5.2 reports **15 of 49 unique removals
-unjoinable** on the one real ledger, and this is a candidate explanation nobody has checked.
+[docs/COZEMPIC.md](../../docs/COZEMPIC.md) §3.5.2 reports **"34 priced, 15 unjoinable, 0
+unpriceable"** on the one real ledger — roughly three joins in ten failing, on the reading that
+makes its own arithmetic work, since 34 + 15 is that ledger's 49 unique removals rather than
+its 403 lines. This glob is a candidate explanation nobody has checked.
 The check is one line — widen the glob to `**/*.jsonl` and see whether the unjoinable count
 falls — and it is a measurement, not an option, so it is recorded here rather than proposed.
 

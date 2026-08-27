@@ -17,9 +17,12 @@ The proposal is to measure them and say so. No rewrite, no rule, no breakpoint. 
 ## Why nothing else can do it
 
 **Measured here, 2026-08-27:** across every record of all 866 main-session transcripts on this
-container — 103,547 `assistant`, 66,823 `user`, 38,850 `attachment` and nine other record types
-— **zero carry a system prompt or a tool definition.** The check was for any record holding a
-`system`, `tools`, `systemPrompt` or `toolDefinitions` key, and it found none.
+container — nineteen distinct record types, led by 103,653 `assistant`, 66,887 `user` and
+38,917 `attachment` — **zero carry a system prompt or a tool definition.** The check was for any
+record holding a `system`, `tools`, `systemPrompt` or `toolDefinitions` key, and it found none.
+(There is a record type *called* `system`, 927 of them, and it is not one: its subtypes are
+`turn_duration`, `stop_hook_summary`, `compact_boundary`, `local_command`, `api_error` and
+`informational`, and the longest such record in the corpus is 2,618 bytes.)
 
 That is not an accident of this corpus. Claude Code writes the *conversation* to disk; the
 system prompt and the tool schemas are constructed at request time from the CLI's own

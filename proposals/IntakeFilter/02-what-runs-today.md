@@ -140,11 +140,12 @@ every block at or after `(message_index, block_index)`. Claude Code puts a break
 newest block; when that block is a candidate, leaving it there would cache exactly the bytes
 the filter exists to keep out of the cache.
 
-**`_place_breakpoint_before(messages, position, ttl)`** (`filter.py:174-195`) scans backwards
-from the block before `position` and puts `{"type": "ephemeral"}` — plus `"ttl"` when the
-client was already asking for one — on the first block it reaches. If it finds an existing
-breakpoint on the way, it returns `False` and changes nothing: that block is already the
-boundary, the candidate is already outside the prefix, and there is nothing to move.
+**`_place_breakpoint_before(messages, position, ttl)`** (`filter.py:174-195`) walks backwards
+from the block before `position`, skipping non-dict blocks and empty messages, and puts
+`{"type": "ephemeral"}` — plus `"ttl"` when the client was already asking for one — on the
+first real block it reaches. If *that* block already carries a `cache_control`, it returns
+`False` and changes nothing: the boundary is already there, the candidate is already outside
+the prefix, and there is nothing to move.
 
 **`_existing_ttl`** (`filter.py:212-223`) reads whatever TTL the client was already asking
 for, first match in wire order, so the filter cannot silently reprice a request from the 2.0×
@@ -206,8 +207,10 @@ on stderr and nothing more.
 
 `request_id` is the only key that joins to anything: the filter sees a Messages API body,
 which carries no session identity, and Claude Code stamps the same `requestId` on the
-assistant records of the turn it answered. Both `inspect.read_filter_ledger`
-(`inspect.py:236-271`) and `savings.read_ledger` (`savings.py:164-…`) join on it.
+assistant records of the turn it answered. `inspect.read_filter_ledger` (`inspect.py:236-271`)
+joins on it directly against one session's ids; `savings` collapses the ledger first
+(`read_ledger`, `savings.py:164`) and then finds each `request_id`'s transcript by a streaming
+regex sweep (`find_transcripts`, `savings.py:284-306`).
 
 `tool_use_id` is why `_entry` (`filter.py:301-316`) is a function at all. The filter is
 stateless, so it re-drops the same result on every later request that still carries it, and a

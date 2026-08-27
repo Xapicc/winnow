@@ -470,6 +470,51 @@ def classify(
     return assigned, guard_blocked
 
 
+_ONLY = {rule: frozenset({rule}) for rule in RULE_ORDER}
+
+
+def stateless_rule_for(
+    name: str,
+    tool_input: Mapping,
+    enabled: frozenset[str] = STATELESS_RULES,
+) -> str | None:
+    """C1, C3 or B2 — the rules whose verdict is fixed by the call alone.
+
+    **The one owner of what "a locator", "a passing verification" and "an
+    inspection" mean.** Both `_first_matching_rule` below and `filter.rule_for`
+    reach it, so the order these three are tested in, what counts as a Bash
+    command, and which `Grep` modes are locators cannot come apart between the
+    component that prices a cut and the component that makes one on a live wire.
+    Before this they were the same control flow written twice from the same
+    constants, and the copy was faithful on all 63,931 non-error results in this
+    corpus — which says it is faithful *today*, not that it will stay so.
+
+    **It does not check `is_error`, and that is the contract.** Guard G3 belongs
+    to the caller: `classify` applies it before the engine is entered, along with
+    G1, G2 and G5, and `filter.rule_for` applies it itself because it is handed
+    unguarded input. Calling this with an error result would newly claim 753
+    results on this corpus, 19 of them above the 2,048-byte floor — and G3 is
+    "errors survive, at any tier", with C3's whole rationale being that a failing
+    verification is the information. Stripping a failed `pytest` from a request
+    before the model reads it would remove the one result the turn existed to
+    produce. So the naive merge — delete `rule_for`, call the shared engine — is a
+    regression, not a refactor, and this signature is what makes that impossible
+    to write by accident: there is no `is_error` parameter to forget to pass.
+    """
+    if "C1" in enabled:
+        if name in LOCATOR_TOOLS:
+            return "C1"
+        if name == "Grep" and tool_input.get("output_mode") in LOCATOR_GREP_MODES:
+            return "C1"
+    if name == "Bash":
+        command = tool_input.get("command")
+        if "C3" in enabled and isinstance(command, str) and VERIFICATION_RE.search(command):
+            return "C3"
+        if "B2" in enabled and is_inspection(command):
+            return "B2"
+    return None
+
+
 def _first_matching_rule(
     call: ToolCall,
     last_input_seen: dict[tuple[str, str], int],
@@ -481,16 +526,18 @@ def _first_matching_rule(
 
     First-match-wins is what makes SPEC §6's per-rule table sum to its own tier
     totals; see the module docstring.
+
+    The three prefix-determined rules are delegated to `stateless_rule_for`, one
+    rule at a time rather than in one call, because C2 sits between C1 and C3 in
+    RULE_ORDER and B1 between C3 and B2. Interleaving is the point: the order is
+    load-bearing and it now has one definition.
     """
     name = call.name
     tool_input = call.tool_input
 
     # C1 locator.
-    if "C1" in enabled:
-        if name in LOCATOR_TOOLS:
-            return "C1"
-        if name == "Grep" and tool_input.get("output_mode") in LOCATOR_GREP_MODES:
-            return "C1"
+    if stateless_rule_for(name, tool_input, enabled & _ONLY["C1"]) is not None:
+        return "C1"
 
     # C2 exact duplicate — only the earlier of an identical pair is stripped.
     if "C2" in enabled and (
@@ -499,13 +546,12 @@ def _first_matching_rule(
         return "C2"
 
     if name == "Bash":
-        command = tool_input.get("command")
         # C3 passing verification. `is_error` was already excluded by G3, so
         # reaching here means the run passed.
-        if "C3" in enabled and isinstance(command, str) and VERIFICATION_RE.search(command):
+        if stateless_rule_for(name, tool_input, enabled & _ONLY["C3"]) is not None:
             return "C3"
         # B2 Bash inspection.
-        if "B2" in enabled and is_inspection(command):
+        if stateless_rule_for(name, tool_input, enabled & _ONLY["B2"]) is not None:
             return "B2"
         return None
 

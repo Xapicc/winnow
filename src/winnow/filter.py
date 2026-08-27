@@ -36,13 +36,11 @@ import re
 from dataclasses import dataclass, field
 
 from .rules import (
-    LOCATOR_GREP_MODES,
     LOCATOR_TOOLS,
     STATELESS_RULES,
-    VERIFICATION_RE,
     inflates,
-    is_inspection,
     result_size,
+    stateless_rule_for,
 )
 
 # SPEC §4 G2. **Deliberately not the pruner's 2,048**, and the divergence is the
@@ -177,21 +175,19 @@ def rule_for(
     reads `os.environ` at call time, and a filter whose verdict could change
     because somebody exported a variable in another shell would render the same
     conversation two ways — the §K1 break, arriving from outside the process.
+
+    **What is left here is guard G3 and nothing else.** The three rules themselves
+    live in `rules.stateless_rule_for`, so the filter is no longer a fourth
+    opinion about what a locator or an inspection is. G3 stays here because the
+    contracts differ and the difference is the trap: `classify` applies G1, G2, G3
+    and G5 before the shared engine is entered, and this is handed unguarded
+    blocks straight off the wire. Both are correct in their own component; called
+    across the boundary the mismatch is silent and it strips exactly the results
+    SPEC §4 says must never be stripped.
     """
     if is_error:
         return None  # G3, and for C3 the failure is the information
-    if "C1" in enabled:
-        if name in LOCATOR_TOOLS:
-            return "C1"
-        if name == "Grep" and tool_input.get("output_mode") in LOCATOR_GREP_MODES:
-            return "C1"
-    if name == "Bash":
-        command = tool_input.get("command")
-        if "C3" in enabled and isinstance(command, str) and VERIFICATION_RE.search(command):
-            return "C3"
-        if "B2" in enabled and is_inspection(command):
-            return "B2"
-    return None
+    return stateless_rule_for(name, tool_input, enabled)
 
 
 def _blocks(message: dict) -> list:

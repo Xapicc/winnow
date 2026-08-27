@@ -767,3 +767,110 @@ def test_serving_creates_the_directory_the_kill_switch_lives_in(tmp_path):
 
     off.touch()  # the command an operator is told to run
     assert proxy_mod._filtering_disabled(Config(off_file=off))
+
+
+# ─── One rule engine ─────────────────────────────────────────────────────────
+
+
+def _engine_verdict(name: str, tool_input: dict, enabled=None) -> str | None:
+    """`rules._first_matching_rule` on a call with no session around it.
+
+    Empty indices, so C2, B1 and A1 cannot fire and what is left is exactly the
+    three rules the filter also answers.
+    """
+    from winnow.rules import STATELESS_RULES, ToolCall, _first_matching_rule
+
+    call = ToolCall(order=0, line=0, name=name, tool_input=tool_input,
+                    result_size=9999, is_error=False, has_result=True)
+    return _first_matching_rule(
+        call, {}, [], {}, enabled if enabled is not None else STATELESS_RULES
+    )
+
+
+def _cross_product() -> list[tuple[str, dict]]:
+    """Every (tool, input) shape the constants can produce, not nine by hand."""
+    from winnow.rules import (
+        INSPECTION_GIT_SUBCOMMANDS,
+        INSPECTION_HEADS,
+        LOCATOR_GREP_MODES,
+        LOCATOR_TOOLS,
+    )
+
+    cases: list[tuple[str, dict]] = []
+    for tool in sorted(LOCATOR_TOOLS) + ["Grep", "Bash", "Read", "Edit", "Write", "Agent"]:
+        cases.append((tool, {}))
+    for mode in sorted(LOCATOR_GREP_MODES) + ["content", None]:
+        cases.append(("Grep", {"output_mode": mode}))
+    for head in sorted(INSPECTION_HEADS):
+        cases.append(("Bash", {"command": f"{head} something"}))
+        cases.append(("Bash", {"command": f"FOO=1 /usr/bin/{head} x | wc -l"}))
+    for sub in sorted(INSPECTION_GIT_SUBCOMMANDS) + ["push", "commit"]:
+        cases.append(("Bash", {"command": f"git {sub}"}))
+    for verify in ["npm run test", "pytest -q", "go test ./...", "cargo clippy",
+                   "tsc --noEmit", "make check", "ruff check .", "mypy src"]:
+        cases.append(("Bash", {"command": verify}))
+        cases.append(("Bash", {"command": f"cat x.txt && {verify}"}))
+    for other in ["python train.py", "", "   ", "./deploy.sh", "sed -n 1,5p f",
+                  "sed s/a/b/ f"]:
+        cases.append(("Bash", {"command": other}))
+    cases.extend([("Bash", {}), ("Bash", {"command": None}), ("Bash", {"command": 7})])
+    return cases
+
+
+@pytest.mark.parametrize("name,tool_input", _cross_product())
+def test_the_two_engines_agree_on_every_non_error_input(name, tool_input):
+    """`filter.rule_for` and `rules._first_matching_rule` answered the same three
+    rules from the same constants in two hand-written `if` chains. The data had
+    one owner; the decision procedure had two, and the copy was faithful on all
+    63,931 non-error results in this corpus — which says it is faithful today,
+    not that it will stay so. This is what makes the next divergence fail in CI
+    rather than in a bill."""
+    assert rule_for(name, tool_input, False) == _engine_verdict(name, tool_input)
+
+
+@pytest.mark.parametrize("name,tool_input", _cross_product())
+def test_they_agree_under_every_rule_selection(name, tool_input):
+    """Including when a rule is switched off — the order is load-bearing, and a
+    selection is where a difference in ordering would show."""
+    from winnow.rules import STATELESS_RULES
+
+    for off in sorted(STATELESS_RULES):
+        enabled = STATELESS_RULES - {off}
+        assert rule_for(name, tool_input, False, enabled) == _engine_verdict(
+            name, tool_input, enabled
+        )
+
+
+def test_the_shared_engine_cannot_be_asked_about_an_error():
+    """G3 is the caller's, and the signature is what keeps it there.
+
+    `classify` applies G1, G2, G3 and G5 before the engine is entered; the filter
+    is handed unguarded blocks off the wire and applies G3 itself. Merging the two
+    by passing `is_error` into the shared function is the regression this
+    signature makes impossible to write by accident — it would newly claim 753
+    results on this corpus, and G3 is "errors survive, at any tier"."""
+    import inspect as inspect_mod
+
+    from winnow.rules import stateless_rule_for
+
+    assert "is_error" not in inspect_mod.signature(stateless_rule_for).parameters
+    # And the filter's own G3 still stands in front of it.
+    for command in ("npm run test", "git status"):
+        assert rule_for("Bash", {"command": command}, True) is None
+        assert stateless_rule_for("Bash", {"command": command}) is not None
+
+
+def test_prefix_determined_declares_the_filters_whole_rule_set():
+    """The declaration and the enforcement have to agree, or the map is a
+    comment. A seventh rule has to answer this question at the point it is
+    written."""
+    from winnow.rules import ALL_RULES, PREFIX_DETERMINED, RULE_ORDER, STATELESS_RULES
+
+    assert set(PREFIX_DETERMINED) == ALL_RULES
+    assert STATELESS_RULES == {"C1", "C3", "B2"}
+    # Every rule the filter can return is declared prefix-determined, and nothing
+    # else can be returned at all.
+    fired = {rule_for(n, i, False) for n, i in _cross_product()} - {None}
+    assert fired <= STATELESS_RULES
+    assert all(PREFIX_DETERMINED[rule] for rule in fired)
+    assert [r for r in RULE_ORDER if PREFIX_DETERMINED[r]] == ["C1", "C3", "B2"]

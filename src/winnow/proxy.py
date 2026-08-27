@@ -35,6 +35,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from .filter import apply, ledger_line
+from .rules import RULE_ORDER, STATELESS_RULES
 
 DEFAULT_UPSTREAM = "https://api.anthropic.com"
 # Not 8787: UsageFoundry's Discord relay binds 127.0.0.1:8787 inside the same
@@ -115,6 +116,25 @@ class Config:
     ledger: Path | None = None
     verbose: bool = False
     off_file: Path | None = None
+    # SPEC §8's rule selection, resolved once — `--tier`, `--rule`, `--no-rule`,
+    # `rules.DISABLED_BY_DEFAULT` and `$WINNOW_RULES_OFF` — and held here for the
+    # life of the process.
+    #
+    # Resolved at startup and never per request, and the distinction is the whole
+    # of it. `rules.default_disabled` reads `os.environ` at call time, so a filter
+    # that resolved per request would render the same conversation two ways the
+    # moment somebody exported a variable in another shell: a prefix break arriving
+    # from outside the process. A changed selection needs a restart, which is the
+    # correct trade — the switch that works without one is `~/.winnow/filter-off`,
+    # and it already exists.
+    #
+    # Why it has to exist at all: `docs/MILESTONE-2-VALIDATION.md` is written for
+    # someone with no memory of this design, and its scorer prints
+    # `export WINNOW_RULES_OFF=B2` as the remediation for a rule that fails its
+    # precision bar. B2 is 96.07% of what this filter removes. Without this field
+    # the pruner would stop firing that rule and the filter would go on firing it,
+    # on a live request, with nothing anywhere saying so.
+    rules: frozenset[str] = STATELESS_RULES
 
 
 # Whether the last request saw the kill switch, so the transition is logged once
@@ -173,7 +193,12 @@ def _rewrite(raw: bytes, config: Config, stats: Stats) -> tuple[bytes, str | Non
         return raw, None
 
     try:
-        body, plan = apply(body, min_bytes=config.min_bytes, keep_newest=config.keep_newest)
+        body, plan = apply(
+            body,
+            min_bytes=config.min_bytes,
+            keep_newest=config.keep_newest,
+            enabled=config.rules,
+        )
     except Exception as exc:  # noqa: BLE001 — see the docstring: never break a run
         stats.record(error=True)
         print(f"winnow: forwarding unfiltered, filter raised: "
@@ -285,6 +310,15 @@ def serve(config: Config) -> int:
     print(f"winnow: intake filter on {base} → {config.upstream}", file=sys.stderr)
     print(f"winnow: keep_newest={config.keep_newest} min_bytes={config.min_bytes}"
           + (f" ledger={config.ledger}" if config.ledger else ""), file=sys.stderr)
+    # Which rules are on, said out loud. A component that fires a rule the
+    # operator switched off elsewhere in the tool is SPEC §10's silent fallback
+    # in its plainest form, and the operator who most needs to be told is the one
+    # who exported `WINNOW_RULES_OFF` in another terminal an hour ago.
+    on = ", ".join(rule for rule in RULE_ORDER if rule in config.rules) or "none"
+    print(f"winnow: rules {on}", file=sys.stderr)
+    if not config.rules:
+        print("winnow: no rule is enabled, so nothing will be removed; the proxy "
+              "is a plain relay", file=sys.stderr)
     if config.off_file:
         # Make the directory now, so the documented `touch` works. Without this
         # an operator reaching for the kill switch under load gets "No such file

@@ -9,6 +9,7 @@ credentials) cannot be checked any other way.
 
 from __future__ import annotations
 
+import argparse
 import json
 import threading
 import time
@@ -141,6 +142,78 @@ def test_a_small_result_is_left_alone():
     _, plan = apply(request)
     assert plan.dropped == []
     assert results_of(request)[0]["content"] == SMALL
+
+
+# ─── Rule selection reaches the filter ───────────────────────────────────────
+
+
+def test_a_disabled_rule_does_not_fire():
+    """`docs/MILESTONE-2-VALIDATION.md`'s scorer prints `export WINNOW_RULES_OFF=B2`
+    as the remediation for a rule below its precision bar, and B2 is 96.07% of what
+    the filter removes. Before this the pruner would stop firing it and the filter
+    would go on firing it, on a live request, with nothing saying so."""
+    request = body(*turn("a", "Bash", {"command": "git status"}),
+                   *turn("b", "Bash", {"command": "git diff"}))
+    _, plan = apply(request, enabled=frozenset({"C1", "C3"}))
+    assert plan.dropped == []
+    assert results_of(request)[0]["content"] == BIG
+
+
+def test_the_env_switch_reaches_the_filters_rule_set(monkeypatch):
+    from winnow.cli import _filter_rules
+
+    monkeypatch.setenv("WINNOW_RULES_OFF", "B2")
+    args = argparse.Namespace(tier="CB", rule=[], no_rule=[])
+    selected, suppressed = _filter_rules(args)
+    assert selected == frozenset({"C1", "C3"})
+    assert suppressed == ("B2",)
+
+
+def test_a_tier_restricts_the_filter_to_what_it_can_decide():
+    from winnow.cli import _filter_rules
+
+    for tier, expected in [("C", {"C1", "C3"}), ("CB", {"C1", "C3", "B2"}),
+                           ("CBA", {"C1", "C3", "B2"})]:
+        selected, _ = _filter_rules(argparse.Namespace(tier=tier, rule=[], no_rule=[]))
+        assert selected == frozenset(expected), tier
+
+
+def test_naming_a_hindsight_rule_is_a_usage_error():
+    """An operator typing `--rule C2` is asking for something this component
+    cannot do. Silence would leave them believing it was doing it."""
+    from winnow.cli import _filter_rules
+    from winnow.rules import RuleSelectionError
+
+    for rule in ("C2", "B1", "A1"):
+        with pytest.raises(RuleSelectionError):
+            _filter_rules(argparse.Namespace(tier="CB", rule=[rule], no_rule=[]))
+
+
+def test_turning_off_a_rule_the_filter_never_had_is_allowed():
+    """`--no-rule C2` asks for strictly less than the filter already does. An
+    operator sharing one set of rule flags across `plan` and `filter` should not
+    be stopped by it."""
+    from winnow.cli import _filter_rules
+
+    selected, _ = _filter_rules(argparse.Namespace(tier="CB", rule=[], no_rule=["C2"]))
+    assert selected == frozenset({"C1", "C3", "B2"})
+
+
+def test_the_rule_set_is_resolved_once_not_per_request(monkeypatch):
+    """`rules.default_disabled` reads `os.environ` at call time. A filter that
+    resolved per request would render the same conversation two ways the moment
+    somebody exported a variable in another shell — the §K1 break, arriving from
+    outside the process."""
+    from winnow.proxy import Config, Stats, _rewrite
+
+    config = Config(rules=frozenset({"C1", "C3", "B2"}))
+    stats = Stats()
+    first = json.dumps(body(*turn("a", "Bash", {"command": "git status"}),
+                            *turn("b", "Bash", {"command": "git diff"}))).encode()
+    once, _ = _rewrite(first, config, stats)
+    monkeypatch.setenv("WINNOW_RULES_OFF", "B2")
+    twice, _ = _rewrite(first, config, stats)
+    assert once == twice
 
 
 def test_g4_refuses_a_strip_whose_pointer_is_longer_than_the_content():

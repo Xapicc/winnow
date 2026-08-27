@@ -622,6 +622,38 @@ def add_savings_subparser(sub) -> None:
     p.set_defaults(func=cmd_savings)
 
 
+def _filter_rules(args: argparse.Namespace) -> tuple[frozenset[str], tuple[str, ...]]:
+    """SPEC §8's rule selection, restricted to what the filter can decide.
+
+    Returns `(enabled, suppressed by a default)`. The restriction is an
+    intersection with `rules.STATELESS_RULES`, so `--tier CBA` on the filter means
+    the three rules it can answer rather than six — but naming one of the other
+    three with `--rule` is a **usage error**, because an operator who types
+    `--rule C2` is asking for something this component cannot do and silence
+    would leave them believing it was doing it.
+
+    `--no-rule C2` is not an error. It asks for strictly less than the filter
+    already does, and an operator who shares one set of rule flags across `plan`
+    and `filter` should not be stopped by it.
+    """
+    for rule in args.rule:
+        normalised = rule.strip().upper()
+        if normalised in rules_mod.ALL_RULES and normalised not in rules_mod.STATELESS_RULES:
+            raise rules_mod.RuleSelectionError(
+                f"--rule {normalised} cannot be enabled on the intake filter: its "
+                f"verdict depends on a later turn, so firing it would change what "
+                f"an already-cached request renders to. It is the pruner's — see "
+                f"`winnow plan --rule {normalised}`."
+            )
+    selected = rules_mod.resolve_rules(args.tier, args.rule, args.no_rule)
+    suppressed = tuple(
+        rule
+        for rule in rules_mod.suppressed_by_default(args.tier, args.rule, args.no_rule)
+        if rule in rules_mod.STATELESS_RULES
+    )
+    return selected & rules_mod.STATELESS_RULES, suppressed
+
+
 def cmd_filter(args: argparse.Namespace) -> int:
     from . import filter as filter_mod
 
@@ -629,6 +661,16 @@ def cmd_filter(args: argparse.Namespace) -> int:
         _say("intake filter is off. Set WINNOW_FILTER=1, or pass --force to run "
              "it once without the toggle.")
         return EXIT_REFUSED
+
+    # Rule selection, resolved exactly once. See `proxy.Config.rules` for why it
+    # may not be resolved per request, and option M for why the filter must be
+    # reachable by the same switch the pruner is.
+    try:
+        selected, suppressed = _filter_rules(args)
+    except rules_mod.RuleSelectionError as exc:
+        _say(str(exc))
+        return EXIT_USAGE
+
     config = proxy_mod.config_from_env(
         port=args.port,
         upstream=args.upstream,
@@ -637,7 +679,15 @@ def cmd_filter(args: argparse.Namespace) -> int:
         ledger=Path(args.ledger) if args.ledger else None,
         off_file=Path(args.off_file) if args.off_file else None,
         verbose=args.verbose or None,
+        rules=selected,
     )
+    if suppressed:
+        # The same sentence `plan` prints, for the same reason: a tier that
+        # quietly means fewer rules than its own name lists is the silent
+        # fallback SPEC §10 forbids, and the operator who most needs to be told
+        # is the one whose saving came in lower than last week's.
+        _say(f"tier {args.tier} names {', '.join(suppressed)}, which a default "
+             f"turns off. Pass --rule to switch back on.")
     # Checked here rather than by argparse so that the environment variable is
     # held to the same bar as the flag: `WINNOW_FILTER_MIN_BYTES=10` is the same
     # mistake typed somewhere quieter. Below the floor, guard G4 refuses every
@@ -677,6 +727,23 @@ def add_filter_subparser(sub) -> None:
                    help="guard G2: never drop a result under N bytes")
     p.add_argument("--keep-newest", type=int, default=None, metavar="N",
                    help="exempt the newest N tool results (default 1)")
+    p.add_argument(
+        "--tier", choices=("C", "CB", "CBA"), default="CB",
+        help="which rule tiers may fire (default: CB). The filter can only "
+             "decide C1, C3 and B2 — the rules whose verdict does not depend on "
+             "a later turn — so a tier is intersected with those three",
+    )
+    p.add_argument(
+        "--rule", action="append", default=[], metavar="ID",
+        help="enable one rule on top of the tier, repeatable (C1 C3 B2). Also "
+             "how a rule that is off by default is switched back on; "
+             f"${rules_mod.RULES_OFF_ENV} sets that default list, and is read "
+             "once at startup — a change to it needs a restart",
+    )
+    p.add_argument(
+        "--no-rule", action="append", default=[], metavar="ID",
+        help="disable one rule the tier enabled, repeatable. Applied after --rule",
+    )
     p.add_argument("--ledger", default=None, metavar="PATH",
                    help="append one JSON line per filtered request, so `inspect` "
                         "can be told what the transcript no longer reflects")

@@ -38,6 +38,7 @@ from dataclasses import dataclass, field
 from .rules import (
     LOCATOR_GREP_MODES,
     LOCATOR_TOOLS,
+    STATELESS_RULES,
     VERIFICATION_RE,
     inflates,
     is_inspection,
@@ -157,26 +158,38 @@ def smallest_safe_min_bytes() -> int:
     return size
 
 
-def rule_for(name: str, tool_input: dict, is_error: bool) -> str | None:
-    """The hindsight-free subset of SPEC §4: C1, C3, B2, or None.
+def rule_for(
+    name: str,
+    tool_input: dict,
+    is_error: bool,
+    enabled: frozenset[str] = STATELESS_RULES,
+) -> str | None:
+    """The prefix-determined subset of SPEC §4: C1, C3, B2, or None.
 
     Deliberately not `inspect._first_matching_rule`: that one also answers C2,
     B1 and A1, every one of which needs to see the future of the conversation.
     Calling it here would silently make the filter's decision depend on where in
     the session the request was made, which is the one thing a cache-stable
     policy may not do.
+
+    `enabled` is SPEC §8's rule selection, resolved once at process start and
+    held in `proxy.Config`. It must not be re-read per request: `default_disabled`
+    reads `os.environ` at call time, and a filter whose verdict could change
+    because somebody exported a variable in another shell would render the same
+    conversation two ways — the §K1 break, arriving from outside the process.
     """
     if is_error:
         return None  # G3, and for C3 the failure is the information
-    if name in LOCATOR_TOOLS:
-        return "C1"
-    if name == "Grep" and tool_input.get("output_mode") in LOCATOR_GREP_MODES:
-        return "C1"
+    if "C1" in enabled:
+        if name in LOCATOR_TOOLS:
+            return "C1"
+        if name == "Grep" and tool_input.get("output_mode") in LOCATOR_GREP_MODES:
+            return "C1"
     if name == "Bash":
         command = tool_input.get("command")
-        if isinstance(command, str) and VERIFICATION_RE.search(command):
+        if "C3" in enabled and isinstance(command, str) and VERIFICATION_RE.search(command):
             return "C3"
-        if is_inspection(command):
+        if "B2" in enabled and is_inspection(command):
             return "B2"
     return None
 
@@ -334,11 +347,16 @@ def apply(
     body: dict,
     min_bytes: int = DEFAULT_MIN_BYTES,
     keep_newest: int = DEFAULT_KEEP_NEWEST,
+    enabled: frozenset[str] = STATELESS_RULES,
 ) -> tuple[dict, Plan]:
     """Rewrite one Messages API request body in place, and say what changed.
 
     Returns `(body, plan)`. The body is mutated, which is what the proxy wants;
     the caller owns the copy if it needs the original.
+
+    `enabled` defaults to every prefix-determined rule, which is what the filter
+    did before it could be told otherwise. It is resolved at startup and held in
+    `proxy.Config`; see `rule_for` for why it may not be resolved per request.
     """
     plan = Plan()
     messages = body.get("messages")
@@ -368,7 +386,7 @@ def apply(
             if isinstance(content, str) and POINTER_RE.match(content):
                 continue
             name, tool_input = uses.get(block.get("tool_use_id", ""), ("", {}))
-            rule = rule_for(name, tool_input, bool(block.get("is_error")))
+            rule = rule_for(name, tool_input, bool(block.get("is_error")), enabled)
             size = result_size(content)
             results.append((m_index, b_index, block, rule, size))
 

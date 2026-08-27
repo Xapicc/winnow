@@ -87,6 +87,26 @@ MUTATING_TOOLS = frozenset({"Edit", "Write"})
 
 RULE_ORDER = ("C1", "C2", "C3", "B1", "B2", "A1")
 RULE_TIER = {"C1": "C", "C2": "C", "C3": "C", "B1": "B", "B2": "B", "A1": "A"}
+
+# Can this rule's verdict be reached from the call and its own result, without
+# seeing anything later in the conversation?
+#
+# The question matters to exactly one caller and it is not the pruner. The intake
+# filter rewrites a live request and must render the same conversation to the same
+# bytes every time, or it changes the prefix under the cache and destroys the thing
+# it exists to protect. A rule whose verdict can move once a later turn arrives is
+# therefore inadmissible there, whatever its precision. C2 needs a later duplicate,
+# B1 a later read, A1 a later edit.
+#
+# Beside `RULE_TIER` rather than as a comment in `filter.py`, and for the reason
+# `OPT_IN_RULES` gives one line further down: a property of a rule belongs where
+# the rule is declared, so that the day a seventh rule is written is the day
+# somebody has to answer this question about it rather than the day somebody
+# remembers to ask.
+PREFIX_DETERMINED = {
+    "C1": True, "C2": False, "C3": True, "B1": False, "B2": True, "A1": False,
+}
+STATELESS_RULES = frozenset(rule for rule in RULE_ORDER if PREFIX_DETERMINED[rule])
 TIER_RULES = {
     "C": ("C1", "C2", "C3"),
     "CB": ("C1", "C2", "C3", "B1", "B2"),

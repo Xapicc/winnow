@@ -108,6 +108,12 @@ def to_dict(report: Report, tier: str) -> dict:
                 "requests": report.filtered.requests,
                 "bytes_dropped": report.filtered.bytes_dropped,
                 "by_rule": report.filtered.by_rule,
+                # The naive sum and the entry count, so the echo the stateless
+                # filter writes into its own ledger is visible rather than
+                # silently corrected. `bytes_dropped` above is de-duplicated.
+                "removal_events": report.filtered.removal_events,
+                "bytes_summed": report.filtered.bytes_summed,
+                "legacy_entries": report.filtered.legacy_entries,
             }
             if report.filtered is not None
             else None
@@ -190,6 +196,10 @@ def render(report: Report, tier: str) -> str:
         add(f"    {_human(dropped):>10}   "
             + "  ".join(f"{rule} {_human(b)}" for rule, b in
                         sorted(report.filtered.by_rule.items())))
+        if report.filtered.bytes_summed > dropped:
+            add(f"    from {report.filtered.removal_events:,} ledger entries "
+                f"({report.filtered.echo_factor:.1f}x echo) — the filter is "
+                f"stateless and re-drops a result on every later request")
         add(f"  the API saw   {_human(report.wire_content_bytes):>10}   "
             "— every share below is of what is on disk, not of that")
     for cls in CONTENT_CLASSES:

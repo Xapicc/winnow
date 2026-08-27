@@ -540,6 +540,70 @@ def test_the_ledger_is_joined_on_request_id(tmp_path):
     assert report.filtered.by_rule == {"B2": 5000}
 
 
+def test_one_removal_is_counted_once_however_often_it_recurs(tmp_path):
+    """The filter is stateless: it re-drops the same result on every later
+    request that still carries it. Summing `bytes_dropped` over joining lines
+    counted one removal once per surviving request — 8.6x on this corpus, 27.2x
+    on the one real ledger — and this reader's figure feeds `wire_content_bytes`,
+    which clamps at zero. `savings.read_ledger` has always collapsed on identity;
+    the two readers of one file disagreed by exactly that factor.
+    """
+    records = [
+        {
+            "type": "assistant",
+            "requestId": f"req_{n}",
+            "message": {"role": "assistant", "model": "claude-opus-5",
+                        "content": [{"type": "text", "text": "hi"}],
+                        "usage": {"input_tokens": 1, "output_tokens": 1}},
+        }
+        for n in range(3)
+    ]
+    # One result, dropped on three consecutive requests. Three lines, one removal.
+    ledger = _ledger(
+        tmp_path,
+        *[
+            {"request_id": f"req_{n}", "bytes_dropped": 5000,
+             "dropped": [{"rule": "B2", "tool": "Bash", "bytes": 5000,
+                          "tool_use_id": "toolu_same"}]}
+            for n in range(3)
+        ],
+    )
+    report = inspect_session(write(tmp_path, records), filter_ledger=ledger)
+    assert report.filtered.requests == 3
+    assert report.filtered.bytes_dropped == 5000  # not 15,000
+    assert report.filtered.by_rule == {"B2": 5000}
+    assert report.filtered.removal_events == 3
+    assert report.filtered.bytes_summed == 15_000
+    assert report.filtered.echo_factor == 3.0
+
+
+def test_a_ledger_entry_without_an_id_falls_back_to_the_triple(tmp_path):
+    """Lines predating `tool_use_id` de-dupe on `(tool, rule, bytes)`, which can
+    merge two genuinely distinct results. Both errors that fallback can make are
+    undercounts, which is the direction a correction should err in."""
+    records = [
+        {
+            "type": "assistant",
+            "requestId": f"req_{n}",
+            "message": {"role": "assistant", "model": "claude-opus-5",
+                        "content": [{"type": "text", "text": "hi"}],
+                        "usage": {"input_tokens": 1, "output_tokens": 1}},
+        }
+        for n in range(2)
+    ]
+    ledger = _ledger(
+        tmp_path,
+        *[
+            {"request_id": f"req_{n}", "bytes_dropped": 5000,
+             "dropped": [{"rule": "B2", "tool": "Bash", "bytes": 5000}]}
+            for n in range(2)
+        ],
+    )
+    report = inspect_session(write(tmp_path, records), filter_ledger=ledger)
+    assert report.filtered.bytes_dropped == 5000
+    assert report.filtered.legacy_entries == 2
+
+
 def test_the_wire_denominator_subtracts_what_never_went_out(tmp_path):
     records = call("a", "Bash", {"command": "ls -la"}) + padding(6)
     plain = inspect_session(write(tmp_path, records))

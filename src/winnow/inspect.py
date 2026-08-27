@@ -118,6 +118,20 @@ class FilterLedger:
     requests: int = 0
     bytes_dropped: int = 0
     by_rule: dict[str, int] = field(default_factory=dict)
+    # The filter is stateless, so it re-drops the same result on every later
+    # request that still carries it, and each of those writes another entry.
+    # Summing them counts one removal once per surviving request: 8.6× on this
+    # corpus and 27.2× on the one real ledger. `bytes_dropped` above is therefore
+    # the de-duplicated figure and these two exist so the gap can be shown rather
+    # than assumed away.
+    removal_events: int = 0  # entries seen, repeats included
+    bytes_summed: int = 0  # the naive sum, kept only to show the echo
+    legacy_entries: int = 0  # entries predating `tool_use_id`, de-duped on the fallback
+
+    @property
+    def echo_factor(self) -> float:
+        """How many times the average removal was recorded. 1.0 means no echo."""
+        return (self.bytes_summed / self.bytes_dropped) if self.bytes_dropped else 1.0
 
 
 @dataclass
@@ -239,8 +253,27 @@ def read_filter_ledger(ledger_path: Path, request_ids: set[str]) -> FilterLedger
     Joined on `requestId` rather than a session field because the filter cannot
     know the session: it sees a Messages API request body, which carries no
     session identity. The id the API returns is the only thing both sides hold.
+
+    **De-duplicated on `tool_use_id`, which is the whole difficulty.** The filter
+    is stateless: a result it dropped on request *n* is dropped again on *n+1* and
+    on every later request that still carries it, and each drop writes another
+    entry. This used to sum `bytes_dropped` over the joining lines, which counts
+    one removal once per surviving request — 8.6× on this corpus, 27.2× on the one
+    real ledger. `savings.read_ledger` has always collapsed on identity; the two
+    readers of one file disagreed by exactly that factor, and this is the reader
+    whose number reaches `wire_content_bytes`, which clamps at zero. An 8.6×
+    overstatement there silently produces a denominator of nothing.
+
+    The de-dupe keys are `savings.read_ledger`'s, for the same reasons and with
+    the same trade: an entry carrying a `tool_use_id` is exact, an entry predating
+    that field falls back to `(tool, rule, bytes)` which can merge two genuinely
+    distinct results, and both errors the fallback can make are undercounts —
+    the direction a correction to a savings claim should err in.
     """
     found = FilterLedger()
+    seen_ids: set[str] = set()
+    seen_triples: set[tuple[str, str, int]] = set()
+    claimed_triples: set[tuple[str, str, int]] = set()
     try:
         with ledger_path.open(encoding="utf-8") as handle:
             for line in handle:
@@ -256,13 +289,29 @@ def read_filter_ledger(ledger_path: Path, request_ids: set[str]) -> FilterLedger
                 if record.get("request_id") not in request_ids:
                     continue
                 found.requests += 1
-                found.bytes_dropped += _as_int(record.get("bytes_dropped"))
                 for dropped in record.get("dropped") or ():
-                    if isinstance(dropped, dict):
-                        rule = str(dropped.get("rule", "?"))
-                        found.by_rule[rule] = found.by_rule.get(rule, 0) + _as_int(
-                            dropped.get("bytes")
-                        )
+                    if not isinstance(dropped, dict):
+                        continue
+                    size = _as_int(dropped.get("bytes"))
+                    rule = str(dropped.get("rule", "?"))
+                    tool = dropped.get("tool") if isinstance(dropped.get("tool"), str) else ""
+                    use_id = dropped.get("tool_use_id")
+                    use_id = use_id if isinstance(use_id, str) and use_id else None
+                    found.removal_events += 1
+                    found.bytes_summed += size
+                    triple = (tool, rule, size)
+                    if use_id is not None:
+                        if use_id in seen_ids:
+                            continue
+                        seen_ids.add(use_id)
+                        claimed_triples.add(triple)
+                    else:
+                        found.legacy_entries += 1
+                        if triple in seen_triples or triple in claimed_triples:
+                            continue
+                        seen_triples.add(triple)
+                    found.bytes_dropped += size
+                    found.by_rule[rule] = found.by_rule.get(rule, 0) + size
     except OSError:
         # A ledger that cannot be read is a missing correction, not a failure to
         # inspect. The readout says so rather than silently reporting uncorrected

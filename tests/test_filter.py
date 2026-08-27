@@ -194,6 +194,33 @@ def test_keep_newest_can_be_raised():
     assert len(plan.deferred) == 2
 
 
+def test_every_deferred_candidate_is_outside_the_cached_prefix():
+    """Invariant W1. A deferred result is sent in full now and replaced by a
+    pointer on the next request, so if the cache writes it the prefix breaks
+    there — `1.9·S` on a warm conversation, every request from the third on.
+
+    The breakpoint therefore goes in front of the *oldest* deferred candidate,
+    not the newest. At `--keep-newest 2` this asserted the opposite before the
+    fix, and no test noticed.
+    """
+    request = body(*turn("a", "Bash", {"command": "ls -la"}),
+                   *turn("b", "Bash", {"command": "git diff"}),
+                   *turn("c", "Bash", {"command": "git log"}))
+    _, plan = apply(request, keep_newest=2)
+    breaks = breakpoints_of(request)
+    assert breaks, "the filter must leave a boundary to defer behind"
+    last_break = max(breaks)
+    deferred_ids = {entry["tool_use_id"] for entry in plan.deferred}
+    positions = [
+        (m, b)
+        for m, message in enumerate(request["messages"])
+        for b, block in enumerate(message["content"])
+        if isinstance(block, dict) and block.get("tool_use_id") in deferred_ids
+    ]
+    assert positions
+    assert all(position > last_break for position in positions)
+
+
 def test_the_clients_ttl_is_carried_onto_the_moved_breakpoint():
     """Moving a breakpoint must not silently reprice a request from the 1h write
     class to the 5m one — COZEMPIC.md §3.1's 40% error, in the other direction."""

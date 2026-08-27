@@ -275,13 +275,23 @@ def apply(
     exempt_from = len(results) - keep_newest
     exempt_ids = {id(results[i][2]) for i in range(max(0, exempt_from), len(results))}
 
-    newest_candidate: tuple[int, int] | None = None
+    # The *oldest* deferred candidate, not the newest. The breakpoint goes in
+    # front of this one, so every deferred candidate ends up strictly after the
+    # boundary and none of them is cache-written. Keeping the latest instead —
+    # which is what this did, under the name `newest_candidate` — left every
+    # earlier exempt candidate inside the write region, so at `--keep-newest 2`
+    # the API cached bytes the next request replaced with a pointer: a prefix
+    # break worth `1.9·S` on every request from the third onward, in the
+    # component built to avoid paying it once.
+    oldest_deferred: tuple[int, int] | None = None
     for m_index, b_index, block, rule, size in candidates:
         name = uses.get(block.get("tool_use_id", ""), ("", {}))[0]
         if id(block) in exempt_ids:
-            # Kept this turn, dropped on the next. Remember where it sits so the
-            # breakpoint can be moved in front of it and it is never written.
-            newest_candidate = (m_index, b_index)
+            # Kept this turn, dropped on the next. Remember where the earliest
+            # of them sits so the breakpoint can be moved in front of the whole
+            # deferred group and none of it is ever written.
+            if oldest_deferred is None:
+                oldest_deferred = (m_index, b_index)
             plan.deferred.append(_entry(block, name, rule, size))
             plan.bytes_deferred += size
             continue
@@ -290,11 +300,11 @@ def apply(
         plan.dropped.append(_entry(block, name, rule, size))
         plan.bytes_dropped += size
 
-    if newest_candidate is not None:
+    if oldest_deferred is not None:
         ttl = _existing_ttl(messages)
-        _strip_breakpoints_from(messages, newest_candidate)
+        _strip_breakpoints_from(messages, oldest_deferred)
         if _count_breakpoints(messages) < MAX_BREAKPOINTS:
-            plan.breakpoint_moved = _place_breakpoint_before(messages, newest_candidate, ttl)
+            plan.breakpoint_moved = _place_breakpoint_before(messages, oldest_deferred, ttl)
     return body, plan
 
 

@@ -139,7 +139,7 @@ What is *not* structural is the assumption underneath: **`_index_tool_uses` neve
 real: with `uses` keyed by id, a later `tool_use` carrying an earlier one's id changes the
 `(name, input)` a rule is computed from, and the verdict on an already-cached result moves —
 a §K1 break arriving from malformed input rather than from policy. On this corpus it does not
-happen; **3 of 64,685 results have no matching `tool_use` at all [measured here]**, and those
+happen; **3 of 64,654 results have no matching `tool_use` at all [measured here]**, and those
 take the safe path (`uses.get(...)` yields `("", {})`, `rule_for` returns `None`, the result is
 kept). A collision counter in `_index_tool_uses` is the honest version of G5 for this component
 and it is one `if use_id in index` away.

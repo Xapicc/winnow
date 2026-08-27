@@ -96,8 +96,9 @@ numbers are in.
 
 **The population is reachable.** **Measured here, 2026-08-27**, over 867 main-session
 transcripts: 4,715 candidates across 584 sessions that have any — a median of **5 per session**,
-p90 **19**, maximum **54**. So 200 distinct removals is about **40 sessions of ordinary work**
-with the filter in the path. That is one to two weeks, not a research programme.
+p90 **19**, maximum **54**. So 200 distinct removals is about **40 sessions of ordinary work** at
+the median rate — 25 at the mean of 8.1 — with the filter in the path. That is one to two weeks,
+not a research programme.
 
 **Acting on the result.** MILESTONES' table applies unchanged: ≥90% with one rule under is not a
 kill, it disables that rule by default — **and that remediation only works if
@@ -153,12 +154,14 @@ winnow trial report --corpus "$CORPUS" \
   --tasks floor-2048=N --tasks floor-256=M
 ```
 
-`--tasks` is repeatable and takes `ARM=N` (`cli.py:762-765`); without it *"$/task is blank and
+`--tasks` is repeatable and takes `ARM=N` (`cli.py:762-764`); without it *"$/task is blank and
 the report says why"*, and $/task is the only column SPEC §9 lets decide anything.
 
 Interleaved rather than sequential, because `winnow trial`'s whole design is that *"the
-difference between them is noise rather than the week"* (`cli.py:704-718`). The corpus
-prediction is **+32% on net at *T* = 224 and +31% at *T* = 20**; the bar is only that 256 is not
+difference between them is noise rather than the week"* (`cli.py:726`, and `trial.py:21`:
+*"[i]nterleaving the arms is what makes that noise rather than bias"*). The corpus
+prediction is **+31% on net at *T* = 224 and +30% at *T* = 20** (§07's table, 696.1 M against
+530.4 M and 87.9 M against 67.5 M); the bar is only that 256 is not
 *lower*, because a two-arm trial over a few weeks of one operator's work cannot resolve 32% and
 pretending it can is the error COZEMPIC §3.1, §3.4 and §3.5.2 each record.
 

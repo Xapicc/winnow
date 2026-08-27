@@ -59,7 +59,7 @@ which the pruner is proposing to remove again from a different artefact. The two
 cancel and their ratio is what the gate turns on.
 
 **`--max-break-even`, which is the actuator's refusal.** `Plan.pays_within(max_break_even)`
-(`plan.py:227`) is what stands between an operator and a cut that costs more than it returns,
+(`plan.py:216-227`) is what stands between an operator and a cut that costs more than it returns,
 and [README.md](../../README.md#the-break-even-gate) measures what happens without it: *396
 cuts, 30% of them actually paid, −$10.85 net.* **A gate computed from an uncorrected `S/D` is a
 gate answering a question about a session that did not happen.**

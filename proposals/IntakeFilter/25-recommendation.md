@@ -95,7 +95,8 @@ the change that makes the shared signature carry an `enabled` set; before 10, be
 change to a constant that two files claim to own.
 
 **10. The floor at 256 — [E](07-option-per-tool-thresholds.md)'s global half, and only its
-global half.** **+32% on the filter's net at *T* = 224 and +31% at *T* = 20**, reach from 8.49%
+global half.** **+31% on the filter's net at *T* = 224 and +30% at *T* = 20** — §07's headline
+32%/31% is against its 128-byte optimum and 256 gives up about a point of it — reach from 8.49%
 to 11.46% of message content, every admitted result net-positive at every *T* because 256 is
 above the *T* = 0 break-even of 230. Reject the per-tool map: all four `(tool, rule)` classes
 want a floor in the same place, so a table captures nothing a constant does not. **Do not do

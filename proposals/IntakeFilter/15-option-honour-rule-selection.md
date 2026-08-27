@@ -22,7 +22,7 @@ SPEC §8 defines rule selection: `--tier C|CB|CBA`, `--rule <id>`, `--no-rule <i
 `filter.rule_for` takes no `enabled` set. `proxy.Config` (`proxy.py:109-117`) has fields for
 upstream, port, min_bytes, keep_newest, ledger, verbose and off_file. `proxy.config_from_env`
 (`proxy.py:310-330`) reads `WINNOW_FILTER_UPSTREAM`, `_PORT`, `_MIN_BYTES`, `_KEEP_NEWEST`,
-`_VERBOSE`, `_LEDGER`, `_OFF_FILE`. `winnow filter`'s parser (`cli.py:640-678`) offers
+`_VERBOSE`, `_LEDGER`, `_OFF_FILE`. `winnow filter`'s parser (`cli.py:642-677`) offers
 `--port`, `--upstream`, `--min-bytes`, `--keep-newest`, `--ledger`, `--off-file`, `--verbose`,
 `--force`.
 

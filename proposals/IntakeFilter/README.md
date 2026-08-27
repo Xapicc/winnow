@@ -102,8 +102,11 @@ replaying them over `~/.claude/projects/*/*.jsonl` — main sessions only, match
 `json.dumps()` of a structure; requests are grouped on `requestId` per COZEMPIC §3.5.2; tokens
 are bytes ÷ 4 and dollars use `savings.PRICES`. **The corpus is live and was being written to
 while it was measured** — it holds 866 sessions in §00's run and 867 in the later ones, and §00's
-method note puts the reproduction tolerance at about a tenth of a percent. Nothing was computed
-by hand and no measurement script is committed; the method note is the recipe.
+method note puts the reproduction tolerance at about a tenth of a percent. The same drift is why
+the `tool_result` count appears as 64,540 in §06, 64,651 in §18, 64,654 in §19 and 64,685 in §21:
+four passes minutes to hours apart over a tree other sessions were writing to, spanning 0.2%.
+Each figure is used only with the others from its own pass. Nothing was computed by hand and no
+measurement script is committed; the method note is the recipe.
 
 **Four defects are recorded rather than proposed** in the part-1 files —
 `inspect.read_filter_ledger`'s missing de-duplication, `savings.find_transcripts`'s glob,

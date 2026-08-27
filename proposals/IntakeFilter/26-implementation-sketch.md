@@ -60,7 +60,7 @@ block["content"] = text
 
 `Plan` gains `guard_blocked_g4: int = 0`; `ledger_line` emits it only when non-zero, or not at
 all until item 8 gives the line a version. In `cli.py:662-663`, `--min-bytes` gets a validating
-type — the same shape as `_break_even_budget` (`cli.py:406`) — refusing anything below the
+type — the same shape as `_break_even_budget` (`cli.py:43`) — refusing anything below the
 longest pointer the current rule set can produce (**118 bytes, checked**, for `Bash`/`B2` and an
 eight-digit size) with exit 1, which is SPEC §8's usage-error code.
 

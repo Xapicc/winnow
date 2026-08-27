@@ -69,7 +69,7 @@ all — and it is the second thing a G4 check would refuse for free.
 
 **A missing `tool_use`.** `uses.get(id, ("", {}))` yields an empty name and input, `rule_for`
 returns `None`, the result is kept. Under-firing, the safe direction, and it is not
-hypothetical: **3 of 64,685 results have no matching `tool_use` in their own transcript
+hypothetical: **3 of the 64,654 results counted above have no matching `tool_use` in their own transcript
 [measured here]**, 1,948 bytes.
 
 ## The image correction, and it moves every share in this set

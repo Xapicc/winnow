@@ -31,6 +31,7 @@ what the strip costs, not what it removes.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass, field
@@ -38,6 +39,7 @@ from dataclasses import dataclass, field
 from .rules import (
     LOCATOR_TOOLS,
     STATELESS_RULES,
+    _safe_tool_name,
     inflates,
     result_size,
     stateless_rule_for,
@@ -593,6 +595,166 @@ def ledger_line(plan: Plan, request_id: str | None = None) -> str:
             "tool_results_seen": plan.tool_results_seen,
             "inflated": plan.inflated,
         },
+        sort_keys=True,
+    )
+
+
+# ─── The fixed prefix ────────────────────────────────────────────────────────
+#
+# A Messages API request carries three cacheable regions and `apply` reads one of
+# them. `system` and `tools` sit above the conversation and **first in the cache
+# key**, so one changed byte in a tool definition invalidates the system prompt
+# and the entire conversation behind it.
+#
+# **Nothing else in this tree can see them.** Measured across every record of 866
+# main-session transcripts on this container — nineteen record types, led by
+# 103,653 `assistant`, 66,887 `user` and 38,917 `attachment` — **zero carry a
+# system prompt or a tool definition.** That is not an accident of this corpus:
+# Claude Code writes the *conversation* to disk, and the system prompt and tool
+# schemas are constructed at request time from the CLI's configuration, the
+# project's CLAUDE.md, the loaded plugins and every connected MCP server. So
+# `inspect` cannot see them, `plan` cannot price them, and `savings` and `trial`
+# both read `message.usage`, which counts them and never says what they were. The
+# only process that has ever held those bytes is this proxy, and it threw them
+# away.
+#
+# What stands behind them, on this install's 48,835 API requests: 8.8 billion
+# cache-read tokens billed at 0.1x — $4,409 against $44,086 as fresh input and
+# $88,171 as one-hour writes, on a $7,426.47 bill. **The prompt cache is worth
+# 5.3x this corpus's entire bill.** A prefix that never matches turns that $4,409
+# read line into an $88,171 write line, and the only symptom is the bill. A tool
+# description carrying a timestamp, an MCP server returning its tools in a
+# different order each connection, a CLAUDE.md re-rendered with a directory
+# listing — any of them does it, and nothing in this repository, in Claude Code,
+# or in the vendor's reporting would say so.
+#
+# **Sizes, names and hashes. Never content.** SPEC §10 is emphatic that a
+# transcript routinely holds credentials, and a system prompt is the operator's
+# CLAUDE.md, their project instructions and whatever their plugins inject; MCP
+# tool descriptions are written by whoever wrote the server. A tool *name* already
+# reaches an operator's own MCP configuration and is the least of it. There is no
+# flag here that dumps content, because this writes to a file rather than to a
+# terminal the operator is looking at.
+
+
+def _json_len(value) -> int:
+    """The measure, in SPEC §6's unit: `len` of a string, of `json.dumps` otherwise."""
+    if value is None:
+        return 0
+    if isinstance(value, str):
+        return len(value)
+    try:
+        return len(json.dumps(value))
+    except (TypeError, ValueError):
+        return len(repr(value))
+
+
+def _digest(value) -> str:
+    """A short stable hash of a prefix region. Sixteen hex characters — 64 bits,
+    enough to make an accidental collision between two consecutive requests
+    impossible in practice, and short enough to read in a ledger line."""
+    try:
+        canonical = json.dumps(value, sort_keys=True, default=repr)
+    except (TypeError, ValueError):
+        canonical = repr(value)
+    return hashlib.sha256(canonical.encode("utf-8", "surrogateescape")).hexdigest()[:16]
+
+
+def _tool_sizes(tools) -> dict[str, int]:
+    """`tool name → its definition's size`. The per-tool breakdown answers "what
+    does one tool definition actually cost here" in the unit it was estimated in:
+    SPEC §3 and the README both carry the figure that one added tool definition
+    costs $8.14–$8.26 a week on this install against $0.14 of benefit per use, and
+    that number is the entire reason this project refuses an MCP server. It has
+    never been checked against a live request."""
+    sizes: dict[str, int] = {}
+    if not isinstance(tools, list):
+        return sizes
+    for index, tool in enumerate(tools):
+        if isinstance(tool, dict) and isinstance(tool.get("name"), str):
+            name = _safe_tool_name(tool["name"])
+        else:
+            name = f"?{index}"
+        sizes[name] = sizes.get(name, 0) + _json_len(tool)
+    return sizes
+
+
+def prefix_facts(body: dict) -> dict:
+    """What the fixed prefix of one request is, without saying what it says.
+
+    Costs nothing on the request path: the body is already parsed and about to be
+    re-serialised anyway, so this is two `json.dumps` and a `sha256` over two
+    sub-objects. A failure has no consequence beyond a missing line.
+    """
+    system = body.get("system")
+    tools = body.get("tools")
+    messages = body.get("messages")
+    tool_sizes = _tool_sizes(tools)
+    return {
+        "model": body.get("model") if isinstance(body.get("model"), str) else None,
+        "system_bytes": _json_len(system),
+        "tools_bytes": _json_len(tools),
+        "system_digest": _digest(system),
+        "tools_digest": _digest(tools),
+        "tools": tool_sizes,
+        "tool_count": len(tool_sizes),
+        # The count nobody has. §K4 records that the filter's whole mechanism is
+        # drawn against a budget of four breakpoints it does not own, and that on
+        # a full request it silently declines to move one. No figure existed
+        # anywhere for how often that happens, because the two regions a client
+        # may also place them in are never written to disk.
+        "breakpoints": {
+            "system": sum(1 for b in (system if isinstance(system, list) else [])
+                          if isinstance(b, dict) and "cache_control" in b),
+            "tools": sum(1 for b in (tools if isinstance(tools, list) else [])
+                         if isinstance(b, dict) and "cache_control" in b),
+            "messages": sum(
+                1
+                for message in (messages if isinstance(messages, list) else [])
+                if isinstance(message, dict)
+                for block in _blocks(message)
+                if isinstance(block, dict) and "cache_control" in block
+            ),
+        },
+    }
+
+
+def prefix_changes(previous: dict | None, current: dict) -> dict | None:
+    """What moved between two prefixes, at the granularity of names and bytes.
+
+    `None` when nothing moved, which is the common case and the reason a stable
+    prefix produces one line per process rather than one per request. Enough to
+    attribute a prefix break to the thing the operator did that morning: which
+    region changed, which tools appeared or vanished, and which kept their name
+    while changing size — the last being the shape a timestamped tool description
+    takes, and the one that is otherwise invisible.
+    """
+    if previous is None:
+        return None
+    regions = [
+        region
+        for region in ("system", "tools")
+        if previous.get(f"{region}_digest") != current.get(f"{region}_digest")
+    ]
+    if not regions:
+        return None
+    before, after = previous.get("tools", {}), current.get("tools", {})
+    return {
+        "regions": regions,
+        "system_bytes_delta": current["system_bytes"] - previous["system_bytes"],
+        "tools_bytes_delta": current["tools_bytes"] - previous["tools_bytes"],
+        "tools_added": sorted(set(after) - set(before)),
+        "tools_removed": sorted(set(before) - set(after)),
+        "tools_resized": sorted(
+            name for name in set(before) & set(after) if before[name] != after[name]
+        ),
+    }
+
+
+def prefix_line(facts: dict, changes: dict | None) -> str:
+    """One ledger line, emitted only when the prefix is new or has moved."""
+    return json.dumps(
+        {"v": LEDGER_VERSION, "kind": "prefix", **facts, "changed": changes},
         sort_keys=True,
     )
 

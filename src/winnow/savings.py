@@ -148,10 +148,16 @@ class LedgerRead:
     # a stated fact rather than an inference.
     lines_without_version: int = 0
     heartbeats: int = 0  # `kind: heartbeat` lines, which record no removal
+    prefix_lines: int = 0  # `kind: prefix` lines: the fixed prefix, on change
+    prefix_breaks: int = 0  # of those, the ones that were a *change* rather than a first sight
     # The most recent heartbeat's counters. The latest is the useful one — these
     # are running totals for the life of one proxy process, so an earlier line is
     # a prefix of a later one and only the last says where the install stands.
     last_heartbeat: dict | None = None
+    # The most recent prefix observation. Not running totals — each line is a
+    # snapshot of one request's `system` and `tools`, and the latest is what the
+    # install is carrying now.
+    last_prefix: dict | None = None
     malformed_entries: int = 0  # entries with no usable size; counted, never silent
     removals: list[Removal] = field(default_factory=list)
 
@@ -213,6 +219,11 @@ def read_ledger(path: Path) -> LedgerRead:
             if kind == "heartbeat":
                 read.heartbeats += 1
                 read.last_heartbeat = line
+                continue
+            if kind == "prefix":
+                read.prefix_lines += 1
+                read.prefix_breaks += int(line.get("changed") is not None)
+                read.last_prefix = line
                 continue
             if kind is not None and kind != "filter":
                 # Not ours, and not an error either. A future record type is for

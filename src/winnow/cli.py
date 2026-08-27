@@ -700,6 +700,8 @@ def cmd_filter(args: argparse.Namespace) -> int:
         off_file=Path(args.off_file) if args.off_file else None,
         verbose=args.verbose or None,
         rules=selected,
+        heartbeat_every=args.heartbeat,
+        prefix_readout=False if args.no_prefix_readout else None,
     )
     if suppressed:
         # The same sentence `plan` prints, for the same reason: a tier that
@@ -778,6 +780,19 @@ def add_filter_subparser(sub) -> None:
                    help="kill switch: while this file exists the proxy keeps "
                         "relaying but stops rewriting (default "
                         f"{proxy_mod.DEFAULT_OFF_FILE})")
+    p.add_argument("--no-prefix-readout", action="store_true",
+                   help="stop reporting the size, shape and stability of `system` "
+                        "and `tools` to the ledger. The readout writes sizes, names "
+                        "and hashes and never content, and it is the only way to "
+                        "see a fixed prefix that is silently invalidating on every "
+                        "request — which is the most expensive thing that can "
+                        "happen to an install and has no other symptom than a bill")
+    p.add_argument("--heartbeat", type=int, default=None, metavar="N",
+                   help="write a ledger line every N requests, whether or not "
+                        "anything was removed; 0 turns it off (default 200). "
+                        "Without it the ledger records only successes, and a "
+                        "filter that has stopped filtering looks exactly like a "
+                        "quiet week")
     p.add_argument("--verbose", action="store_true",
                    help="one stderr line per filtered request")
     p.add_argument("--force", action="store_true",

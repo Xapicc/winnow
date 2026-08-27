@@ -34,7 +34,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from .filter import FILTER_MIN_BYTES, apply, heartbeat_line, ledger_line
+from .filter import (
+    FILTER_MIN_BYTES,
+    apply,
+    heartbeat_line,
+    ledger_line,
+    prefix_changes,
+    prefix_facts,
+    prefix_line,
+)
 from .rules import RULE_ORDER, STATELESS_RULES
 
 DEFAULT_UPSTREAM = "https://api.anthropic.com"
@@ -156,6 +164,54 @@ class Stats:
         )
 
 
+@dataclass
+class PrefixWatch:
+    """The previous request's fixed prefix, so a line is emitted only on a change.
+
+    **The one piece of state in this process, and it is the reporting kind.** §K1
+    and §K10 constrain the bytes *sent*; this never reaches them. Losing it on a
+    restart produces one redundant ledger line rather than an invalidation, which
+    is exactly the distinction on which hindsight rules at a paid boundary were
+    rejected — there, the state's loss changes what is sent.
+
+    A stable prefix therefore costs one line per process. An unstable one is the
+    most expensive thing that can happen to a Claude Code install and is otherwise
+    completely invisible.
+    """
+
+    seen: dict | None = None
+    lines: int = 0
+    changes: int = 0
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+
+    def observe(self, body: dict) -> str | None:
+        """The ledger line this request's prefix warrants, or None.
+
+        Never raises: a readout that could fail a request would be a reporting
+        subsystem inside the credential path with a failure mode, which is the
+        objection §K2 makes to everything in this file.
+        """
+        try:
+            facts = prefix_facts(body)
+            with self._lock:
+                previous = self.seen
+                if previous is not None and (
+                    previous["system_digest"] == facts["system_digest"]
+                    and previous["tools_digest"] == facts["tools_digest"]
+                    and previous["breakpoints"] == facts["breakpoints"]
+                ):
+                    return None
+                changes = prefix_changes(previous, facts)
+                self.seen = facts
+                self.lines += 1
+                self.changes += int(changes is not None)
+            return prefix_line(facts, changes)
+        except Exception as exc:  # noqa: BLE001 — a missing line, never a failed request
+            print(f"winnow: prefix readout skipped: {type(exc).__name__}: {exc}",
+                  file=sys.stderr)
+            return None
+
+
 # The kill switch. While this file exists the proxy keeps listening and keeps
 # relaying, but stops rewriting anything — see `_filtering_disabled`.
 DEFAULT_OFF_FILE = Path.home() / ".winnow" / "filter-off"
@@ -195,6 +251,12 @@ class Config:
     # it makes visible. It needs a `--ledger`: there is nowhere else to put it,
     # and a periodic stderr line is the thing most likely to be lost in a terminal.
     heartbeat_every: int = 200
+    # Report the size, shape and stability of `system` and `tools` to the ledger.
+    # On by default because the failure it catches — a prefix that changes every
+    # request — is worth more than everything else in this file put together, and
+    # nothing else anywhere can see it. Sizes, names and hashes only; there is no
+    # flag that dumps content.
+    prefix_readout: bool = True
 
 
 # Whether the last request saw the kill switch, so the transition is logged once
@@ -236,7 +298,8 @@ def _filtering_disabled(config: Config) -> bool:
     return disabled
 
 
-def _rewrite(raw: bytes, config: Config, stats: Stats) -> tuple[bytes, str | None]:
+def _rewrite(raw: bytes, config: Config, stats: Stats,
+             watch: PrefixWatch | None = None) -> tuple[bytes, str | None]:
     """Apply the filter to one request body.
 
     Returns `(body, ledger line or None)`. Any failure returns the original
@@ -255,6 +318,14 @@ def _rewrite(raw: bytes, config: Config, stats: Stats) -> tuple[bytes, str | Non
         _count(config, stats, error=True, unreadable=True)
         print(f"winnow: forwarding unfiltered, unreadable body: {exc}", file=sys.stderr)
         return raw, None
+
+    # Before the rewrite, and independent of it: the readout is about a region
+    # `apply` never touches, and it should still report on a request no rule
+    # claims — which is most of them.
+    if watch is not None and config.prefix_readout and config.ledger:
+        line = watch.observe(body)
+        if line is not None:
+            _append_ledger(config.ledger, line, None)
 
     try:
         body, plan = apply(
@@ -304,6 +375,9 @@ class _Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     config: Config
     stats: Stats
+    # Defaulted rather than required: a handler bound without one relays and
+    # filters exactly as before, and simply reports nothing about the prefix.
+    watch: PrefixWatch | None = None
 
     def log_message(self, fmt: str, *args) -> None:
         """Silence the default access log: it would put request lines carrying
@@ -315,7 +389,7 @@ class _Handler(BaseHTTPRequestHandler):
 
         ledger = None
         if _is_filtered(self.path) and raw and not _filtering_disabled(self.config):
-            raw, ledger = _rewrite(raw, self.config, self.stats)
+            raw, ledger = _rewrite(raw, self.config, self.stats, self.watch)
         elif raw:
             _count(self.config, self.stats)
 
@@ -391,7 +465,8 @@ def _append_ledger(path: Path, line: str, request_id: str | None) -> None:
 
 def serve(config: Config) -> int:
     """Run until interrupted. Prints the one line an operator needs to wire it in."""
-    handler = type("_BoundHandler", (_Handler,), {"config": config, "stats": Stats()})
+    handler = type("_BoundHandler", (_Handler,),
+                   {"config": config, "stats": Stats(), "watch": PrefixWatch()})
     server = ThreadingHTTPServer(("127.0.0.1", config.port), handler)
     base = f"http://127.0.0.1:{server.server_address[1]}"
     print(f"winnow: intake filter on {base} → {config.upstream}", file=sys.stderr)
@@ -403,6 +478,10 @@ def serve(config: Config) -> int:
     # who exported `WINNOW_RULES_OFF` in another terminal an hour ago.
     on = ", ".join(rule for rule in RULE_ORDER if rule in config.rules) or "none"
     print(f"winnow: rules {on}", file=sys.stderr)
+    if config.ledger and config.prefix_readout:
+        print("winnow: prefix readout on — the size, shape and stability of "
+              "`system` and `tools` go to the ledger on change. Sizes, names and "
+              "hashes; never content", file=sys.stderr)
     if config.ledger and config.heartbeat_every > 0:
         print(f"winnow: heartbeat to the ledger every {config.heartbeat_every} "
               "requests, so a filter that has stopped filtering is visible "
@@ -445,6 +524,7 @@ def config_from_env(**overrides) -> Config:
         keep_newest=int(os.environ.get("WINNOW_FILTER_KEEP_NEWEST", "1")),
         verbose=os.environ.get("WINNOW_FILTER_VERBOSE") == "1",
         heartbeat_every=int(os.environ.get("WINNOW_FILTER_HEARTBEAT", "200")),
+        prefix_readout=os.environ.get("WINNOW_FILTER_PREFIX_READOUT") != "0",
     )
     ledger = os.environ.get("WINNOW_FILTER_LEDGER")
     config.ledger = Path(ledger) if ledger else None

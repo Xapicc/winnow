@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 
 from winnow.filter import FILTER_MIN_BYTES, Plan, apply, pointer, rule_for
-from winnow.proxy import Config, Stats, _Handler, _rewrite
+from winnow.proxy import Config, PrefixWatch, Stats, _Handler, _rewrite
 
 BIG = "x" * (FILTER_MIN_BYTES + 100)
 SMALL = "y" * 10
@@ -598,7 +598,8 @@ def wired(tmp_path):
         upstream=f"http://127.0.0.1:{upstream.server_address[1]}",
         ledger=tmp_path / "ledger.jsonl",
     )
-    handler = type("_Bound", (_Handler,), {"config": config, "stats": Stats()})
+    handler = type("_Bound", (_Handler,),
+                   {"config": config, "stats": Stats(), "watch": PrefixWatch()})
     proxy = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=proxy.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{proxy.server_address[1]}", config, handler
@@ -673,20 +674,114 @@ def test_the_ledger_records_what_the_transcript_will_not(wired):
     base, config, _ = wired
     _post(base, body(*turn("a", "Bash", {"command": "ls -la"}),
                      *turn("b", "Bash", {"command": "git diff"})))
-    lines = config.ledger.read_text().strip().splitlines()
-    assert len(lines) == 1
-    record = json.loads(lines[0])
+    records = [json.loads(line) for line in
+               config.ledger.read_text().strip().splitlines()]
+    # Selected by `kind`, which is what the tag is for: one file, several record
+    # types, and a reader that asks what a line *is* rather than guessing from
+    # which fields it happens to carry.
+    filtered = [r for r in records if r["kind"] == "filter"]
+    assert len(filtered) == 1
+    record = filtered[0]
     assert record["bytes_dropped"] == len(BIG)
     assert record["request_id"] == "req_test"
     assert record["dropped"][0]["rule"] == "B2"
 
 
-def test_stats_line_reports_passthrough_on_error():
-    stats = Stats()
-    stats.record(error=True)
-    stats.record(filtered=True, dropped=100)
-    assert "1 passthrough on error" in stats.line()
-    assert "100 bytes dropped" in stats.line()
+def test_the_prefix_is_reported_once_while_it_is_stable(wired):
+    """A stable prefix costs one line per process. An unstable one is the most
+    expensive thing that can happen to a Claude Code install and is otherwise
+    completely invisible — a tool description carrying a timestamp, an MCP server
+    returning its tools in a different order each connection, a CLAUDE.md
+    re-rendered with a directory listing. The only symptom is the bill."""
+    base, config, _ = wired
+    payload = body(*turn("a", "Bash", {"command": "python train.py"}))
+    payload["system"] = [{"type": "text", "text": "be helpful"}]
+    payload["tools"] = [{"name": "Bash", "description": "run a command"}]
+    for _ in range(3):
+        _post(base, json.loads(json.dumps(payload)))
+
+    records = [json.loads(line) for line in
+               config.ledger.read_text().strip().splitlines()]
+    prefixes = [r for r in records if r["kind"] == "prefix"]
+    assert len(prefixes) == 1
+    # The per-tool map is the definitions themselves; `tools_bytes` is the list
+    # around them, so it carries the two brackets as well.
+    assert list(prefixes[0]["tools"]) == ["Bash"]
+    assert prefixes[0]["tools_bytes"] == prefixes[0]["tools"]["Bash"] + 2
+    assert prefixes[0]["tool_count"] == 1
+    assert prefixes[0]["changed"] is None
+    assert "be helpful" not in config.ledger.read_text(), "sizes and hashes, never content"
+
+
+def test_a_moved_prefix_is_reported_and_attributed(wired):
+    """Enough to attribute a prefix break to the thing the operator did that
+    morning: which region moved, which tools appeared, and which kept their name
+    while changing size — the last being the shape a timestamped tool description
+    takes, and the one that is otherwise invisible."""
+    base, config, _ = wired
+    payload = body(*turn("a", "Bash", {"command": "python train.py"}))
+    payload["system"] = [{"type": "text", "text": "be helpful"}]
+    payload["tools"] = [{"name": "Bash", "description": "run a command"}]
+    _post(base, json.loads(json.dumps(payload)))
+
+    payload["tools"].append({"name": "mcp__uf__propose_run", "description": "x" * 400})
+    _post(base, json.loads(json.dumps(payload)))
+
+    payload["tools"][0]["description"] = "run a command at 12:01:33"
+    _post(base, json.loads(json.dumps(payload)))
+
+    prefixes = [json.loads(line) for line in
+                config.ledger.read_text().strip().splitlines()
+                if json.loads(line)["kind"] == "prefix"]
+    assert len(prefixes) == 3
+    assert prefixes[1]["changed"]["tools_added"] == ["mcp__uf__propose_run"]
+    assert prefixes[1]["changed"]["regions"] == ["tools"]
+    assert prefixes[1]["changed"]["tools_bytes_delta"] > 400
+    assert prefixes[2]["changed"]["tools_resized"] == ["Bash"]
+    assert prefixes[2]["changed"]["tools_added"] == []
+
+
+def test_the_prefix_readout_names_breakpoints_nothing_else_can_see(wired):
+    """§K4 records that the filter's whole mechanism is drawn against a budget of
+    four breakpoints it does not own, and no figure existed anywhere for how the
+    client spends them — because the two regions it may also place them in are
+    never written to disk."""
+    base, config, _ = wired
+    payload = body(*turn("a", "Bash", {"command": "python train.py"}))
+    payload["system"] = [{"type": "text", "text": "be helpful",
+                          "cache_control": {"type": "ephemeral"}}]
+    payload["tools"] = [{"name": "Bash", "description": "run",
+                         "cache_control": {"type": "ephemeral"}}]
+    _post(base, payload)
+    prefixes = [json.loads(line) for line in
+                config.ledger.read_text().strip().splitlines()
+                if json.loads(line)["kind"] == "prefix"]
+    assert prefixes[0]["breakpoints"] == {"system": 1, "tools": 1, "messages": 0}
+
+
+def test_a_prefix_readout_that_raises_does_not_fail_the_request(monkeypatch):
+    """A reporting subsystem inside the credential path must not acquire a
+    failure mode. This is the whole of the objection §K2 makes to it."""
+    from winnow import proxy as proxy_mod
+
+    def boom(_body):
+        raise RuntimeError("no")
+
+    monkeypatch.setattr(proxy_mod, "prefix_facts", boom)
+    watch = PrefixWatch()
+    assert watch.observe({"model": "claude-opus-5"}) is None
+
+
+def test_the_readout_is_skipped_when_asked(tmp_path):
+    from winnow.filter import prefix_facts
+
+    path = tmp_path / "filter.jsonl"
+    config = Config(ledger=path, prefix_readout=False, heartbeat_every=0)
+    payload = json.dumps(body(*turn("a", "Bash", {"command": "python train.py"}))).encode()
+    _rewrite(payload, config, Stats(), PrefixWatch())
+    assert not path.exists()
+    # And the facts themselves stay computable, so nothing is coupled to the flag.
+    assert prefix_facts({"system": "hi"})["system_bytes"] == 2
 
 
 def test_plan_is_unchanged_when_nothing_fired():

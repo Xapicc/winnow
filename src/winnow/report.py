@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from . import filter as filter_mod
 from . import savings as savings_mod
 from . import trial as trial_mod
 from .inspect import (
@@ -332,6 +333,9 @@ def savings_to_dict(result: savings_mod.Savings) -> dict:
             "lines_without_version": result.ledger.lines_without_version,
             "heartbeats": result.ledger.heartbeats,
             "last_heartbeat": result.ledger.last_heartbeat,
+            "prefix_lines": result.ledger.prefix_lines,
+            "prefix_breaks": result.ledger.prefix_breaks,
+            "last_prefix": result.ledger.last_prefix,
             "malformed_entries": result.ledger.malformed_entries,
             # removal_events + malformed_entries; every entry the file described.
             "entries_total": result.ledger.events,
@@ -432,6 +436,45 @@ def render_savings(result: savings_mod.Savings) -> str:
     if ledger.malformed_entries:
         add(f"  {ledger.malformed_entries:,} entries carried no usable size and could "
             "not be counted as removals")
+    if ledger.prefix_lines:
+        # The bytes nothing else in this tree has ever counted. Zero of 866
+        # transcripts carry a system prompt or a tool definition — Claude Code
+        # writes the conversation, and the fixed prefix is built at request time
+        # from the CLI's configuration, CLAUDE.md, the plugins and every connected
+        # MCP server. The only process that has ever held them is the proxy.
+        last = ledger.last_prefix or {}
+        add("")
+        add("fixed prefix     "
+            f"{_human(last.get('system_bytes', 0) + last.get('tools_bytes', 0)):>10}   "
+            f"system {_human(last.get('system_bytes', 0))}   "
+            f"tools {_human(last.get('tools_bytes', 0))} "
+            f"in {last.get('tool_count', 0)} definitions")
+        breaks = last.get("breakpoints") or {}
+        if breaks:
+            add(f"  breakpoints: system {breaks.get('system', 0)}  "
+                f"tools {breaks.get('tools', 0)}  "
+                f"messages {breaks.get('messages', 0)}  "
+                f"(the API caps them at {filter_mod.MAX_BREAKPOINTS} across all three)")
+        widest = sorted((last.get("tools") or {}).items(), key=lambda kv: -kv[1])[:5]
+        if widest:
+            add("  largest definitions: "
+                + "  ".join(f"{name} {_human(size)}" for name, size in widest))
+        if ledger.prefix_breaks:
+            # A prefix that never matches turns this install's $4,409 cache-read
+            # line into an $88,171 write line. Nothing in Claude Code or in the
+            # vendor's reporting would say so.
+            add(f"  **{ledger.prefix_breaks:,} prefix changes** across "
+                f"{ledger.prefix_lines:,} observations — each one invalidates the "
+                "whole conversation behind it")
+            changed = last.get("changed") or {}
+            for field_name, label in (("tools_added", "added"),
+                                      ("tools_removed", "removed"),
+                                      ("tools_resized", "changed size")):
+                names = changed.get(field_name) or []
+                if names:
+                    add(f"    last change {label}: {', '.join(names[:6])}")
+        else:
+            add("  stable across every observation")
     add("")
 
     turns = result.turns

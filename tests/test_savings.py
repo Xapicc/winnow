@@ -646,3 +646,25 @@ def test_a_filtered_request_round_trips_through_the_reader(tmp_path):
     assert read.lines_without_ttl == 0
     assert len(read.removals) == len(plan.dropped) + len(plan.deferred)
     assert read.unique_bytes == plan.bytes_dropped + plan.bytes_deferred
+
+
+# ─── Sub-agent transcripts ───────────────────────────────────────────────────
+
+
+def test_a_sub_agent_transcript_is_reachable(tmp_path):
+    """A sub-agent is a Claude Code session making its own API requests, and it
+    inherits `ANTHROPIC_BASE_URL` from its parent — so the filter already applies
+    to sub-agent traffic and already writes ledger lines for it. Those transcripts
+    live under `<project>/<session>/subagents/`, which `*/*.jsonl` could not
+    reach: every such line joined to nothing and was reported as unjoinable.
+    """
+    main = tmp_path / "project" / "main.jsonl"
+    main.parent.mkdir(parents=True)
+    main.write_text('{"requestId": "req_main"}\n', encoding="utf-8")
+
+    sub = tmp_path / "project" / "session" / "subagents" / "sub.jsonl"
+    sub.parent.mkdir(parents=True)
+    sub.write_text('{"requestId": "req_sub"}\n', encoding="utf-8")
+
+    found = savings.find_transcripts(tmp_path, {"req_main", "req_sub"})
+    assert found == {"req_main": main, "req_sub": sub}

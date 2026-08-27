@@ -287,12 +287,21 @@ def find_transcripts(projects_dir: Path, wanted: set[str]) -> dict[str, Path]:
     Cheap on purpose: a line without `requestId` is never parsed, and the id is pulled
     out with a regex rather than a JSON decode. On this install that is 650 files for
     six hits, and doing it any other way means reading 1.1 GB properly.
+
+    **`**/*.jsonl`, not `*/*.jsonl`.** A sub-agent is a Claude Code session making its
+    own API requests, and it inherits `ANTHROPIC_BASE_URL` from its parent — so the
+    filter is already applied to sub-agent traffic and already writes ledger lines for
+    it. Those transcripts live a level deeper, under `<project>/<session>/subagents/`,
+    which the two-level glob could not reach: 352 such files against 866 main sessions
+    on this install. Every ledger line written for a sub-agent's request joined to
+    nothing and landed in the unjoinable bucket, which is a candidate explanation for
+    the 15-of-49 unjoinable rate COZEMPIC §3.5.2 reports and could not account for.
     """
     found: dict[str, Path] = {}
     if not projects_dir.is_dir():
         return found
     pattern = re.compile(r'"requestId"\s*:\s*"([^"]+)"')
-    for path in sorted(projects_dir.glob("*/*.jsonl")):
+    for path in sorted(projects_dir.glob("**/*.jsonl")):
         try:
             with path.open(encoding="utf-8", errors="replace") as handle:
                 for raw in handle:

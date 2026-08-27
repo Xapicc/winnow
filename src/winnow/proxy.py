@@ -34,7 +34,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from .filter import apply, ledger_line
+from .filter import FILTER_MIN_BYTES, apply, ledger_line
 from .rules import RULE_ORDER, STATELESS_RULES
 
 DEFAULT_UPSTREAM = "https://api.anthropic.com"
@@ -111,7 +111,7 @@ DEFAULT_OFF_FILE = Path.home() / ".winnow" / "filter-off"
 class Config:
     upstream: str = DEFAULT_UPSTREAM
     port: int = DEFAULT_PORT
-    min_bytes: int = 2048
+    min_bytes: int = FILTER_MIN_BYTES
     keep_newest: int = 1
     ledger: Path | None = None
     verbose: bool = False
@@ -350,7 +350,7 @@ def config_from_env(**overrides) -> Config:
     config = Config(
         upstream=os.environ.get("WINNOW_FILTER_UPSTREAM", DEFAULT_UPSTREAM),
         port=int(os.environ.get("WINNOW_FILTER_PORT", str(DEFAULT_PORT))),
-        min_bytes=int(os.environ.get("WINNOW_FILTER_MIN_BYTES", "2048")),
+        min_bytes=int(os.environ.get("WINNOW_FILTER_MIN_BYTES", str(FILTER_MIN_BYTES))),
         keep_newest=int(os.environ.get("WINNOW_FILTER_KEEP_NEWEST", "1")),
         verbose=os.environ.get("WINNOW_FILTER_VERBOSE") == "1",
     )

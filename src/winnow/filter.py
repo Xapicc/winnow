@@ -55,12 +55,40 @@ from .rules import (
 #     D  >  P · (2.0 + 0.1T) / (1.0 + 0.1T)
 #
 # which is bounded between `P` and `2P` at every `T` — 230 bytes at T=0, 120 at
-# T=224. No session length makes 2,048 right for this component. The comment
-# that used to sit here claimed otherwise, on the pruner's reasoning, and its
-# second clause — "G4 would refuse the strip anyway" — was wrong twice over:
-# G4 refuses only below the pointer's own length, and until now the filter did
-# not implement G4 at all.
-DEFAULT_MIN_BYTES = 2048
+# T=224. No session length makes 2,048 right for this component. The comment that
+# used to sit here claimed otherwise, on the pruner's reasoning, and its second
+# clause — "G4 would refuse the strip anyway" — was wrong twice over: G4 refuses
+# only below the pointer's own length, and the filter did not implement G4 at all.
+#
+# **Measured here by replaying these three rules over this container's 869
+# transcripts**, with G4 applied, net at `D·(1 + 0.1T) − n·P·(2 + 0.1T)`:
+#
+#     floor    results   gross bytes   share    net T=224   net T=20
+#         0     16,494    32,201,686   10.99%     707.8 M     89.1 M
+#       128     16,189    32,165,338   10.98%     707.8 M     89.1 M
+#       256     13,649    31,706,249   10.82%     704.1 M     88.9 M
+#       512     11,127    30,766,879   10.50%     689.1 M     87.2 M
+#     2,048      4,751    23,521,223    8.03%     537.2 M     68.4 M
+#     4,096      2,028    15,642,985    5.34%     360.4 M     46.0 M
+#
+# The optimum is flat between 128 and 512 and 2,048 was **31% below it** at
+# T=224 and 30% below at T=20. (Option E's table, taken over 866 transcripts
+# with a slightly wider content denominator, put the same rows at 11.46% and
+# 8.49%; the shares differ by the denominator and the ratio — the thing the
+# decision turns on — reproduces.) 256
+# rather than 128: 128 wins by half a percent at T=224 and admits results between
+# 128 and 230 bytes that lose money on a session with a short tail, and the
+# discipline is not to pick a constant that is right on the median and wrong on
+# the distribution. Every result admitted at 256 is net-positive at every T,
+# because 256 is above the T=0 break-even of 230.
+#
+# Two things this costs, and both are real. Nearly three times as many pointers
+# reach the model — 13,649 removals against 4,751 — and nothing here measures what
+# a conversation in which one result in five is a receipt does to the model that
+# reads it; that is one extra column in the labelling sheet SPEC §9 already
+# requires, stratified by size as well as by rule. And the headroom over the
+# pointer falls from 17× to 2.2×, which is why G4 had to be implemented first.
+FILTER_MIN_BYTES = 256
 
 # The tool names `rule_for` can fire on. `pointer` interpolates one of them, so
 # the longest bounds the pointer's own length — which is what makes the
@@ -353,7 +381,7 @@ def _existing_ttl(body: dict) -> str | None:
 
 def apply(
     body: dict,
-    min_bytes: int = DEFAULT_MIN_BYTES,
+    min_bytes: int = FILTER_MIN_BYTES,
     keep_newest: int = DEFAULT_KEEP_NEWEST,
     enabled: frozenset[str] = STATELESS_RULES,
 ) -> tuple[dict, Plan]:

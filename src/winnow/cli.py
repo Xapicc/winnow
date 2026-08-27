@@ -732,6 +732,8 @@ def add_filter_subparser(sub) -> None:
     process that quietly inserted itself between a session and its credentials
     would be indistinguishable from one that was asked to.
     """
+    from . import filter as filter_mod
+
     p = sub.add_parser(
         "filter",
         help="run the intake filter proxy (needs WINNOW_FILTER=1)",
@@ -744,7 +746,12 @@ def add_filter_subparser(sub) -> None:
     p.add_argument("--upstream", default=None,
                    help=f"where to forward (default {proxy_mod.DEFAULT_UPSTREAM})")
     p.add_argument("--min-bytes", type=int, default=None, metavar="N",
-                   help="guard G2: never drop a result under N bytes")
+                   help=f"guard G2: never drop a result under N bytes (default "
+                        f"{filter_mod.FILTER_MIN_BYTES}). Deliberately not the "
+                        f"pruner's {rules_mod.DEFAULT_MIN_BYTES}: the filter sends a "
+                        f"candidate once in full and the pointer then lives in the "
+                        f"cached prefix, so its break-even is between one and two "
+                        f"pointer lengths, not two thousand")
     p.add_argument("--keep-newest", type=int, default=None, metavar="N",
                    help="exempt the newest N tool results (default 1)")
     p.add_argument(

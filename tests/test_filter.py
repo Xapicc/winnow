@@ -20,10 +20,10 @@ from pathlib import Path
 
 import pytest
 
-from winnow.filter import DEFAULT_MIN_BYTES, Plan, apply, pointer, rule_for
+from winnow.filter import FILTER_MIN_BYTES, Plan, apply, pointer, rule_for
 from winnow.proxy import Config, Stats, _Handler, _rewrite
 
-BIG = "x" * (DEFAULT_MIN_BYTES + 100)
+BIG = "x" * (FILTER_MIN_BYTES + 100)
 SMALL = "y" * 10
 
 
@@ -874,3 +874,36 @@ def test_prefix_determined_declares_the_filters_whole_rule_set():
     assert fired <= STATELESS_RULES
     assert all(PREFIX_DETERMINED[rule] for rule in fired)
     assert [r for r in RULE_ORDER if PREFIX_DETERMINED[r]] == ["C1", "C3", "B2"]
+
+
+def test_the_filters_floor_is_not_the_pruners():
+    """They should not be the same number, and the comment that used to say they
+    were for the same reason was wrong. The pruner's 2,048 compares file bytes
+    against a 163-byte pointer with a session's `S` behind it; the filter sends a
+    candidate once in full and the pointer then lives in the prefix, so its
+    break-even is between one and two pointer lengths."""
+    from winnow.filter import FILTER_MIN_BYTES, smallest_safe_min_bytes
+    from winnow.rules import DEFAULT_MIN_BYTES as PRUNER_MIN_BYTES
+
+    assert FILTER_MIN_BYTES == 256
+    assert PRUNER_MIN_BYTES == 2048
+    # Above G4's floor, and by enough that the guard is a guard and not the policy.
+    assert FILTER_MIN_BYTES > smallest_safe_min_bytes()
+    # Above the T=0 break-even of 230, so every admitted result pays at every T.
+    assert FILTER_MIN_BYTES >= 230
+
+
+def test_a_result_between_the_two_floors_is_now_claimed():
+    """The whole point of the change, in one body: 1 KB of `git status` was
+    invisible to the filter and is now a candidate."""
+    payload = "z" * 1024
+    request = body(*turn("a", "Bash", {"command": "git status"}, content=payload),
+                   *turn("b", "Bash", {"command": "git diff"}, content=payload))
+    _, plan = apply(request)
+    assert plan.bytes_dropped == 1024
+    _, at_old_floor = apply(
+        body(*turn("a", "Bash", {"command": "git status"}, content=payload),
+             *turn("b", "Bash", {"command": "git diff"}, content=payload)),
+        min_bytes=2048,
+    )
+    assert at_old_floor.bytes_dropped == 0

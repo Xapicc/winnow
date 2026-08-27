@@ -245,8 +245,18 @@ it is cheaper from the first request, at every `S/D`, which is the one thing the
 | Intake filter | 8.21% | $246.14 | **+3.76%** | 175 of 175 |
 | Pruner, tier CB | 10.17% | $214.46 | +3.27% | 97 of 168 |
 
-It reaches less, because only the rules needing no hindsight can fire (C1, C3, B2 — C2, B1 and A1 all
-need to see the conversation's future, and a policy that did would change the prefix under the cache).
+**That table was computed at `--min-bytes 2048` and the floor is now 256.** The 2,048 was inherited
+from the pruner, whose comparison really is file bytes against a 163-byte pointer with a session's
+`S` behind it. The filter's is different: it sends a candidate once in full and the pointer then
+lives in the cached prefix, so the strip pays whenever `D > P·(2 + 0.1T)/(1 + 0.1T)` — bounded
+between one and two pointer lengths at every `T`, never near two thousand. Re-measured over this
+install's 869 transcripts, moving the floor to 256 takes the reach from **8.03% to 10.82%** of
+message content and the net up **31%** at *T* = 224. The dollar column above has not been recomputed
+and still describes the old floor. The arithmetic and the full table are in `src/winnow/filter.py`.
+
+It reaches less than the pruner, because only the rules needing no hindsight can fire (C1, C3, B2 —
+C2, B1 and A1 all need to see the conversation's future, and a policy that did would change the
+prefix under the cache).
 **The ratio is 1.1×.** What separates them is variance rather than size: the filter cannot be
 negative. Running both is possible and nearly pointless — the filter takes the shared mass first,
 leaving the pruner 2.2% against an unchanged `S`. Details, and the ledger that stops the two

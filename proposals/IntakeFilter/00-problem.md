@@ -49,7 +49,31 @@ The same corpus's bill, from `message.usage`, one record per `requestId` per
 [docs/COZEMPIC.md](../../docs/COZEMPIC.md) §3.5.2, priced at `savings.PRICES` list prices:
 **$7,426.47**, of which 8.82 billion cache-read tokens and 188.9 million one-hour cache-write
 tokens. Not one 5-minute write in the corpus, which is §3.4's finding holding on a larger
-sample. That $7,426.47 is the denominator every figure in this proposal set is a share of.
+sample. That $7,426.47 is the denominator every dollar figure in this proposal set is a share
+of.
+
+### One caveat on the byte denominator, and it moves every share above
+
+**19,954,267 of those 273,722,399 bytes — 7.29% — are 276 base64 image blocks inside MCP tool
+results [measured here]**, almost all of them browser screenshots. SPEC §6's measure is
+`len()` of the content or of `json.dumps()` of a structured one (`rules.py:285-287`), which
+counts a screenshot at its base64 length; the vendor prices an image at roughly
+width × height ÷ 750 tokens. On the 226 of them whose PNG header could be read, bytes ÷ 4
+gives 7,426,540 tokens against the formula's 268,314 — **an overstatement of 27.7×**
+([08-option-mcp-and-subagent-output.md](08-option-mcp-and-subagent-output.md) has the
+working).
+
+So the byte denominator carries about 7% of mass whose token cost is a fiftieth of what the
+estimate says. Every "share of message content" in this proposal set is therefore *low* by
+that factor: on a denominator with the image blocks removed, 253,768,132 bytes, the filter's
+reach is **9.15%** rather than 8.49% and tier CB is 10.94% rather than 10.14%. Both figures
+are given as measured against the full denominator throughout, because that is the denominator
+SPEC §6 and COZEMPIC §3.4 use and a share that silently changed base would be worse than one
+that is consistently conservative. The correction is named once, here, and applies everywhere.
+
+It also means the agreement with §3.5's 8.21% is looser than it looks in an unknown direction:
+whether that population carried image results at all is not recorded, and nothing here can
+establish it.
 
 ## What it cannot reach, in three separate senses
 

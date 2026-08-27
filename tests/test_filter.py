@@ -292,6 +292,45 @@ def test_the_filter_never_pushes_a_request_over_the_breakpoint_cap():
     assert not plan.breakpoint_moved
 
 
+def test_breakpoints_on_system_and_tools_count_against_the_cap():
+    """A Messages API request has three cacheable regions and the cap is over all
+    of them. Counting only `messages` let the filter believe it had a slot free
+    when it did not, and the fifth `cache_control` is a 400 — not a lost saving.
+    """
+    messages = []
+    for i in range(2):
+        messages.extend(turn(f"k{i}", "Bash", {"command": f"python x{i}.py"}, cache=True))
+    messages.extend(turn("c", "Bash", {"command": "ls -la"}))
+    request = body(*messages)
+    request["system"] = [{"type": "text", "text": "be helpful",
+                          "cache_control": {"type": "ephemeral"}}]
+    request["tools"] = [{"name": "Bash", "input_schema": {},
+                         "cache_control": {"type": "ephemeral"}}]
+    _, plan = apply(request)
+    total = (len(breakpoints_of(request))
+             + sum(1 for b in request["system"] if "cache_control" in b)
+             + sum(1 for b in request["tools"] if "cache_control" in b))
+    assert total <= 4
+    assert not plan.breakpoint_moved
+
+
+def test_a_ttl_asked_for_above_the_conversation_is_the_one_carried_down():
+    """`system` and `tools` are first in the cache key. A client asking for a
+    one-hour prefix there and leaving the conversation's breakpoints implicit is
+    asking for one hour, and reading only `messages` answered from the wrong
+    region — COZEMPIC.md §3.1's 40% error, in the other direction."""
+    request = body(*turn("a", "Bash", {"command": "ls -la"}),
+                   *turn("b", "Bash", {"command": "git diff"}))
+    request["system"] = [{"type": "text", "text": "be helpful",
+                          "cache_control": {"type": "ephemeral", "ttl": "1h"}}]
+    _, plan = apply(request)
+    assert plan.cache_ttl == "ephemeral_1h"
+    moved = breakpoints_of(request)
+    assert moved
+    m, b = moved[-1]
+    assert request["messages"][m]["content"][b]["cache_control"]["ttl"] == "1h"
+
+
 def test_a_breakpoint_on_the_candidate_is_removed_which_frees_a_slot():
     """When the client put its breakpoint on the candidate itself, taking it off
     both un-caches the candidate and leaves room to place one in front of it."""

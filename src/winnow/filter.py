@@ -222,14 +222,45 @@ def _strip_breakpoints_from(messages: list, start: tuple[int, int]) -> bool:
     return removed
 
 
-def _count_breakpoints(messages: list) -> int:
-    return sum(
-        1
-        for message in messages
-        if isinstance(message, dict)
-        for block in _blocks(message)
-        if isinstance(block, dict) and "cache_control" in block
-    )
+def _prefix_blocks(body: dict) -> list:
+    """The blocks of `system` and `tools`, the two places above the conversation
+    where a `cache_control` can sit.
+
+    A Messages API request carries three cacheable regions and the invalidation
+    cascade runs tools → system → messages, so a breakpoint on either of the
+    first two is as real as one in a message and counts against the same cap.
+    `system` may also arrive as a plain string, which carries no block and so no
+    breakpoint.
+    """
+    blocks: list = []
+    for key in ("tools", "system"):
+        section = body.get(key)
+        if isinstance(section, list):
+            blocks.extend(block for block in section if isinstance(block, dict))
+    return blocks
+
+
+def _count_breakpoints(body: dict) -> int:
+    """Every `cache_control` in the request, not only the ones in `messages`.
+
+    Counting only `messages` made the cap check an undercount: a client placing a
+    breakpoint on `system` or on a tool definition — which Claude Code is free to
+    do, and which nothing here can see from a transcript — left the filter
+    believing it had a slot free when it did not, and adding the fifth turns a
+    working request into a 400. The property test asserts the total rather than
+    the message count for exactly this reason.
+    """
+    messages = body.get("messages")
+    blocks = list(_prefix_blocks(body))
+    if isinstance(messages, list):
+        blocks.extend(
+            block
+            for message in messages
+            if isinstance(message, dict)
+            for block in _blocks(message)
+            if isinstance(block, dict)
+        )
+    return sum(1 for block in blocks if "cache_control" in block)
 
 
 def _place_breakpoint_before(messages: list, position: tuple[int, int], ttl: str | None) -> bool:
@@ -256,31 +287,46 @@ def _place_breakpoint_before(messages: list, position: tuple[int, int], ttl: str
     return False
 
 
-def _ttl_in_force(messages: list) -> str | None:
+def _ttl_in_force(body: dict) -> str | None:
     """Which cache write class this request would actually have been billed at.
 
     Named for `usage.cache_creation`'s own keys so the ledger and the transcript can
     be compared without a mapping. It is read rather than looked up: COZEMPIC §3.1 is
     the record of taking the 1.25× five-minute figure from the documentation and
     understating an invalidation by about 40%. A request carrying no breakpoint at all
-    has no class, and says so rather than defaulting to one.
+    has no class, and says so rather than defaulting to one — and "at all" now
+    includes a breakpoint on `system` or `tools`, so a request cached only above
+    the conversation is no longer priced as if it were uncached.
     """
-    if not _count_breakpoints(messages):
+    if not _count_breakpoints(body):
         return None
-    return "ephemeral_1h" if _existing_ttl(messages) == "1h" else "ephemeral_5m"
+    return "ephemeral_1h" if _existing_ttl(body) == "1h" else "ephemeral_5m"
 
 
-def _existing_ttl(messages: list) -> str | None:
+def _existing_ttl(body: dict) -> str | None:
     """Whatever TTL the client was already asking for, so the filter never
-    silently reprices a request from the 1h class to the 5m one."""
-    for message in messages:
-        if not isinstance(message, dict):
-            continue
-        for block in _blocks(message):
-            if isinstance(block, dict) and isinstance(block.get("cache_control"), dict):
-                ttl = block["cache_control"].get("ttl")
-                if isinstance(ttl, str):
-                    return ttl
+    silently reprices a request from the 1h class to the 5m one.
+
+    `system` and `tools` are read first because they are first in the cache key:
+    a client that asks for a one-hour prefix and leaves the conversation's own
+    breakpoints implicit is asking for one-hour, and reading only `messages`
+    would have answered from the wrong region.
+    """
+    messages = body.get("messages")
+    blocks = list(_prefix_blocks(body))
+    if isinstance(messages, list):
+        blocks.extend(
+            block
+            for message in messages
+            if isinstance(message, dict)
+            for block in _blocks(message)
+            if isinstance(block, dict)
+        )
+    for block in blocks:
+        if isinstance(block.get("cache_control"), dict):
+            ttl = block["cache_control"].get("ttl")
+            if isinstance(ttl, str):
+                return ttl
     return None
 
 
@@ -301,7 +347,7 @@ def apply(
 
     model = body.get("model")
     plan.model = model if isinstance(model, str) else None
-    plan.cache_ttl = _ttl_in_force(messages)
+    plan.cache_ttl = _ttl_in_force(body)
 
     uses = _index_tool_uses(messages)
 
@@ -380,9 +426,9 @@ def apply(
         plan.bytes_dropped += size
 
     if oldest_deferred is not None:
-        ttl = _existing_ttl(messages)
+        ttl = _existing_ttl(body)
         _strip_breakpoints_from(messages, oldest_deferred)
-        if _count_breakpoints(messages) < MAX_BREAKPOINTS:
+        if _count_breakpoints(body) < MAX_BREAKPOINTS:
             plan.breakpoint_moved = _place_breakpoint_before(messages, oldest_deferred, ttl)
     return body, plan
 

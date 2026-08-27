@@ -39,13 +39,36 @@ from .rules import (
     LOCATOR_GREP_MODES,
     LOCATOR_TOOLS,
     VERIFICATION_RE,
+    inflates,
     is_inspection,
     result_size,
 )
 
-# SPEC §4 G2. The same floor the pruner uses, for the same reason: below it the
-# pointer costs more than the content and G4 would refuse the strip anyway.
+# SPEC §4 G2. **Deliberately not the pruner's 2,048**, and the divergence is the
+# point rather than an oversight — `rules.DEFAULT_MIN_BYTES` stays at 2,048
+# because the pruner's comparison really is file bytes against a 163-byte
+# pointer with a whole session's `S` behind it.
+#
+# The filter's arithmetic is different. A candidate is sent once in full and the
+# pointer then lives in the cached prefix, so with `P` the pointer's length and
+# `T` the turns that follow, the strip pays when
+#
+#     D  >  P · (2.0 + 0.1T) / (1.0 + 0.1T)
+#
+# which is bounded between `P` and `2P` at every `T` — 230 bytes at T=0, 120 at
+# T=224. No session length makes 2,048 right for this component. The comment
+# that used to sit here claimed otherwise, on the pruner's reasoning, and its
+# second clause — "G4 would refuse the strip anyway" — was wrong twice over:
+# G4 refuses only below the pointer's own length, and until now the filter did
+# not implement G4 at all.
 DEFAULT_MIN_BYTES = 2048
+
+# The tool names `rule_for` can fire on. `pointer` interpolates one of them, so
+# the longest bounds the pointer's own length — which is what makes the
+# `--min-bytes` floor below checkable before a single request arrives. Widening
+# `rule_for` past these four literals moves that bound and re-opens the unbounded
+# tool name `rules._safe_tool_name` exists for.
+FILTER_TOOL_NAMES = frozenset(LOCATOR_TOOLS | {"Grep", "Bash"})
 
 # How many of the newest tool results are exempt. One is the design: a candidate
 # is sent uncached on the request where the model acts on it and dropped on the
@@ -71,6 +94,12 @@ class Plan:
     bytes_deferred: int = 0
     breakpoint_moved: bool = False
     tool_results_seen: int = 0
+    # Guard G4's refusals. A count rather than the results themselves: `plan.py`
+    # keeps them so `--explain` can name them, and the filter has no `--explain`.
+    # It is a number rather than a silence because a strip that inflates is a
+    # silent fallback in both directions at once — the request grows and the
+    # ledger records a saving.
+    inflated: int = 0
     # Neither is used to decide anything; both exist so `winnow savings` can price
     # what the filter did without guessing. One ledger spans several models, and the
     # write class is a property of the request rather than of the documentation.
@@ -94,6 +123,38 @@ def pointer(tool_name: str, rule: str, size: int) -> str:
         f"[winnow: {tool_name} result removed, rule {rule}, {size} bytes. "
         f"Not cached, not stored. Re-run the call if it is needed again.]"
     )
+
+
+def longest_pointer(size: int) -> int:
+    """The longest pointer this filter can produce for a result of `size` bytes.
+
+    Bounded because `rule_for` fires on four literal tool names and three
+    two-character rule ids, so the only free term is the size's own digit count.
+    """
+    return max(
+        len(pointer(name, rule, size))
+        for name in FILTER_TOOL_NAMES
+        for rule in ("C1", "C3", "B2")
+    )
+
+
+def smallest_safe_min_bytes() -> int:
+    """The lowest `min_bytes` at which no admitted result can inflate.
+
+    Guard G4 refuses a strip whose pointer is longer than the content it
+    replaces, so a floor below this admits results the guard then refuses — a
+    flag that reads as "strip more" and does nothing. Making that a usage error
+    at parse time is SPEC §10's discipline: no fallback that silently keeps a
+    result the operator asked to strip.
+
+    The crossing is unique. `longest_pointer` grows by one byte per decade of
+    `size`, so once `longest_pointer(D) <= D` the same holds for every larger
+    `D`, and the first crossing is the answer.
+    """
+    size = 1
+    while longest_pointer(size) > size:
+        size += 1
+    return size
 
 
 def rule_for(name: str, tool_input: dict, is_error: bool) -> str | None:
@@ -265,7 +326,26 @@ def apply(
             size = result_size(content)
             results.append((m_index, b_index, block, rule, size))
 
-    candidates = [r for r in results if r[3] is not None and r[4] >= min_bytes]
+    # G2 the size floor, then G4 no net inflation. G4 is the one guard SPEC §4
+    # applies *after* a rule has fired, because it compares the result against the
+    # pointer that would replace it and the pointer names the rule. It is applied
+    # here rather than at the substitution below so that a result the pointer would
+    # inflate is not a candidate at all — otherwise it could be the deferred one,
+    # and the breakpoint would be moved in front of a result nothing will replace.
+    #
+    # `rules.inflates` rather than a comparison written out here: the filter is the
+    # fourth reader of SPEC §4 and it must not acquire a fourth opinion about a
+    # guard. The pointer computed for the test is the one that gets used.
+    candidates: list[tuple[int, int, dict, str, int, str, str]] = []
+    for m_index, b_index, block, rule, size in results:
+        if rule is None or size < min_bytes:
+            continue
+        name = uses.get(block.get("tool_use_id", ""), ("", {}))[0]
+        text = pointer(name or "tool", rule, size)
+        if inflates(text, size):
+            plan.inflated += 1
+            continue
+        candidates.append((m_index, b_index, block, rule, size, name, text))
     if not candidates:
         return body, plan
 
@@ -284,8 +364,7 @@ def apply(
     # break worth `1.9·S` on every request from the third onward, in the
     # component built to avoid paying it once.
     oldest_deferred: tuple[int, int] | None = None
-    for m_index, b_index, block, rule, size in candidates:
-        name = uses.get(block.get("tool_use_id", ""), ("", {}))[0]
+    for m_index, b_index, block, rule, size, name, text in candidates:
         if id(block) in exempt_ids:
             # Kept this turn, dropped on the next. Remember where the earliest
             # of them sits so the breakpoint can be moved in front of the whole
@@ -295,7 +374,7 @@ def apply(
             plan.deferred.append(_entry(block, name, rule, size))
             plan.bytes_deferred += size
             continue
-        block["content"] = pointer(name or "tool", rule, size)
+        block["content"] = text
         block.pop("cache_control", None)
         plan.dropped.append(_entry(block, name, rule, size))
         plan.bytes_dropped += size

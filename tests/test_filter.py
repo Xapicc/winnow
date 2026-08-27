@@ -143,6 +143,52 @@ def test_a_small_result_is_left_alone():
     assert results_of(request)[0]["content"] == SMALL
 
 
+def test_g4_refuses_a_strip_whose_pointer_is_longer_than_the_content():
+    """SPEC §4 G4. `--min-bytes 10` used to replace 30 bytes with a 112-byte
+    pointer and record 30 bytes saved: the request grew and the ledger called it
+    a saving. The guard is `rules.inflates`, so the filter has no fourth opinion
+    about it."""
+    tiny = "z" * 30
+    request = body(*turn("a", "Bash", {"command": "ls -la"}, content=tiny),
+                   *turn("b", "Bash", {"command": "ls /tmp"}, content=tiny))
+    _, plan = apply(request, min_bytes=10)
+    assert plan.dropped == []
+    assert plan.bytes_dropped == 0
+    assert plan.inflated == 2
+    assert [r["content"] for r in results_of(request)] == [tiny, tiny]
+
+
+def test_g4_admits_a_result_that_clears_the_pointer():
+    """The other side of the guard: above the pointer's length the strip stands,
+    so G4 is a floor and not an off switch."""
+    payload = "z" * 400
+    request = body(*turn("a", "Bash", {"command": "ls -la"}, content=payload),
+                   *turn("b", "Bash", {"command": "ls /tmp"}, content=payload))
+    _, plan = apply(request, min_bytes=256)
+    assert plan.inflated == 0
+    assert plan.bytes_dropped == 400
+    assert results_of(request)[0]["content"].startswith("[winnow:")
+
+
+def test_a_min_bytes_below_the_pointer_is_a_usage_error(monkeypatch, capsys):
+    """The floor is checked before a request arrives, and the environment is held
+    to the same bar as the flag."""
+    from winnow.cli import main
+
+    monkeypatch.setenv("WINNOW_FILTER", "1")
+    monkeypatch.setenv("WINNOW_FILTER_MIN_BYTES", "10")
+    assert main(["filter"]) == 1
+    assert "below the longest pointer" in capsys.readouterr().err
+
+
+def test_the_floor_is_where_the_pointer_stops_inflating():
+    from winnow.filter import longest_pointer, smallest_safe_min_bytes
+
+    floor = smallest_safe_min_bytes()
+    assert longest_pointer(floor) <= floor
+    assert longest_pointer(floor - 1) > floor - 1
+
+
 def test_pairing_is_preserved_because_content_is_replaced_not_removed():
     """SPEC §4 G5. The API requires every tool_use to be answered, so a dropped
     result is substituted, never deleted."""

@@ -623,6 +623,8 @@ def add_savings_subparser(sub) -> None:
 
 
 def cmd_filter(args: argparse.Namespace) -> int:
+    from . import filter as filter_mod
+
     if not proxy_mod.is_enabled() and not args.force:
         _say("intake filter is off. Set WINNOW_FILTER=1, or pass --force to run "
              "it once without the toggle.")
@@ -636,6 +638,18 @@ def cmd_filter(args: argparse.Namespace) -> int:
         off_file=Path(args.off_file) if args.off_file else None,
         verbose=args.verbose or None,
     )
+    # Checked here rather than by argparse so that the environment variable is
+    # held to the same bar as the flag: `WINNOW_FILTER_MIN_BYTES=10` is the same
+    # mistake typed somewhere quieter. Below the floor, guard G4 refuses every
+    # result the floor admits, so the setting reads as "strip more" and strips
+    # less — SPEC §10's silent fallback, in the direction that reports a saving.
+    floor = filter_mod.smallest_safe_min_bytes()
+    if config.min_bytes < floor:
+        _say(f"--min-bytes {config.min_bytes} is below the longest pointer this "
+             f"filter can produce ({floor} bytes). Every result it admitted would "
+             f"be refused by guard G4, so it would strip less, not more. "
+             f"Use {floor} or higher.")
+        return EXIT_USAGE
     return proxy_mod.serve(config)
 
 

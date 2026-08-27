@@ -329,6 +329,9 @@ def savings_to_dict(result: savings_mod.Savings) -> dict:
             "legacy_lines_without_tool_use_id": result.ledger.legacy_lines,
             "lines_without_model": result.ledger.lines_without_model,
             "lines_without_cache_ttl": result.ledger.lines_without_ttl,
+            "lines_without_version": result.ledger.lines_without_version,
+            "heartbeats": result.ledger.heartbeats,
+            "last_heartbeat": result.ledger.last_heartbeat,
             "malformed_entries": result.ledger.malformed_entries,
             # removal_events + malformed_entries; every entry the file described.
             "entries_total": result.ledger.events,
@@ -398,6 +401,34 @@ def render_savings(result: savings_mod.Savings) -> str:
     if ledger.legacy_lines:
         add(f"  {ledger.legacy_lines:,} lines predate tool_use_id and were de-duped "
             "on (tool, rule, bytes)")
+    if ledger.lines_without_version:
+        add(f"  {ledger.lines_without_version:,} lines predate the schema version "
+            "and are read as v0")
+    if ledger.heartbeats:
+        # The denominator this command has never had. A ledger line is written
+        # only on a *changed* request, so without these the file records successes
+        # and nothing else, and "the filter ran all week and found nothing" is
+        # indistinguishable from "the filter has not been in the path since
+        # Tuesday". Baseline on this operator's corpus: 7.29% of tool results are
+        # candidates, 6.5% of turns produce a line, 67.4% of sessions have at
+        # least one. An order of magnitude below that is not a quiet week.
+        add("")
+        add(f"heartbeat        {ledger.heartbeats:>10,} lines   "
+            "what the filter looked at, including the requests it changed nothing on")
+        last = ledger.last_heartbeat
+        if last:
+            seen = last.get("tool_results_seen", 0)
+            claimed = last.get("candidates", 0)
+            rate = (claimed / seen * 100) if seen else 0.0
+            add(f"  latest: {last.get('requests', 0):,} requests, "
+                f"{last.get('filtered', 0):,} filtered, "
+                f"{seen:,} tool results seen, {claimed:,} claimed ({rate:.2f}%)")
+            if last.get("unreadable") or last.get("filter_errors"):
+                add(f"  {last.get('unreadable', 0):,} unreadable bodies, "
+                    f"{last.get('filter_errors', 0):,} filter errors")
+            if seen and not claimed:
+                add("  nothing claimed against results that were seen — that is a "
+                    "fault, not a quiet week")
     if ledger.malformed_entries:
         add(f"  {ledger.malformed_entries:,} entries carried no usable size and could "
             "not be counted as removals")

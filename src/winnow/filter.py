@@ -110,6 +110,13 @@ MAX_BREAKPOINTS = 4
 
 POINTER_RE = re.compile(r"^\[winnow: .* removed, rule [A-Z]\d, \d+ bytes")
 
+# The ledger's schema version. Bump it when a key's *meaning* changes, not when
+# one is added — an addition is what a reader survives by asking "is this key
+# present", and all three migrations so far were of that easy kind. Lines written
+# before this field are `v: 0` to both readers, which is exactly what their three
+# existing `lines_without_…` counters already describe.
+LEDGER_VERSION = 1
+
 
 @dataclass
 class Plan:
@@ -556,9 +563,26 @@ def ledger_line(plan: Plan, request_id: str | None = None) -> str:
     request, and the model and write class so it is priced at what this request would
     have cost rather than at a documentation figure. Lines written before those fields
     existed are readable without them, at a cost that reader reports.
+
+    `v` and `kind` are the schema, and they are here because the next migration is
+    not like the last three. `tool_use_id`, `model` and `cache_ttl` were each
+    *added*, and a reader survives an addition by asking whether a key is present.
+    The migrations now queued change what an existing key **means** — `bytes`
+    becoming net rather than gross, or per-block rather than per-result, or partial
+    rather than total — and each of those produces a line every current reader
+    parses successfully and prices wrongly, in the flattering direction. Two keys
+    is the cheapest thing that turns that from silent into loud.
+
+    `kind` is what lets one file carry more than one record type, which the
+    heartbeat below needs: both readers keyed off field presence rather than off a
+    tag, so without it the first heartbeat would land in `savings.read_ledger` as a
+    malformed entry and in `inspect.read_filter_ledger` as a request id matching
+    nothing.
     """
     return json.dumps(
         {
+            "v": LEDGER_VERSION,
+            "kind": "filter",
             "request_id": request_id,
             "model": plan.model,
             "cache_ttl": plan.cache_ttl,
@@ -567,6 +591,39 @@ def ledger_line(plan: Plan, request_id: str | None = None) -> str:
             "bytes_dropped": plan.bytes_dropped,
             "bytes_deferred": plan.bytes_deferred,
             "tool_results_seen": plan.tool_results_seen,
+            "inflated": plan.inflated,
         },
         sort_keys=True,
     )
+
+
+def heartbeat_line(counters: dict) -> str:
+    """One JSON line every N requests, whether or not anything was removed.
+
+    **The denominator `winnow savings` has never had.** A ledger line is written
+    only on a changed request, so the artefact records successes and nothing else,
+    and every one of these produces exactly the same output — no lines, no stderr
+    after startup:
+
+      * `ANTHROPIC_BASE_URL` never reached the client, so nothing is connected;
+      * the kill switch is on, and it announces itself once, on the transition;
+      * `--min-bytes` was mistyped an order of magnitude too high;
+      * the body shape moved and `rule_for` now returns None everywhere.
+
+    In every case the operator's evidence is a bill that did not improve, months
+    later. `0 filtered` beside `6,410 tool results seen` is a fault; `0 filtered`
+    beside `0 seen` is a proxy nobody is talking to; and the existing instrument
+    cannot tell them apart because it only ever sees removals.
+
+    **The baseline to compare against**, measured over this operator's 869
+    transcripts: 7.29% of `tool_result` blocks are candidates, 6.5% of turns would
+    produce a ledger line, and 67.4% of sessions contain at least one candidate. An
+    install running an order of magnitude below those is not having a quiet week.
+
+    A ledger heartbeat rather than a status endpoint, deliberately: a second route
+    returning internal state from a process whose access log is silenced on purpose
+    is the most surface any option in this set proposed and it buys the least. This
+    is a file the operator already owns and two commands already read.
+    """
+    return json.dumps({"v": LEDGER_VERSION, "kind": "heartbeat", **counters},
+                      sort_keys=True)

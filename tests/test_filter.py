@@ -907,3 +907,165 @@ def test_a_result_between_the_two_floors_is_now_claimed():
         min_bytes=2048,
     )
     assert at_old_floor.bytes_dropped == 0
+
+
+# ─── The instruments ─────────────────────────────────────────────────────────
+
+
+def test_the_ledger_line_carries_a_version_and_a_type():
+    """Two keys, because the next migration is not like the last three.
+    `tool_use_id`, `model` and `cache_ttl` were each *added*, and a reader
+    survives an addition by asking whether a key is present. A `bytes` that
+    became net rather than gross would produce a line every current reader parses
+    successfully and prices wrongly, in the flattering direction."""
+    from winnow.filter import LEDGER_VERSION, ledger_line
+
+    request = body(*turn("a", "Bash", {"command": "ls -la"}),
+                   *turn("b", "Bash", {"command": "git diff"}))
+    _, plan = apply(request)
+    line = json.loads(ledger_line(plan, "req_1"))
+    assert line["v"] == LEDGER_VERSION
+    assert line["kind"] == "filter"
+    assert line["inflated"] == 0
+
+
+def test_stats_separate_what_was_looked_at_from_what_was_claimed():
+    """`0 filtered` beside `6,410 tool results seen` is a fault; `0 filtered`
+    beside `0 seen` is a proxy nobody is talking to. One counter could not tell
+    them apart, and the number that does was computed on every request and thrown
+    away."""
+    stats = Stats()
+    config = Config(rules=frozenset({"C1", "C3", "B2"}))
+    payload = json.dumps(body(*turn("a", "Bash", {"command": "ls -la"}),
+                              *turn("b", "Bash", {"command": "git diff"}))).encode()
+    _rewrite(payload, config, stats)
+    assert stats.tool_results_seen == 2
+    assert stats.candidates == 2
+    assert stats.filtered == 1
+
+    quiet = Stats()
+    _rewrite(json.dumps(body()).encode(), config, quiet)
+    assert quiet.requests == 1
+    assert quiet.tool_results_seen == 0
+    assert quiet.candidates == 0
+
+
+def test_a_request_that_changed_nothing_is_still_counted():
+    """The population a health signal is about is exactly the one the ledger has
+    never recorded, because the line is gated on `plan.changed`."""
+    stats = Stats()
+    config = Config(rules=frozenset({"C1", "C3", "B2"}))
+    payload = json.dumps(body(*turn("a", "Bash", {"command": "python train.py"}))).encode()
+    _, ledger = _rewrite(payload, config, stats)
+    assert ledger is None
+    assert stats.requests == 1
+    assert stats.tool_results_seen == 1
+    assert stats.candidates == 0
+
+
+def test_the_two_error_kinds_are_counted_apart():
+    """An unreadable body says the wire format moved under the filter; a filter
+    that raised says the filter has a bug. Different reactions, and one integer
+    could not ask for either."""
+    stats = Stats()
+    config = Config()
+    _rewrite(b"{not json", config, stats)
+    assert (stats.unreadable, stats.filter_errors) == (1, 0)
+    assert "1 unreadable" in stats.line()
+    assert "0 filter errors" in stats.line()
+
+
+def test_stats_line_still_reports_passthrough_on_error():
+    stats = Stats()
+    stats.record(error=True, unreadable=True)
+    stats.record(filtered=True, dropped=100)
+    assert "1 passthrough on error" in stats.line()
+    assert "100 bytes dropped" in stats.line()
+
+
+def test_a_heartbeat_is_written_every_n_requests(tmp_path):
+    from winnow.filter import LEDGER_VERSION
+
+    path = tmp_path / "filter.jsonl"
+    config = Config(ledger=path, heartbeat_every=3,
+                    rules=frozenset({"C1", "C3", "B2"}))
+    stats = Stats()
+    payload = json.dumps(body(*turn("a", "Bash", {"command": "python train.py"}))).encode()
+    for _ in range(6):
+        _rewrite(payload, config, stats)
+
+    lines = [json.loads(raw) for raw in path.read_text().splitlines()]
+    beats = [line for line in lines if line["kind"] == "heartbeat"]
+    assert len(beats) == 2
+    assert beats[-1]["requests"] == 6
+    assert beats[-1]["tool_results_seen"] == 6
+    assert beats[-1]["candidates"] == 0
+    assert beats[-1]["v"] == LEDGER_VERSION
+    # A heartbeat answers no request, so it is not stamped with one — a null id
+    # would join to every transcript record that also has none.
+    assert "request_id" not in beats[-1]
+
+
+def test_a_heartbeat_is_off_when_asked_to_be(tmp_path):
+    path = tmp_path / "filter.jsonl"
+    config = Config(ledger=path, heartbeat_every=0)
+    stats = Stats()
+    payload = json.dumps(body(*turn("a", "Bash", {"command": "python train.py"}))).encode()
+    for _ in range(5):
+        _rewrite(payload, config, stats)
+    assert not path.exists()
+
+
+def test_both_readers_skip_a_heartbeat_rather_than_misreading_it(tmp_path):
+    """Both keyed off field presence rather than off a tag, so without `kind` the
+    first heartbeat would arrive in `savings.read_ledger` as a malformed entry and
+    in `inspect.read_filter_ledger` as a request id matching nothing."""
+    from winnow.filter import heartbeat_line, ledger_line
+    from winnow.inspect import read_filter_ledger
+    from winnow.savings import read_ledger
+
+    request = body(*turn("a", "Bash", {"command": "ls -la"}),
+                   *turn("b", "Bash", {"command": "git diff"}))
+    _, plan = apply(request)
+    path = tmp_path / "filter.jsonl"
+    beat = heartbeat_line({"requests": 10, "filtered": 1, "tool_results_seen": 20,
+                           "candidates": 2})
+    line = json.loads(ledger_line(plan, "req_1"))
+    path.write_text(json.dumps(line) + "\n" + beat + "\n")
+
+    read = read_ledger(path)
+    assert read.heartbeats == 1
+    assert read.malformed_entries == 0
+    assert read.lines_without_version == 0
+    assert len(read.removals) == 2  # one dropped, one deferred
+    assert read.last_heartbeat["tool_results_seen"] == 20
+
+    found = read_filter_ledger(path, {"req_1"})
+    assert found.requests == 1
+
+
+def test_a_ledger_written_before_the_version_is_read_as_v0(tmp_path):
+    from winnow.savings import read_ledger
+
+    path = tmp_path / "filter.jsonl"
+    path.write_text(json.dumps({
+        "request_id": "req_old", "bytes_dropped": 5000,
+        "dropped": [{"rule": "B2", "tool": "Bash", "bytes": 5000,
+                     "tool_use_id": "toolu_old"}],
+    }) + "\n")
+    read = read_ledger(path)
+    assert read.lines_without_version == 1
+    assert len(read.removals) == 1  # still readable, at a cost the reader reports
+
+
+def test_an_unknown_record_kind_is_left_for_a_future_reader(tmp_path):
+    """Not ours, and not an error either. Counting it as malformed would put a
+    number in the readout that means nothing."""
+    from winnow.savings import read_ledger
+
+    path = tmp_path / "filter.jsonl"
+    path.write_text(json.dumps({"v": 2, "kind": "prefix", "system_bytes": 900}) + "\n")
+    read = read_ledger(path)
+    assert read.malformed_entries == 0
+    assert read.parse_errors == 0
+    assert read.removals == []

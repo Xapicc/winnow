@@ -286,6 +286,13 @@ def read_filter_ledger(ledger_path: Path, request_ids: set[str]) -> FilterLedger
                     continue
                 if not isinstance(record, dict):
                     continue
+                # See `savings.read_ledger`: a record's type, not its shape. A
+                # heartbeat carries no `request_id`, so it would never join here
+                # — but a future record type that did would be counted as a
+                # filtered request, and the correction would be wrong upward.
+                kind = record.get("kind")
+                if kind is not None and kind != "filter":
+                    continue
                 if record.get("request_id") not in request_ids:
                     continue
                 found.requests += 1

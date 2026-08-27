@@ -34,7 +34,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from .filter import FILTER_MIN_BYTES, apply, ledger_line
+from .filter import FILTER_MIN_BYTES, apply, heartbeat_line, ledger_line
 from .rules import RULE_ORDER, STATELESS_RULES
 
 DEFAULT_UPSTREAM = "https://api.anthropic.com"
@@ -76,29 +76,83 @@ def _is_filtered(path: str) -> bool:
 
 @dataclass
 class Stats:
-    """Running totals, printed on exit and readable while it runs."""
+    """Running totals — printed on exit, and emitted to the ledger as a heartbeat.
+
+    `tool_results_seen` and `candidates` are the two fields that make this a health
+    signal rather than a tally. They were already computed on every request and
+    thrown away, and without them a filter that has quietly stopped doing anything
+    is indistinguishable from a session with nothing to remove: see
+    `filter.heartbeat_line` for the four failures that produce identical silence.
+
+    `errors` is split because it was two different failures in one integer. An
+    unreadable body says the wire format moved under the filter; a filter that
+    raised says the filter has a bug. They call for different reactions and one
+    counter could not ask for either.
+    """
 
     requests: int = 0
     filtered: int = 0
     bytes_dropped: int = 0
     bytes_deferred: int = 0
-    errors: int = 0
+    tool_results_seen: int = 0
+    candidates: int = 0
+    inflated: int = 0
+    unreadable: int = 0
+    filter_errors: int = 0
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def record(self, *, filtered: bool = False, dropped: int = 0, deferred: int = 0,
-               error: bool = False) -> None:
+               error: bool = False, unreadable: bool = False, results_seen: int = 0,
+               candidates: int = 0, inflated: int = 0) -> int:
+        """Count one request, and return the running request total.
+
+        The total comes back so the caller can decide whether this request is the
+        one that emits a heartbeat, without taking the lock a second time and
+        without two threads reading a number between the increment and the check.
+        """
         with self._lock:
             self.requests += 1
             self.filtered += int(filtered)
             self.bytes_dropped += dropped
             self.bytes_deferred += deferred
-            self.errors += int(error)
+            self.tool_results_seen += results_seen
+            self.candidates += candidates
+            self.inflated += inflated
+            self.unreadable += int(unreadable)
+            self.filter_errors += int(error and not unreadable)
+            return self.requests
+
+    @property
+    def errors(self) -> int:
+        """Both failure kinds, for a caller that only wants to know if any."""
+        return self.unreadable + self.filter_errors
+
+    def counters(self) -> dict:
+        """The heartbeat's payload. A snapshot under the lock, so a line never
+        mixes a `requests` from one moment with a `filtered` from another."""
+        with self._lock:
+            return {
+                "requests": self.requests,
+                "filtered": self.filtered,
+                "tool_results_seen": self.tool_results_seen,
+                "candidates": self.candidates,
+                "inflated": self.inflated,
+                "bytes_dropped": self.bytes_dropped,
+                "bytes_deferred": self.bytes_deferred,
+                "unreadable": self.unreadable,
+                "filter_errors": self.filter_errors,
+            }
 
     def line(self) -> str:
         return (
             f"{self.requests} requests, {self.filtered} filtered, "
+            f"{self.tool_results_seen:,} tool results seen, "
+            f"{self.candidates:,} claimed, "
             f"{self.bytes_dropped:,} bytes dropped, "
-            f"{self.bytes_deferred:,} deferred, {self.errors} passthrough on error"
+            f"{self.bytes_deferred:,} deferred, "
+            f"{self.inflated:,} refused by G4, "
+            f"{self.unreadable} unreadable, {self.filter_errors} filter errors, "
+            f"{self.errors} passthrough on error"
         )
 
 
@@ -135,6 +189,12 @@ class Config:
     # the pruner would stop firing that rule and the filter would go on firing it,
     # on a live request, with nothing anywhere saying so.
     rules: frozenset[str] = STATELESS_RULES
+    # Write a heartbeat to the ledger every N requests; 0 turns it off. 200 is
+    # about one line per twenty minutes of steady work on this install, against a
+    # ledger already carrying 4.7 MB of removals — the cost is noise beside what
+    # it makes visible. It needs a `--ledger`: there is nowhere else to put it,
+    # and a periodic stderr line is the thing most likely to be lost in a terminal.
+    heartbeat_every: int = 200
 
 
 # Whether the last request saw the kill switch, so the transition is logged once
@@ -182,13 +242,17 @@ def _rewrite(raw: bytes, config: Config, stats: Stats) -> tuple[bytes, str | Non
     Returns `(body, ledger line or None)`. Any failure returns the original
     bytes: SPEC §10's discipline is that this cannot be the thing that breaks a
     run, and a request it cannot parse is one it has no business editing.
+
+    Every exit counts the request, including the ones where nothing was removed —
+    that population is precisely what a health signal is about, and it is the one
+    the ledger has never recorded.
     """
     try:
         body = json.loads(raw)
         if not isinstance(body, dict):
             raise TypeError(f"request body is {type(body).__name__}, not an object")
     except (json.JSONDecodeError, TypeError, ValueError, UnicodeDecodeError) as exc:
-        stats.record(error=True)
+        _count(config, stats, error=True, unreadable=True)
         print(f"winnow: forwarding unfiltered, unreadable body: {exc}", file=sys.stderr)
         return raw, None
 
@@ -200,21 +264,40 @@ def _rewrite(raw: bytes, config: Config, stats: Stats) -> tuple[bytes, str | Non
             enabled=config.rules,
         )
     except Exception as exc:  # noqa: BLE001 — see the docstring: never break a run
-        stats.record(error=True)
+        _count(config, stats, error=True)
         print(f"winnow: forwarding unfiltered, filter raised: "
               f"{type(exc).__name__}: {exc}", file=sys.stderr)
         return raw, None
 
+    seen = {
+        "results_seen": plan.tool_results_seen,
+        "candidates": len(plan.dropped) + len(plan.deferred),
+        "inflated": plan.inflated,
+    }
     if not plan.changed:
-        stats.record()
+        _count(config, stats, **seen)
         return raw, None
 
-    stats.record(filtered=True, dropped=plan.bytes_dropped, deferred=plan.bytes_deferred)
+    _count(config, stats, filtered=True, dropped=plan.bytes_dropped,
+           deferred=plan.bytes_deferred, **seen)
     if config.verbose:
         print(f"winnow: dropped {len(plan.dropped)} results "
               f"({plan.bytes_dropped:,} bytes), deferred {len(plan.deferred)}",
               file=sys.stderr)
     return json.dumps(body).encode("utf-8"), ledger_line(plan)
+
+
+def _count(config: Config, stats: Stats, **kw) -> None:
+    """Record one request and, every `heartbeat_every` of them, write a heartbeat.
+
+    Best effort in the strictest sense: `_append_ledger` catches its own errors
+    and the request goes out either way. A counter must never be able to fail a
+    request — §K6 — and this one is reached from every exit of `_rewrite`.
+    """
+    total = stats.record(**kw)
+    every = config.heartbeat_every
+    if every > 0 and config.ledger and total % every == 0:
+        _append_ledger(config.ledger, heartbeat_line(stats.counters()), None)
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -234,7 +317,7 @@ class _Handler(BaseHTTPRequestHandler):
         if _is_filtered(self.path) and raw and not _filtering_disabled(self.config):
             raw, ledger = _rewrite(raw, self.config, self.stats)
         elif raw:
-            self.stats.record()
+            _count(self.config, self.stats)
 
         split = urlsplit(self.config.upstream)
         cls = http.client.HTTPSConnection if split.scheme == "https" else http.client.HTTPConnection
@@ -293,7 +376,11 @@ def _append_ledger(path: Path, line: str, request_id: str | None) -> None:
     precondition for it."""
     try:
         record = json.loads(line)
-        record["request_id"] = request_id
+        # A heartbeat answers no request, so it is not given one. Stamping
+        # `request_id: null` on it would make it join to every session that
+        # happens to have a record with no id.
+        if "request_id" in record:
+            record["request_id"] = request_id
         with _LEDGER_LOCK:
             path.parent.mkdir(parents=True, exist_ok=True)
             with path.open("a", encoding="utf-8") as handle:
@@ -316,6 +403,10 @@ def serve(config: Config) -> int:
     # who exported `WINNOW_RULES_OFF` in another terminal an hour ago.
     on = ", ".join(rule for rule in RULE_ORDER if rule in config.rules) or "none"
     print(f"winnow: rules {on}", file=sys.stderr)
+    if config.ledger and config.heartbeat_every > 0:
+        print(f"winnow: heartbeat to the ledger every {config.heartbeat_every} "
+              "requests, so a filter that has stopped filtering is visible "
+              "without waiting for a bill", file=sys.stderr)
     if not config.rules:
         print("winnow: no rule is enabled, so nothing will be removed; the proxy "
               "is a plain relay", file=sys.stderr)
@@ -353,6 +444,7 @@ def config_from_env(**overrides) -> Config:
         min_bytes=int(os.environ.get("WINNOW_FILTER_MIN_BYTES", str(FILTER_MIN_BYTES))),
         keep_newest=int(os.environ.get("WINNOW_FILTER_KEEP_NEWEST", "1")),
         verbose=os.environ.get("WINNOW_FILTER_VERBOSE") == "1",
+        heartbeat_every=int(os.environ.get("WINNOW_FILTER_HEARTBEAT", "200")),
     )
     ledger = os.environ.get("WINNOW_FILTER_LEDGER")
     config.ledger = Path(ledger) if ledger else None

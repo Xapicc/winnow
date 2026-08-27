@@ -143,6 +143,15 @@ class LedgerRead:
     legacy_lines: int = 0  # lines predating `tool_use_id`, de-duped on the fallback
     lines_without_model: int = 0
     lines_without_ttl: int = 0
+    # Lines written before the ledger carried a schema version. Reported the same
+    # way the three counters above are, so a file that is part old and part new is
+    # a stated fact rather than an inference.
+    lines_without_version: int = 0
+    heartbeats: int = 0  # `kind: heartbeat` lines, which record no removal
+    # The most recent heartbeat's counters. The latest is the useful one — these
+    # are running totals for the life of one proxy process, so an earlier line is
+    # a prefix of a later one and only the last says where the install stands.
+    last_heartbeat: dict | None = None
     malformed_entries: int = 0  # entries with no usable size; counted, never silent
     removals: list[Removal] = field(default_factory=list)
 
@@ -193,6 +202,25 @@ def read_ledger(path: Path) -> LedgerRead:
             if not isinstance(line, dict):
                 read.parse_errors += 1
                 continue
+
+            # A record's type, not its shape. Both readers of this file used to
+            # key off which fields were present, which is why the ledger could
+            # only ever carry one kind of record: the first heartbeat would have
+            # arrived here as a line whose `dropped` list was missing. A line
+            # with no `kind` predates the tag and is a filter line, because that
+            # is the only kind that existed.
+            kind = line.get("kind")
+            if kind == "heartbeat":
+                read.heartbeats += 1
+                read.last_heartbeat = line
+                continue
+            if kind is not None and kind != "filter":
+                # Not ours, and not an error either. A future record type is for
+                # a future reader; miscounting it as malformed would put a number
+                # in the readout that means nothing.
+                continue
+            if not isinstance(line.get("v"), int):
+                read.lines_without_version += 1
 
             model = normalise_model(line.get("model"))
             ttl = line.get("cache_ttl") if isinstance(line.get("cache_ttl"), str) else None

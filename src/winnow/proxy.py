@@ -346,6 +346,21 @@ def _rewrite(raw: bytes, config: Config, stats: Stats,
         "inflated": plan.inflated,
     }
     if not plan.changed:
+        # The client's own bytes, verbatim. The exit below re-renders the whole
+        # body from scratch in Python's default JSON style — `", "` and `": "`
+        # separators, `ensure_ascii=True`, so every non-ASCII character becomes a
+        # `\uXXXX` escape — and the client's encoding choices are not preserved.
+        #
+        # **I11.** So one conversation goes out in two different encodings
+        # depending on whether the filter found a candidate that turn, and that is
+        # safe if and only if the API's cache key is computed over the *parsed
+        # content* rather than over the request's JSON encoding. If it were not,
+        # the filter would break its own cache on every request where
+        # `plan.changed` flipped, which is most of them; it plainly does not. This
+        # is the assumption that licenses the `json.dumps` two exits down, and it
+        # is the one line here a reader is most likely to think is free.
+        # `tests/test_filter_golden.py` cannot test I11 and makes any change to
+        # that line visible.
         _count(config, stats, **seen)
         return raw, None
 

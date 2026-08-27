@@ -1,0 +1,339 @@
+{
+  "01-one-candidate-no-client-breakpoint": {
+    "emitted_body": "{\"model\": \"claude-opus-5\", \"max_tokens\": 100, \"messages\": [{\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"a\", \"name\": \"Bash\", \"input\": {\"command\": \"ls -la\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"a\", \"content\": \"[winnow: Bash result removed, rule B2, 356 bytes. Not cached, not stored. Re-run the call if it is needed again.]\", \"is_error\": false}]}, {\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"b\", \"name\": \"Bash\", \"input\": {\"command\": \"git diff\"}, \"cache_control\": {\"type\": \"ephemeral\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"b\", \"content\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"is_error\": false}]}]}",
+    "ledger_line": "{\"bytes_deferred\": 356, \"bytes_dropped\": 356, \"cache_ttl\": null, \"deferred\": [{\"bytes\": 356, \"rule\": \"B2\", \"tool\": \"Bash\", \"tool_use_id\": \"b\"}], \"dropped\": [{\"bytes\": 356, \"rule\": \"B2\", \"tool\": \"Bash\", \"tool_use_id\": \"a\"}], \"inflated\": 0, \"kind\": \"filter\", \"model\": \"claude-opus-5\", \"request_id\": \"req_golden\", \"tool_results_seen\": 2, \"v\": 1}",
+    "plan": {
+      "breakpoint_moved": true,
+      "bytes_deferred": 356,
+      "bytes_dropped": 356,
+      "cache_ttl": null,
+      "changed": true,
+      "deferred": [
+        {
+          "bytes": 356,
+          "rule": "B2",
+          "tool": "Bash",
+          "tool_use_id": "b"
+        }
+      ],
+      "dropped": [
+        {
+          "bytes": 356,
+          "rule": "B2",
+          "tool": "Bash",
+          "tool_use_id": "a"
+        }
+      ],
+      "inflated": 0,
+      "model": "claude-opus-5",
+      "tool_results_seen": 2
+    }
+  },
+  "02-client-breakpoint-on-the-candidate": {
+    "emitted_body": "{\"model\": \"claude-opus-5\", \"max_tokens\": 100, \"messages\": [{\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"a\", \"name\": \"Bash\", \"input\": {\"command\": \"ls -la\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"a\", \"content\": \"[winnow: Bash result removed, rule B2, 356 bytes. Not cached, not stored. Re-run the call if it is needed again.]\", \"is_error\": false}]}, {\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"b\", \"name\": \"Bash\", \"input\": {\"command\": \"git diff\"}, \"cache_control\": {\"type\": \"ephemeral\", \"ttl\": \"1h\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"b\", \"content\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"is_error\": false}]}]}",
+    "ledger_line": "{\"bytes_deferred\": 356, \"bytes_dropped\": 356, \"cache_ttl\": \"ephemeral_1h\", \"deferred\": [{\"bytes\": 356, \"rule\": \"B2\", \"tool\": \"Bash\", \"tool_use_id\": \"b\"}], \"dropped\": [{\"bytes\": 356, \"rule\": \"B2\", \"tool\": \"Bash\", \"tool_use_id\": \"a\"}], \"inflated\": 0, \"kind\": \"filter\", \"model\": \"claude-opus-5\", \"request_id\": \"req_golden\", \"tool_results_seen\": 2, \"v\": 1}",
+    "plan": {
+      "breakpoint_moved": true,
+      "bytes_deferred": 356,
+      "bytes_dropped": 356,
+      "cache_ttl": "ephemeral_1h",
+      "changed": true,
+      "deferred": [
+        {
+          "bytes": 356,
+          "rule": "B2",
+          "tool": "Bash",
+          "tool_use_id": "b"
+        }
+      ],
+      "dropped": [
+        {
+          "bytes": 356,
+          "rule": "B2",
+          "tool": "Bash",
+          "tool_use_id": "a"
+        }
+      ],
+      "inflated": 0,
+      "model": "claude-opus-5",
+      "tool_results_seen": 2
+    }
+  },
+  "03-four-client-breakpoints-before-the-candidate": {
+    "emitted_body": "{\"model\": \"claude-opus-5\", \"max_tokens\": 100, \"messages\": [{\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"k0\", \"name\": \"Bash\", \"input\": {\"command\": \"python x0.py\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"k0\", \"content\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"is_error\": false, \"cache_control\": {\"type\": \"ephemeral\"}}]}, {\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"k1\", \"name\": \"Bash\", \"input\": {\"command\": \"python x1.py\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"k1\", \"content\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"is_error\": false, \"cache_control\": {\"type\": \"ephemeral\"}}]}, {\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"k2\", \"name\": \"Bash\", \"input\": {\"command\": \"python x2.py\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"k2\", \"content\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"is_error\": false, \"cache_control\": {\"type\": \"ephemeral\"}}]}, {\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"k3\", \"name\": \"Bash\", \"input\": {\"command\": \"python x3.py\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"k3\", \"content\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"is_error\": false, \"cache_control\": {\"type\": \"ephemeral\"}}]}, {\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"a\", \"name\": \"Bash\", \"input\": {\"command\": \"ls -la\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"a\", \"content\": \"[winnow: Bash result removed, rule B2, 356 bytes. Not cached, not stored. Re-run the call if it is needed again.]\", \"is_error\": false}]}, {\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"b\", \"name\": \"Bash\", \"input\": {\"command\": \"git diff\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"b\", \"content\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"is_error\": false}]}]}",
+    "ledger_line": "{\"bytes_deferred\": 356, \"bytes_dropped\": 356, \"cache_ttl\": \"ephemeral_5m\", \"deferred\": [{\"bytes\": 356, \"rule\": \"B2\", \"tool\": \"Bash\", \"tool_use_id\": \"b\"}], \"dropped\": [{\"bytes\": 356, \"rule\": \"B2\", \"tool\": \"Bash\", \"tool_use_id\": \"a\"}], \"inflated\": 0, \"kind\": \"filter\", \"model\": \"claude-opus-5\", \"request_id\": \"req_golden\", \"tool_results_seen\": 6, \"v\": 1}",
+    "plan": {
+      "breakpoint_moved": false,
+      "bytes_deferred": 356,
+      "bytes_dropped": 356,
+      "cache_ttl": "ephemeral_5m",
+      "changed": true,
+      "deferred": [
+        {
+          "bytes": 356,
+          "rule": "B2",
+          "tool": "Bash",
+          "tool_use_id": "b"
+        }
+      ],
+      "dropped": [
+        {
+          "bytes": 356,
+          "rule": "B2",
+          "tool": "Bash",
+          "tool_use_id": "a"
+        }
+      ],
+      "inflated": 0,
+      "model": "claude-opus-5",
+      "tool_results_seen": 6
+    }
+  },
+  "04-parallel-batch-of-three": {
+    "emitted_body": "{\"model\": \"claude-opus-5\", \"max_tokens\": 100, \"messages\": [{\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"a\", \"name\": \"Bash\", \"input\": {\"command\": \"ls -la\"}}, {\"type\": \"tool_use\", \"id\": \"b\", \"name\": \"Bash\", \"input\": {\"command\": \"python train.py\"}}, {\"type\": \"tool_use\", \"id\": \"c\", \"name\": \"Glob\", \"input\": {\"pattern\": \"**/*.py\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"a\", \"content\": \"[winnow: Bash result removed, rule B2, 356 bytes. Not cached, not stored. Re-run the call if it is needed again.]\", \"is_error\": false}, {\"type\": \"tool_result\", \"tool_use_id\": \"b\", \"content\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"is_error\": false}, {\"type\": \"tool_result\", \"tool_use_id\": \"c\", \"content\": \"[winnow: Glob result removed, rule C1, 356 bytes. Not cached, not stored. Re-run the call if it is needed again.]\", \"is_error\": false}]}, {\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"d\", \"name\": \"Bash\", \"input\": {\"command\": \"git status\"}, \"cache_control\": {\"type\": \"ephemeral\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"d\", \"content\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"is_error\": false}]}]}",
+    "ledger_line": "{\"bytes_deferred\": 356, \"bytes_dropped\": 712, \"cache_ttl\": null, \"deferred\": [{\"bytes\": 356, \"rule\": \"B2\", \"tool\": \"Bash\", \"tool_use_id\": \"d\"}], \"dropped\": [{\"bytes\": 356, \"rule\": \"B2\", \"tool\": \"Bash\", \"tool_use_id\": \"a\"}, {\"bytes\": 356, \"rule\": \"C1\", \"tool\": \"Glob\", \"tool_use_id\": \"c\"}], \"inflated\": 0, \"kind\": \"filter\", \"model\": \"claude-opus-5\", \"request_id\": \"req_golden\", \"tool_results_seen\": 4, \"v\": 1}",
+    "plan": {
+      "breakpoint_moved": true,
+      "bytes_deferred": 356,
+      "bytes_dropped": 712,
+      "cache_ttl": null,
+      "changed": true,
+      "deferred": [
+        {
+          "bytes": 356,
+          "rule": "B2",
+          "tool": "Bash",
+          "tool_use_id": "d"
+        }
+      ],
+      "dropped": [
+        {
+          "bytes": 356,
+          "rule": "B2",
+          "tool": "Bash",
+          "tool_use_id": "a"
+        },
+        {
+          "bytes": 356,
+          "rule": "C1",
+          "tool": "Glob",
+          "tool_use_id": "c"
+        }
+      ],
+      "inflated": 0,
+      "model": "claude-opus-5",
+      "tool_results_seen": 4
+    }
+  },
+  "05-one-below-the-floor-and-one-above": {
+    "emitted_body": "{\"model\": \"claude-opus-5\", \"max_tokens\": 100, \"messages\": [{\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"a\", \"name\": \"Bash\", \"input\": {\"command\": \"ls -la\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"a\", \"content\": \"yyyyyyyyyy\", \"is_error\": false}]}, {\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"b\", \"name\": \"Bash\", \"input\": {\"command\": \"git status\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"b\", \"content\": \"[winnow: Bash result removed, rule B2, 356 bytes. Not cached, not stored. Re-run the call if it is needed again.]\", \"is_error\": false}]}, {\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"c\", \"name\": \"Bash\", \"input\": {\"command\": \"git diff\"}, \"cache_control\": {\"type\": \"ephemeral\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"c\", \"content\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"is_error\": false}]}]}",
+    "ledger_line": "{\"bytes_deferred\": 356, \"bytes_dropped\": 356, \"cache_ttl\": null, \"deferred\": [{\"bytes\": 356, \"rule\": \"B2\", \"tool\": \"Bash\", \"tool_use_id\": \"c\"}], \"dropped\": [{\"bytes\": 356, \"rule\": \"B2\", \"tool\": \"Bash\", \"tool_use_id\": \"b\"}], \"inflated\": 0, \"kind\": \"filter\", \"model\": \"claude-opus-5\", \"request_id\": \"req_golden\", \"tool_results_seen\": 3, \"v\": 1}",
+    "plan": {
+      "breakpoint_moved": true,
+      "bytes_deferred": 356,
+      "bytes_dropped": 356,
+      "cache_ttl": null,
+      "changed": true,
+      "deferred": [
+        {
+          "bytes": 356,
+          "rule": "B2",
+          "tool": "Bash",
+          "tool_use_id": "c"
+        }
+      ],
+      "dropped": [
+        {
+          "bytes": 356,
+          "rule": "B2",
+          "tool": "Bash",
+          "tool_use_id": "b"
+        }
+      ],
+      "inflated": 0,
+      "model": "claude-opus-5",
+      "tool_results_seen": 3
+    }
+  },
+  "06-an-error-candidate": {
+    "emitted_body": "{\"model\": \"claude-opus-5\", \"max_tokens\": 100, \"messages\": [{\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"a\", \"name\": \"Bash\", \"input\": {\"command\": \"npm run test\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"a\", \"content\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"is_error\": true}]}, {\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"b\", \"name\": \"Bash\", \"input\": {\"command\": \"git diff\"}, \"cache_control\": {\"type\": \"ephemeral\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"b\", \"content\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"is_error\": false}]}]}",
+    "ledger_line": "{\"bytes_deferred\": 356, \"bytes_dropped\": 0, \"cache_ttl\": null, \"deferred\": [{\"bytes\": 356, \"rule\": \"B2\", \"tool\": \"Bash\", \"tool_use_id\": \"b\"}], \"dropped\": [], \"inflated\": 0, \"kind\": \"filter\", \"model\": \"claude-opus-5\", \"request_id\": \"req_golden\", \"tool_results_seen\": 2, \"v\": 1}",
+    "plan": {
+      "breakpoint_moved": true,
+      "bytes_deferred": 356,
+      "bytes_dropped": 0,
+      "cache_ttl": null,
+      "changed": true,
+      "deferred": [
+        {
+          "bytes": 356,
+          "rule": "B2",
+          "tool": "Bash",
+          "tool_use_id": "b"
+        }
+      ],
+      "dropped": [],
+      "inflated": 0,
+      "model": "claude-opus-5",
+      "tool_results_seen": 2
+    }
+  },
+  "07-list-content-with-an-image-block": {
+    "emitted_body": "{\"model\": \"claude-opus-5\", \"max_tokens\": 100, \"messages\": [{\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"a\", \"name\": \"Bash\", \"input\": {\"command\": \"ls -la\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"a\", \"content\": \"[winnow: Bash result removed, rule B2, 486 bytes. Not cached, not stored. Re-run the call if it is needed again.]\", \"is_error\": false}]}, {\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"b\", \"name\": \"Bash\", \"input\": {\"command\": \"git diff\"}, \"cache_control\": {\"type\": \"ephemeral\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"b\", \"content\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"is_error\": false}]}]}",
+    "ledger_line": "{\"bytes_deferred\": 356, \"bytes_dropped\": 486, \"cache_ttl\": null, \"deferred\": [{\"bytes\": 356, \"rule\": \"B2\", \"tool\": \"Bash\", \"tool_use_id\": \"b\"}], \"dropped\": [{\"bytes\": 486, \"rule\": \"B2\", \"tool\": \"Bash\", \"tool_use_id\": \"a\"}], \"inflated\": 0, \"kind\": \"filter\", \"model\": \"claude-opus-5\", \"request_id\": \"req_golden\", \"tool_results_seen\": 2, \"v\": 1}",
+    "plan": {
+      "breakpoint_moved": true,
+      "bytes_deferred": 356,
+      "bytes_dropped": 486,
+      "cache_ttl": null,
+      "changed": true,
+      "deferred": [
+        {
+          "bytes": 356,
+          "rule": "B2",
+          "tool": "Bash",
+          "tool_use_id": "b"
+        }
+      ],
+      "dropped": [
+        {
+          "bytes": 486,
+          "rule": "B2",
+          "tool": "Bash",
+          "tool_use_id": "a"
+        }
+      ],
+      "inflated": 0,
+      "model": "claude-opus-5",
+      "tool_results_seen": 2
+    }
+  },
+  "08-a-body-already-carrying-a-pointer": {
+    "emitted_body": "{\"model\": \"claude-opus-5\", \"max_tokens\": 100, \"messages\": [{\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"a\", \"name\": \"Bash\", \"input\": {\"command\": \"ls -la\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"a\", \"content\": \"[winnow: Bash result removed, rule B2, 356 bytes. Not cached, not stored. Re-run the call if it is needed again.]\", \"is_error\": false}]}, {\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"b\", \"name\": \"Bash\", \"input\": {\"command\": \"git diff\"}, \"cache_control\": {\"type\": \"ephemeral\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"b\", \"content\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"is_error\": false}]}]}",
+    "ledger_line": "{\"bytes_deferred\": 356, \"bytes_dropped\": 0, \"cache_ttl\": null, \"deferred\": [{\"bytes\": 356, \"rule\": \"B2\", \"tool\": \"Bash\", \"tool_use_id\": \"b\"}], \"dropped\": [], \"inflated\": 0, \"kind\": \"filter\", \"model\": \"claude-opus-5\", \"request_id\": \"req_golden\", \"tool_results_seen\": 2, \"v\": 1}",
+    "plan": {
+      "breakpoint_moved": true,
+      "bytes_deferred": 356,
+      "bytes_dropped": 0,
+      "cache_ttl": null,
+      "changed": true,
+      "deferred": [
+        {
+          "bytes": 356,
+          "rule": "B2",
+          "tool": "Bash",
+          "tool_use_id": "b"
+        }
+      ],
+      "dropped": [],
+      "inflated": 0,
+      "model": "claude-opus-5",
+      "tool_results_seen": 2
+    }
+  },
+  "09-g4-refuses-below-the-pointer": {
+    "emitted_body": "{\"model\": \"claude-opus-5\", \"max_tokens\": 100, \"messages\": [{\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"a\", \"name\": \"Bash\", \"input\": {\"command\": \"ls -la\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"a\", \"content\": \"zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz\", \"is_error\": false}]}, {\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"b\", \"name\": \"Bash\", \"input\": {\"command\": \"git diff\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"b\", \"content\": \"zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz\", \"is_error\": false}]}]}",
+    "ledger_line": "{\"bytes_deferred\": 0, \"bytes_dropped\": 0, \"cache_ttl\": null, \"deferred\": [], \"dropped\": [], \"inflated\": 2, \"kind\": \"filter\", \"model\": \"claude-opus-5\", \"request_id\": \"req_golden\", \"tool_results_seen\": 2, \"v\": 1}",
+    "plan": {
+      "breakpoint_moved": false,
+      "bytes_deferred": 0,
+      "bytes_dropped": 0,
+      "cache_ttl": null,
+      "changed": false,
+      "deferred": [],
+      "dropped": [],
+      "inflated": 2,
+      "model": "claude-opus-5",
+      "tool_results_seen": 2
+    }
+  },
+  "10-breakpoints-on-system-and-tools": {
+    "emitted_body": "{\"model\": \"claude-opus-5\", \"max_tokens\": 100, \"messages\": [{\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"a\", \"name\": \"Bash\", \"input\": {\"command\": \"ls -la\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"a\", \"content\": \"[winnow: Bash result removed, rule B2, 356 bytes. Not cached, not stored. Re-run the call if it is needed again.]\", \"is_error\": false}]}, {\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"b\", \"name\": \"Bash\", \"input\": {\"command\": \"git diff\"}, \"cache_control\": {\"type\": \"ephemeral\", \"ttl\": \"1h\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"b\", \"content\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"is_error\": false}]}], \"system\": [{\"type\": \"text\", \"text\": \"be helpful\", \"cache_control\": {\"type\": \"ephemeral\", \"ttl\": \"1h\"}}], \"tools\": [{\"name\": \"Bash\", \"input_schema\": {}, \"cache_control\": {\"type\": \"ephemeral\", \"ttl\": \"1h\"}}]}",
+    "ledger_line": "{\"bytes_deferred\": 356, \"bytes_dropped\": 356, \"cache_ttl\": \"ephemeral_1h\", \"deferred\": [{\"bytes\": 356, \"rule\": \"B2\", \"tool\": \"Bash\", \"tool_use_id\": \"b\"}], \"dropped\": [{\"bytes\": 356, \"rule\": \"B2\", \"tool\": \"Bash\", \"tool_use_id\": \"a\"}], \"inflated\": 0, \"kind\": \"filter\", \"model\": \"claude-opus-5\", \"request_id\": \"req_golden\", \"tool_results_seen\": 2, \"v\": 1}",
+    "plan": {
+      "breakpoint_moved": true,
+      "bytes_deferred": 356,
+      "bytes_dropped": 356,
+      "cache_ttl": "ephemeral_1h",
+      "changed": true,
+      "deferred": [
+        {
+          "bytes": 356,
+          "rule": "B2",
+          "tool": "Bash",
+          "tool_use_id": "b"
+        }
+      ],
+      "dropped": [
+        {
+          "bytes": 356,
+          "rule": "B2",
+          "tool": "Bash",
+          "tool_use_id": "a"
+        }
+      ],
+      "inflated": 0,
+      "model": "claude-opus-5",
+      "tool_results_seen": 2
+    }
+  },
+  "11-keep-newest-two": {
+    "emitted_body": "{\"model\": \"claude-opus-5\", \"max_tokens\": 100, \"messages\": [{\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"a\", \"name\": \"Bash\", \"input\": {\"command\": \"ls -la\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"a\", \"content\": \"[winnow: Bash result removed, rule B2, 356 bytes. Not cached, not stored. Re-run the call if it is needed again.]\", \"is_error\": false}]}, {\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"b\", \"name\": \"Bash\", \"input\": {\"command\": \"git status\"}, \"cache_control\": {\"type\": \"ephemeral\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"b\", \"content\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"is_error\": false}]}, {\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"c\", \"name\": \"Bash\", \"input\": {\"command\": \"git diff\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"c\", \"content\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"is_error\": false}]}]}",
+    "ledger_line": "{\"bytes_deferred\": 712, \"bytes_dropped\": 356, \"cache_ttl\": null, \"deferred\": [{\"bytes\": 356, \"rule\": \"B2\", \"tool\": \"Bash\", \"tool_use_id\": \"b\"}, {\"bytes\": 356, \"rule\": \"B2\", \"tool\": \"Bash\", \"tool_use_id\": \"c\"}], \"dropped\": [{\"bytes\": 356, \"rule\": \"B2\", \"tool\": \"Bash\", \"tool_use_id\": \"a\"}], \"inflated\": 0, \"kind\": \"filter\", \"model\": \"claude-opus-5\", \"request_id\": \"req_golden\", \"tool_results_seen\": 3, \"v\": 1}",
+    "plan": {
+      "breakpoint_moved": true,
+      "bytes_deferred": 712,
+      "bytes_dropped": 356,
+      "cache_ttl": null,
+      "changed": true,
+      "deferred": [
+        {
+          "bytes": 356,
+          "rule": "B2",
+          "tool": "Bash",
+          "tool_use_id": "b"
+        },
+        {
+          "bytes": 356,
+          "rule": "B2",
+          "tool": "Bash",
+          "tool_use_id": "c"
+        }
+      ],
+      "dropped": [
+        {
+          "bytes": 356,
+          "rule": "B2",
+          "tool": "Bash",
+          "tool_use_id": "a"
+        }
+      ],
+      "inflated": 0,
+      "model": "claude-opus-5",
+      "tool_results_seen": 3
+    }
+  },
+  "12-tier-c-only": {
+    "emitted_body": "{\"model\": \"claude-opus-5\", \"max_tokens\": 100, \"messages\": [{\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"a\", \"name\": \"Bash\", \"input\": {\"command\": \"git status\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"a\", \"content\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"is_error\": false}]}, {\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"b\", \"name\": \"Glob\", \"input\": {\"pattern\": \"**/*.py\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"b\", \"content\": \"[winnow: Glob result removed, rule C1, 356 bytes. Not cached, not stored. Re-run the call if it is needed again.]\", \"is_error\": false}]}, {\"role\": \"assistant\", \"content\": [{\"type\": \"tool_use\", \"id\": \"c\", \"name\": \"Bash\", \"input\": {\"command\": \"git diff\"}}]}, {\"role\": \"user\", \"content\": [{\"type\": \"tool_result\", \"tool_use_id\": \"c\", \"content\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"is_error\": false}]}]}",
+    "ledger_line": "{\"bytes_deferred\": 0, \"bytes_dropped\": 356, \"cache_ttl\": null, \"deferred\": [], \"dropped\": [{\"bytes\": 356, \"rule\": \"C1\", \"tool\": \"Glob\", \"tool_use_id\": \"b\"}], \"inflated\": 0, \"kind\": \"filter\", \"model\": \"claude-opus-5\", \"request_id\": \"req_golden\", \"tool_results_seen\": 3, \"v\": 1}",
+    "plan": {
+      "breakpoint_moved": false,
+      "bytes_deferred": 0,
+      "bytes_dropped": 356,
+      "cache_ttl": null,
+      "changed": true,
+      "deferred": [],
+      "dropped": [
+        {
+          "bytes": 356,
+          "rule": "C1",
+          "tool": "Glob",
+          "tool_use_id": "b"
+        }
+      ],
+      "inflated": 0,
+      "model": "claude-opus-5",
+      "tool_results_seen": 3
+    }
+  }
+}

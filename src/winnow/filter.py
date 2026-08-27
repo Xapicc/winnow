@@ -21,12 +21,29 @@ convenience — a policy whose output varied between two requests over the same
 conversation would change the prefix under the cache and destroy the thing it
 exists to protect. The same conversation must always render to the same bytes.
 
-**What it can and cannot decide.** Only the rules that need no hindsight: C1
-(locator), C3 (passing verification) and B2 (Bash inspection), which are
-decidable from the call and its `is_error` alone. C2 needs a later duplicate, B1
-a later read, A1 a later edit; all three are the pruner's and stay there. The
-information loss is identical to the pruner's at those three rules — this changes
-what the strip costs, not what it removes.
+**What it can and cannot decide.** Only the *prefix-determined* rules: C1
+(locator), C3 (passing verification) and B2 (Bash inspection). The property that
+admits them is not "needs no hindsight" but the narrower one `rules.PREFIX_DETERMINED`
+declares — the verdict cannot move once a later turn arrives, so the same
+conversation renders to the same bytes on every request. C2 needs a later
+duplicate, B1 a later read, A1 a later edit; all three are the pruner's and stay
+there. The information loss is identical to the pruner's at those three rules —
+this changes what the strip costs, not what it removes.
+
+**The rules themselves are not here.** `rules.stateless_rule_for` owns them, so
+the component that prices a cut and the component that makes one on a live wire
+cannot come apart about what a locator or an inspection is. What is here is guard
+G3, the guards this component applies for itself, the deferral, and the
+breakpoint. Which rules may fire is SPEC §8's selection, resolved once at process
+start and held in `proxy.Config` — never per request, because a verdict that could
+change when somebody exported a variable in another shell would break the prefix
+from outside the process.
+
+**What it reports, and what that is for.** Three record types reach the ledger:
+what it removed, a periodic heartbeat carrying what it *looked at* — without which
+a filter that has stopped filtering is indistinguishable from a quiet week — and
+the size, shape and stability of the fixed prefix, which no other process in this
+tree has ever been able to see.
 """
 
 from __future__ import annotations
@@ -111,6 +128,35 @@ DEFAULT_KEEP_NEWEST = 1
 MAX_BREAKPOINTS = 4
 
 POINTER_RE = re.compile(r"^\[winnow: .* removed, rule [A-Z]\d, \d+ bytes")
+
+# ─── Deferred, on purpose ────────────────────────────────────────────────────
+#
+# Three things this component was asked for and did not get, recorded here so the
+# next reader can tell a decision from an oversight.
+#
+# **A `str`-only refusal on candidate content** (option Q). `result_size` measures
+# a list-form content through `json.dumps`, so a result carrying image blocks is
+# sized including its base64 and could in principle be claimed. Today it cannot
+# be: `rule_for` fires on four literal tool names and every one of them returns a
+# string. The one-line refusal lands with the first widening of that set, not
+# before — it is a no-op on 100% of current candidates, and a guard that never
+# fires is a guard nobody maintains.
+#
+# **Reading the response** (option I). A narrow `message_start` read would let the
+# proxy see `usage` and immunise `winnow savings` against a double-count. It is
+# real and small and it is the lowest value per unit of new surface beside a live
+# credential in the whole set. Take it if and when that double-count actually
+# bites. Its headline claim — that reading the response would make `savings`
+# *measured* rather than modelled — is a category error and is not a reason: the
+# counterfactual is on the other side of the subtraction and no response contains
+# it.
+#
+# **`count_tokens` parity** (option K). `_is_filtered` deliberately excludes
+# `/v1/messages/count_tokens`, so the count describes a body the real request
+# never sends. There is zero saving available there and the two bodies differ by
+# construction anyway; whether the CLI decides compaction from the stale count is
+# a measurement, is written up in the proposal set's validation plan, and needs no
+# code here.
 
 # The ledger's schema version. Bump it when a key's *meaning* changes, not when
 # one is added — an addition is what a reader survives by asking "is this key

@@ -199,9 +199,20 @@ def _blocks(message: dict) -> list:
     return content if isinstance(content, list) else []
 
 
-def _index_tool_uses(messages: list) -> dict[str, tuple[str, dict]]:
-    index: dict[str, tuple[str, dict]] = {}
-    for message in messages:
+def _index_tool_uses(messages: list) -> dict[str, tuple[str, dict, int]]:
+    """`tool_use_id → (tool name, input, the message index of the *call*)`.
+
+    The third element is what makes deferral a property of the turn rather than
+    of the result. The model issues a parallel batch as several `tool_use` blocks
+    in one assistant message; whether the answers come back as one user message
+    with several `tool_result` blocks or as several user messages is a wire
+    detail nothing in a transcript can settle — every user record in this corpus
+    carries exactly one `tool_result`, 64,651 of 64,651 — so the assistant
+    message the results answer is the only grouping that is correct under either
+    layout.
+    """
+    index: dict[str, tuple[str, dict, int]] = {}
+    for m_index, message in enumerate(messages):
         if not isinstance(message, dict):
             continue
         for block in _blocks(message):
@@ -212,6 +223,7 @@ def _index_tool_uses(messages: list) -> dict[str, tuple[str, dict]]:
                     index[use_id] = (
                         block.get("name") or "",
                         tool_input if isinstance(tool_input, dict) else {},
+                        m_index,
                     )
     return index
 
@@ -369,8 +381,9 @@ def apply(
 
     uses = _index_tool_uses(messages)
 
-    # Every tool_result in wire order, with the rule that would fire on it.
-    results: list[tuple[int, int, dict, str | None, int]] = []
+    # Every tool_result in wire order, with the rule that would fire on it and
+    # the assistant turn it answers.
+    results: list[tuple[int, int, dict, str | None, int, int]] = []
     for m_index, message in enumerate(messages):
         if not isinstance(message, dict):
             continue
@@ -385,10 +398,12 @@ def apply(
             # records for the pruner's own re-runs.
             if isinstance(content, str) and POINTER_RE.match(content):
                 continue
-            name, tool_input = uses.get(block.get("tool_use_id", ""), ("", {}))
+            name, tool_input, turn = uses.get(
+                block.get("tool_use_id", ""), ("", {}, m_index)
+            )
             rule = rule_for(name, tool_input, bool(block.get("is_error")), enabled)
             size = result_size(content)
-            results.append((m_index, b_index, block, rule, size))
+            results.append((m_index, b_index, block, rule, size, turn))
 
     # G2 the size floor, then G4 no net inflation. G4 is the one guard SPEC §4
     # applies *after* a rule has fired, because it compares the result against the
@@ -401,10 +416,10 @@ def apply(
     # fourth reader of SPEC §4 and it must not acquire a fourth opinion about a
     # guard. The pointer computed for the test is the one that gets used.
     candidates: list[tuple[int, int, dict, str, int, str, str]] = []
-    for m_index, b_index, block, rule, size in results:
+    for m_index, b_index, block, rule, size, _turn in results:
         if rule is None or size < min_bytes:
             continue
-        name = uses.get(block.get("tool_use_id", ""), ("", {}))[0]
+        name = uses.get(block.get("tool_use_id", ""), ("", {}, m_index))[0]
         text = pointer(name or "tool", rule, size)
         if inflates(text, size):
             plan.inflated += 1
@@ -413,11 +428,44 @@ def apply(
     if not candidates:
         return body, plan
 
-    # The newest `keep_newest` results are exempt: the model is still acting on
-    # them. Exemption is counted over *all* results, not only candidates, so a
-    # candidate two calls back is dropped even when the two after it are not.
-    exempt_from = len(results) - keep_newest
-    exempt_ids = {id(results[i][2]) for i in range(max(0, exempt_from), len(results))}
+    # The results answering the newest `keep_newest` assistant **turns** are
+    # exempt: the model is still acting on them. Exemption is counted over *all*
+    # results, not only candidates, so a candidate two turns back is dropped even
+    # when the ones after it are not.
+    #
+    # **Turns, not results, and this is the correction.** The module docstring's
+    # own sentence is that a candidate "is sent in full on the one request where
+    # the model actually acts on it"; counting the last `keep_newest` entries of a
+    # flat list does not say that. When the model issues several tool calls in one
+    # turn, only the last answer was exempt and the rest were replaced by pointers
+    # on the very request carrying them to the model for the first time. Measured
+    # over 866 transcripts: 15.58% of tool-issuing requests are parallel batches,
+    # and **one byte in seven of everything the filter removes was removed before
+    # the model had read it** — 3,516,979 bytes across 332 sessions. The model
+    # asked three questions and got one answer and two receipts.
+    #
+    # It is not a cache break — those results render as a pointer from their first
+    # request onward and never change — which is why nothing caught it. It is an
+    # information failure, invisible in every number the filter reports, and it
+    # makes milestone 3's quality arm unmeasurable: an arm that sometimes withholds
+    # an answer the model asked for is not "the same session with once-only results
+    # removed", so a difference in task success cannot be attributed.
+    #
+    # Grouped on the *`tool_use` block's* message index rather than the
+    # `tool_result`'s own, because the two disagree exactly where it matters. A
+    # parallel batch is one assistant message and, on this corpus, several user
+    # records — every user record carries exactly one `tool_result`, 64,651 of
+    # 64,651 — so grouping by the message the results sit in would restore the
+    # defect for the layout Claude Code actually writes. Grouping by the call is
+    # correct under either wire layout.
+    exempt_ids: set[int] = set()
+    if keep_newest > 0:
+        turns: list[int] = []
+        for entry in results:
+            if entry[5] not in turns:
+                turns.append(entry[5])
+        exempt_turns = set(turns[-keep_newest:])
+        exempt_ids = {id(entry[2]) for entry in results if entry[5] in exempt_turns}
 
     # The *oldest* deferred candidate, not the newest. The breakpoint goes in
     # front of this one, so every deferred candidate ends up strictly after the

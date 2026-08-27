@@ -63,6 +63,29 @@ def results_of(request: dict) -> list[dict]:
     ]
 
 
+def batch(*calls: tuple[str, str, dict], split: bool = False) -> list[dict]:
+    """One assistant turn issuing several tool calls, and the answers.
+
+    `split=False` puts every `tool_result` in one user message; `split=True` puts
+    each in its own, which is the layout every user record in this operator's
+    corpus actually has (64,651 of 64,651 carry exactly one result). The filter
+    must group by the *call* rather than by the message the answers sit in, so
+    both layouts have to behave the same and both are exercised.
+    """
+    uses = [
+        {"type": "tool_use", "id": uid, "name": name, "input": tool_input}
+        for uid, name, tool_input in calls
+    ]
+    blocks = [
+        {"type": "tool_result", "tool_use_id": uid, "content": BIG, "is_error": False}
+        for uid, _, _ in calls
+    ]
+    assistant = {"role": "assistant", "content": uses}
+    if split:
+        return [assistant] + [{"role": "user", "content": [b]} for b in blocks]
+    return [assistant, {"role": "user", "content": blocks}]
+
+
 def breakpoints_of(request: dict) -> list[tuple[int, int]]:
     return [
         (m, b)
@@ -142,6 +165,81 @@ def test_a_small_result_is_left_alone():
     _, plan = apply(request)
     assert plan.dropped == []
     assert results_of(request)[0]["content"] == SMALL
+
+
+# ─── Deferral is by turn, not by result ──────────────────────────────────────
+
+
+@pytest.mark.parametrize("split", [False, True], ids=["one-message", "one-per-message"])
+def test_a_parallel_batch_is_deferred_whole(split):
+    """The model asked three questions. It must not get one answer and two
+    receipts.
+
+    Counting the last `keep_newest` entries of a flat list exempted only the last
+    result of a batch and replaced the rest with pointers on the very request
+    carrying them to the model for the first time: 15.58% of tool-issuing requests
+    are batches on this corpus, and one byte in seven of everything the filter
+    removes was removed before the model had read it.
+    """
+    request = body(*batch(("a", "Bash", {"command": "ls -la"}),
+                          ("b", "Bash", {"command": "git status"}),
+                          ("c", "Glob", {"pattern": "*.py"}), split=split))
+    _, plan = apply(request)
+    assert plan.dropped == []
+    assert plan.bytes_dropped == 0
+    assert len(plan.deferred) == 3
+    assert all(r["content"] == BIG for r in results_of(request))
+
+
+@pytest.mark.parametrize("split", [False, True], ids=["one-message", "one-per-message"])
+def test_the_previous_batch_goes_whole_on_the_next_request(split):
+    """And it is a deferral, not an exemption: once the model has answered, the
+    whole batch is a pointer."""
+    request = body(*batch(("a", "Bash", {"command": "ls -la"}),
+                          ("b", "Bash", {"command": "git status"}), split=split),
+                   *batch(("c", "Bash", {"command": "git diff"}),
+                          ("d", "Glob", {"pattern": "*.py"}), split=split))
+    _, plan = apply(request)
+    assert len(plan.dropped) == 2
+    assert len(plan.deferred) == 2
+    contents = [r["content"] for r in results_of(request)]
+    assert contents[0].startswith("[winnow:") and contents[1].startswith("[winnow:")
+    assert contents[2] == BIG and contents[3] == BIG
+
+
+@pytest.mark.parametrize("split", [False, True], ids=["one-message", "one-per-message"])
+def test_the_breakpoint_goes_in_front_of_the_whole_batch(split):
+    """Every member of the deferred batch is going to become a pointer next
+    request, so every member has to be outside the write region — not just the
+    last one."""
+    request = body(*batch(("a", "Bash", {"command": "ls -la"}), split=split),
+                   *batch(("b", "Bash", {"command": "git status"}),
+                          ("c", "Bash", {"command": "git diff"}),
+                          ("d", "Glob", {"pattern": "*.py"}), split=split))
+    _, plan = apply(request)
+    assert plan.breakpoint_moved
+    last_break = max(breakpoints_of(request))
+    deferred_ids = {entry["tool_use_id"] for entry in plan.deferred}
+    positions = [
+        (m, b)
+        for m, message in enumerate(request["messages"])
+        for b, block in enumerate(message["content"])
+        if isinstance(block, dict) and block.get("tool_use_id") in deferred_ids
+    ]
+    assert len(positions) == 3
+    assert all(position > last_break for position in positions)
+
+
+def test_a_result_whose_call_is_missing_still_groups_by_its_own_message():
+    """A `tool_result` with no matching `tool_use` — 3 in 64,654 on this corpus —
+    has no turn to be grouped by. It falls back to its own position rather than
+    joining an unrelated batch."""
+    request = body(*turn("a", "Bash", {"command": "ls -la"}),
+                   *turn("b", "Bash", {"command": "git diff"}))
+    request["messages"][2]["content"] = []  # the tool_use for `b` disappears
+    _, plan = apply(request)
+    assert len(plan.dropped) == 1
+    assert plan.dropped[0]["tool_use_id"] == "a"
 
 
 # ─── Rule selection reaches the filter ───────────────────────────────────────

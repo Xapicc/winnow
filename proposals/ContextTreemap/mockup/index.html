@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>winnow context — visual mockup</title>
+<style>
+/* ---------------------------------------------------------------------------
+   Palette: the dataviz skill's reference instance, values unchanged.
+   Categorical slots are assigned to PROVENANCE, in the fixed slot order, by the
+   honesty ladder — exact, derived, est, residual. The assignment is stable across
+   every figure on this page: colour follows the kind of claim, never the row's rank.
+   Both 4-slot sets were run through scripts/validate_palette.js:
+     light  ALL CHECKS PASS  (worst adjacent CVD dE 9.1, normal-vision 22.9;
+                              contrast WARN on aqua/yellow -> relief is the visible
+                              direct label on every single row, plus the table columns)
+     dark   ALL CHECKS PASS  (worst adjacent CVD dE 8.4, normal-vision 19.8, all >= 3:1)
+   The readout itself is monospace because the artefact being mocked is a terminal
+   readout and column alignment is its layout; page chrome is the system sans.
+--------------------------------------------------------------------------- */
+:root {
+  color-scheme: light;
+  --plane:      #f9f9f7;
+  --surface:    #fcfcfb;
+  --ink:        #0b0b0b;
+  --ink-2:      #52514e;
+  --muted:      #898781;
+  --grid:       #e1e0d9;
+  --baseline:   #c3c2b7;
+  --border:     rgba(11,11,11,0.10);
+  --k-exact:    #2a78d6;
+  --k-derived:  #eb6834;
+  --k-est:      #1baf7a;
+  --k-residual: #eda100;
+  --critical:   #d03b3b;
+  --warning:    #fab219;
+  --wash:       rgba(11,11,11,0.035);
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --plane:      #0d0d0d;
+    --surface:    #1a1a19;
+    --ink:        #ffffff;
+    --ink-2:      #c3c2b7;
+    --muted:      #898781;
+    --grid:       #2c2c2a;
+    --baseline:   #383835;
+    --border:     rgba(255,255,255,0.10);
+    --k-exact:    #3987e5;
+    --k-derived:  #d95926;
+    --k-est:      #199e70;
+    --k-residual: #c98500;
+    --wash:       rgba(255,255,255,0.05);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --plane:      #0d0d0d;
+  --surface:    #1a1a19;
+  --ink:        #ffffff;
+  --ink-2:      #c3c2b7;
+  --muted:      #898781;
+  --grid:       #2c2c2a;
+  --baseline:   #383835;
+  --border:     rgba(255,255,255,0.10);
+  --k-exact:    #3987e5;
+  --k-derived:  #d95926;
+  --k-est:      #199e70;
+  --k-residual: #c98500;
+  --wash:       rgba(255,255,255,0.05);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--plane);
+  color: var(--ink);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  padding: 28px 20px 80px;
+}
+.page { max-width: 1080px; margin: 0 auto; }
+h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -0.01em; }
+h2 { font-size: 17px; margin: 0 0 2px; letter-spacing: -0.01em; }
+h3 { font-size: 13px; margin: 20px 0 6px; text-transform: uppercase;
+     letter-spacing: 0.07em; color: var(--ink-2); font-weight: 600; }
+p  { margin: 0 0 10px; max-width: 74ch; color: var(--ink-2); }
+p.lead { color: var(--ink); }
+a { color: var(--k-exact); }
+code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas,
+              "Liberation Mono", monospace; }
+code { font-size: 0.92em; background: var(--wash); padding: 0.5px 4px; border-radius: 3px; }
+
+/* --- header ------------------------------------------------------------- */
+.top { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap;
+       border-bottom: 1px solid var(--grid); padding-bottom: 16px; margin-bottom: 20px; }
+.top .grow { flex: 1 1 460px; min-width: 300px; }
+.sub { color: var(--muted); font-size: 13px; margin: 0; }
+.controls { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+button {
+  font: inherit; font-size: 12.5px; color: var(--ink-2); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; cursor: pointer;
+}
+button:hover { background: var(--wash); }
+button[aria-pressed="true"] { color: var(--ink); border-color: var(--baseline); background: var(--wash); }
+button:focus-visible { outline: 2px solid var(--k-exact); outline-offset: 2px; }
+
+/* --- the provenance key (a permanent part of the design, not a footnote) -- */
+.key { display: flex; flex-wrap: wrap; gap: 4px 22px; background: var(--surface);
+       border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 24px; }
+.key div { font-size: 12.5px; color: var(--ink-2); flex: 1 1 300px; }
+.key b { color: var(--ink); font-weight: 600; }
+.chip { display: inline-block; width: 9px; height: 9px; border-radius: 2px;
+        margin-right: 6px; vertical-align: 0px; }
+.chip.exact    { background: var(--k-exact); }
+.chip.derived  { background: var(--k-derived); }
+.chip.est      { background: var(--k-est); }
+.chip.residual { background: var(--k-residual); }
+.chip.unknown  { background: transparent; border: 1px solid var(--baseline); }
+
+/* --- figure card -------------------------------------------------------- */
+.fig { background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+       padding: 18px 18px 0; margin: 0 0 26px; overflow: hidden; }
+.fig > .figbody { padding-bottom: 4px; }
+.fighead { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+           margin-bottom: 10px; }
+.fighead .tag { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+                color: var(--muted); border: 1px solid var(--border); border-radius: 4px;
+                padding: 2px 6px; }
+.fighead .grow { flex: 1 1 auto; }
+.sessline { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+            font-size: 12px; color: var(--muted); margin: 0 0 12px; }
+
+/* --- exact facts above the tree ----------------------------------------- */
+.facts { border-left: 3px solid var(--k-exact); padding: 2px 0 2px 12px; margin: 0 0 16px; }
+.fact { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+        font-size: 13px; }
+.fact .fl { flex: 1 1 260px; color: var(--ink); }
+.fact .fv { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink); }
+.fact .fp { font-variant-numeric: tabular-nums; color: var(--ink-2); width: 6ch; text-align: right; }
+.fact .fk { width: 9ch; color: var(--ink-2); }
+.fact + .factnote { margin: 1px 0 8px 0; }
+.factnote { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+            font-size: 11.5px; color: var(--muted); max-width: none; }
+.factnote.warn { color: var(--critical); }
+.factnote.warn::before { content: "! "; font-weight: 700; }
+
+/* --- the ledger: derived + est against the exact window ------------------ */
+.ledger { margin: 0 0 18px; }
+.ledger .track { position: relative; height: 16px; display: flex; gap: 2px;
+                 margin-bottom: 6px; }
+.ledger .seg { height: 100%; border-radius: 2px; }
+.ledger .seg.derived  { background: var(--k-derived); }
+.ledger .seg.est      { background: var(--k-est); }
+.ledger .seg.residual { background: var(--k-residual); }
+.ledger .winline { position: absolute; top: -4px; bottom: -4px; width: 2px;
+                   background: var(--ink); }
+.ledger .over { position: absolute; top: 18px; height: 5px;
+                border: 2px solid var(--k-residual); border-top: none; border-radius: 0 0 3px 3px; }
+.ledger .lg { font-size: 12px; color: var(--ink-2);
+              font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+              font-variant-numeric: tabular-nums; }
+.ledger .lg.pad { margin-top: 10px; }
+
+/* --- the readout rows --------------------------------------------------- */
+.tree { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+        font-size: 12.5px; }
+.row { display: grid; grid-template-columns: 244px minmax(140px,1fr) 82px 60px 74px;
+       align-items: center; column-gap: 10px; padding: 1px 0; }
+.row.d1 { font-weight: 600; }
+.row .lab { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row.d2 .lab { padding-left: 2ch; font-weight: 400; color: var(--ink-2); }
+.row.d3 .lab { padding-left: 4ch; font-weight: 400; color: var(--ink-2); }
+.row .tok { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); }
+.row .pct { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.row .knd { color: var(--ink-2); font-size: 11.5px; white-space: nowrap; }
+.row.unsized .tok, .row.unsized .pct { color: var(--muted); }
+.row.pending { opacity: 0.92; }
+.row.pending .lab, .row.pending .tok { color: var(--k-est); }
+
+/* the diverging track: a zero line, 60px of deficit room, 180px of positive room */
+.trk { position: relative; height: 16px; }
+.trk .zero { position: absolute; left: 60px; top: 0; bottom: 0; width: 1px; background: var(--baseline); }
+.trk .bar { position: absolute; top: 50%; transform: translateY(-50%); }
+.trk .bar.pos { left: 60px; border-radius: 0 4px 4px 0; }
+.trk .bar.neg { right: calc(100% - 60px); border-radius: 4px 0 0 4px; }
+.bar.exact    { background: var(--k-exact); }
+.bar.derived  { background: var(--k-derived); }
+.bar.est      { background: var(--k-est); }
+.bar.residual { background: var(--k-residual); }
+.bar.pending  { background: var(--k-est); opacity: 0.45; }
+.h1 { height: 12px; } .h2 { height: 8px; } .h3 { height: 5px; }
+.trk .none { position: absolute; left: 67px; top: 0; font-size: 11px; color: var(--muted); }
+
+/* notes hang under the label column, not under the bar track */
+.note { font-size: 11.5px; color: var(--muted); margin: 0 0 3px 254px;
+        padding-left: 0; max-width: none; }
+.note.d2 { padding-left: 2ch; } .note.d3 { padding-left: 4ch; }
+.note::before { content: "· "; }
+.note.warn { color: var(--critical); }
+.note.warn::before { content: "! "; font-weight: 700; }
+
+/* --- caption strip ------------------------------------------------------ */
+.caption { margin: 14px -18px 0; padding: 12px 18px; border-top: 1px solid var(--grid);
+           background: var(--wash); font-size: 12px; color: var(--ink-2); }
+.caption dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 14px; margin: 0; }
+.caption dt { color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em;
+              font-size: 10.5px; padding-top: 2px; }
+.caption dd { margin: 0; }
+.caption .mono { font-variant-numeric: tabular-nums; }
+.caption b { color: var(--ink); }
+
+/* --- treemap comparison ------------------------------------------------- */
+.tmwrap { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-start; }
+.tmwrap > * { flex: 1 1 300px; min-width: 280px; }
+.tm { display: flex; height: 200px; gap: 2px; }
+.tm .col { display: flex; flex-direction: column; gap: 2px; }
+.tm .cell { position: relative; border-radius: 2px; overflow: hidden;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+            font-size: 10.5px; padding: 4px 5px; color: #fff; line-height: 1.25; }
+.tm .cell.derived { background: var(--k-derived); }
+.tm .cell.est { background: var(--k-est); }
+.tm .cell { min-height: 0; }
+.tmkey { display: grid; grid-template-columns: max-content 1fr max-content; gap: 1px 10px;
+         font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+         font-size: 11.5px; margin-top: 10px; color: var(--ink-2); }
+.tmkey .v { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); }
+.cant { list-style: none; padding: 0; margin: 8px 0 0; font-size: 12px; }
+.cant li { padding: 4px 0 4px 18px; position: relative; color: var(--ink-2);
+           border-bottom: 1px solid var(--grid); }
+.cant li::before { content: "\00d7"; position: absolute; left: 2px; color: var(--critical);
+                   font-weight: 700; }
+.cant li:last-child { border-bottom: none; }
+
+/* --- empty states ------------------------------------------------------- */
+.states { display: grid; grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); gap: 14px; }
+.state { background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+         padding: 14px 16px; }
+.state h4 { margin: 0 0 8px; font-size: 13px; color: var(--ink); }
+.term { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+        font-size: 12px; white-space: pre-wrap; margin: 0; color: var(--ink-2);
+        border-left: 2px solid var(--grid); padding-left: 10px; }
+.term .cmd { color: var(--ink); }
+.term .cmd::before { content: "$ "; color: var(--muted); }
+.term .bad { color: var(--critical); }
+.term .num { color: var(--ink); font-variant-numeric: tabular-nums; }
+.term .dim { color: var(--muted); }
+.state .why { font-size: 11.5px; color: var(--muted); margin: 10px 0 0; }
+
+/* --- live ---------------------------------------------------------------- */
+.livebar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+           border: 1px solid var(--k-est); border-radius: 8px; padding: 10px 12px;
+           margin-bottom: 14px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas,
+           "Liberation Mono", monospace; font-size: 12px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--k-est); flex: none; }
+.blink { animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.25 } }
+@media (prefers-reduced-motion: reduce) { .blink { animation: none } }
+.livegrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px,1fr));
+            gap: 2px 18px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas,
+            "Liberation Mono", monospace; font-size: 12px; margin-bottom: 14px; }
+.livegrid div { color: var(--ink-2); }
+.livegrid b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.torn { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+        font-size: 11.5px; color: var(--muted); background: var(--wash);
+        border: 1px dashed var(--baseline); border-radius: 4px; padding: 6px 8px; margin: 10px 0 0;
+        white-space: pre-wrap; word-break: normal; overflow-wrap: anywhere; }
+
+.foot { border-top: 1px solid var(--grid); margin-top: 34px; padding-top: 16px;
+        font-size: 12px; color: var(--muted); }
+.foot b { color: var(--ink-2); }
+
+@media (max-width: 720px) {
+  .row { grid-template-columns: 120px minmax(100px,1fr) 74px 54px; }
+  .row .knd { display: none; }
+  .trk .zero { left: 30px } .trk .bar.pos { left: 30px }
+  .trk .bar.neg { right: calc(100% - 30px) }
+  .trk .none { left: 37px }
+  .note { margin-left: 0 }
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="top">
+  <div class="grow">
+    <h1><code>winnow context &lt;session-id&gt;</code> — visual mockup</h1>
+    <p class="sub">proposals/ContextTreemap · mockup only · nothing here reads a file, resolves an
+      id, or parses a transcript. Every number is hard-coded from
+      <code>06-spike-findings.md</code>.</p>
+  </div>
+  <div class="controls">
+    <button id="t-auto"  aria-pressed="true"  data-theme-set="auto">Auto</button>
+    <button id="t-light" aria-pressed="false" data-theme-set="light">Light</button>
+    <button id="t-dark"  aria-pressed="false" data-theme-set="dark">Dark</button>
+  </div>
+</div>
+
+<p class="lead">The spike amended the recommendation before this was drawn, so this draws the
+amended shape: <b>a ranked receipt with exact facts above it</b>, not a treemap; the third level
+demoted to an opt-in and re-keyed artefact-first; and a new exact block above the tree for context
+that left the window with no compaction boundary. Figure 5 shows why the treemap was dropped.</p>
+
+<div class="key">
+  <div><span class="chip exact"></span><b>exact</b> — read from
+    <code>usage.{input,cache_creation,cache_read}_tokens</code> on the anchoring request.</div>
+  <div><span class="chip derived"></span><b>derived</b> — an exact number minus an estimate.
+    Material that is in the window and not in the file.</div>
+  <div><span class="chip est"></span><b>est</b> — payload characters / 2.6. The band is 2.4–3.0
+    and it is the whole error bar.</div>
+  <div><span class="chip residual"></span><b>residual</b> — window minus everything above it.
+    May be negative. It is the confession, not a category.</div>
+  <div><span class="chip unknown"></span><b>unknown</b> — in the window, in no record type, not
+    separable. Deliberately <i>unsized</i>: no bar is drawn, because there is no length to draw.</div>
+  <div style="color:var(--muted)">Every row states its own kind. Colour never carries the claim
+    alone, and no figure prints a “% of window full”: nothing in a transcript states the window size.</div>
+</div>
+
+<h3>Figure 1 — ended session · the one the spike says pays for the tool</h3>
+<div class="fig" id="fig-b66837ed"></div>
+
+<h3>Figure 2 — ended session · the one where the readout is wrong and says so</h3>
+<div class="fig" id="fig-939a04dc"></div>
+
+<h3>Figure 3 — ended session · half the window is not in the transcript</h3>
+<div class="fig" id="fig-e268d6c5"></div>
+
+<h3>Figure 4 — live session · the same picture, moving and incomplete</h3>
+<div class="fig" id="fig-live"></div>
+
+<h3>Figure 5 — why this is a receipt and not a treemap</h3>
+<div class="fig" id="fig-treemap"></div>
+
+<h3>Figure 6 — four ways of having nothing</h3>
+<div class="states" id="states"></div>
+
+<div class="foot">
+  <p><b>Sessions drawn.</b> <code>b66837ed</code>, <code>939a04dc</code> and <code>e268d6c5</code>,
+  as printed in <code>06-spike-findings.md</code> §“The seven sessions”. Home directories were
+  already collapsed to <code>~</code> by the spike itself. Nothing else in the labels was edited;
+  the paths are this repository's own files and a browser-automation run's own source tree.</p>
+  <p><b>Drawn, not measured.</b> Figure 4's live deltas — the anchor age, the estimated tokens
+  since the anchor, the elapsed time on the in-flight call, and the torn trailing fragment — have
+  no counterpart in the spike, which reads ended sessions only. They are sized from this session's
+  own per-call averages and marked as invented in the figure's caption strip. Figure 2's
+  artefact-first pooling is arithmetic over rows the spike printed, not a re-run.</p>
+</div>
+
+</div>
+
+<script>
+/* ===========================================================================
+   DATA — hard-coded from 06-spike-findings.md. No parsing, no I/O, no network.
+   r(depth, label, tokens, pct, kind, note)   tokens === null  =>  unsized/unknown
+   =========================================================================== */
+function r(d, l, t, p, k, note, flag, note2, flag2) {
+  return {d:d, l:l, t:t, p:p, k:k, note:note, flag:flag, note2:note2, flag2:flag2};
+}
+
+const FIGS = {
+
+/* ------------------------------------------------------------------ fig 1 */
+"b66837ed": {
+  tag: "ended",
+  title: "One auto-invoked skill body is 54.4% of a 487,584-token window",
+  sess: "session b66837ed · 511 records · 107 requests (107 in the window) · claude-opus-5 · no compaction",
+  facts: [ {l:"window at the last request", v:487584, p:100.0, k:"exact"} ],
+  ledger: {derived:65593, dpct:13.5, est:439532, epct:90.1, resid:-17542, rpct:-3.6, window:487584},
+  solved: "2.71",
+  rows: [
+    r(1,"tool traffic",417842,85.7,"est"),
+    r(2,"Skill results",265450,54.4,"est","reaches the window as a user/text block, paired by sourceToolUseID. /context folds this into Messages."),
+    r(3,"claude-api  x2",265450,54.4,"est","auto-invoked twice by one trigger. The second copy is duplication.","warn"),
+    r(2,"tool_use inputs",99941,20.5,"est"),
+    r(3,"Write  x16",66947,13.7,"est"),
+    r(3,"Bash  x97",28686,5.9,"est"),
+    r(3,"Edit  x11",4194,0.9,"est"),
+    r(3,"2 more nodes, each smaller",115,0.0,"est"),
+    r(2,"Bash results",45840,9.4,"est"),
+    r(3,"$ cd  x34",13107,2.7,"est","bash_head splits on && and keeps the first segment, so every `cd X && ...` files here. Wrong key for this job — spike finding 3.","warn"),
+    r(3,"...c-9581-4e38-8e4a-f73cbe1eec1d.jsonl  x2",8214,1.7,"est"),
+    r(3,"$ sed -n  x6",7171,1.5,"est"),
+    r(3,"9 more nodes, each smaller",5876,1.2,"est"),
+    r(3,"$ ls  x9",4487,0.9,"est"),
+    r(3,"$ grep  x11",2808,0.6,"est"),
+    r(3,"$ echo  x5",2130,0.4,"est"),
+    r(3,"$ find  x2",2047,0.4,"est"),
+    r(2,"Read results",4522,0.9,"est"),
+    r(3,"/tmp/uf-rdt/verify2.txt",2034,0.4,"est"),
+    r(3,"/tmp/uf-rdt/verify.txt",1192,0.2,"est"),
+    r(3,"/tmp/uf-rdt/verify4.txt",770,0.2,"est"),
+    r(3,"/tmp/uf-rdt/verify3.txt",526,0.1,"est"),
+    r(2,"2 more nodes, each smaller",2090,0.4,"est"),
+    r(1,"retained reasoning (not in the file)",38860,8.0,"derived","= sum over 106 responses of (output_tokens - est(text + tool_use))"),
+    r(2,"thinking text",null,null,"unknown","stripped on disk; 58 blocks, 421 tok/block median for this session"),
+    r(1,"prefix (not in the file)",26734,5.5,"derived","= ctx(req 1) 34,642 - est(visible before it) 7,908"),
+    r(2,"system prompt",null,null,"unknown","carried by no record type"),
+    r(2,"tool definitions",null,null,"unknown","names only, never schemas"),
+    r(1,"standing configuration",18178,3.7,"est"),
+    r(2,"edited_text_file",10256,2.1,"est"),
+    r(2,"6 more nodes, each smaller",3589,0.7,"est"),
+    r(2,"skill_listing",2581,0.5,"est"),
+    r(2,"deferred_tools_delta",1752,0.4,"est"),
+    r(1,"conversation",3513,0.7,"est"),
+    r(2,"user turns",2902,0.6,"est"),
+    r(2,"assistant text",610,0.1,"est"),
+    r(1,"unattributed",-17542,-3.6,"residual","over-explained: 90.1% of this window is estimated, so the chars-per-token constant is the whole error bar")
+  ],
+  caption: {
+    "reads": "<b>tool traffic 85.7%</b>, and inside it one <code>Skill results &rarr; claude-api &times;2</code> node at <b>265,450 tokens (54.4%)</b>. Next row down is <code>Write</code> inputs at 13.7%.",
+    "exact": "the window total, <span class='mono'>487,584</span> — and nothing else on this figure.",
+    "derived": "<span class='mono'>65,593 (13.5%)</span> across two nodes, each an exact number minus an estimate.",
+    "estimated": "<span class='mono'>439,532 (90.1%)</span> at 2.6 chars/token.",
+    "unsized": "3 lines. They carry no tokens because the material they name is priced by their <code>derived</code> parent; they are printed so nothing is quietly dropped.",
+    "not shipped yet": "M1 (days 1&ndash;2) prints rows 1, 4, 5 and a ~40% residual. The two <code>derived</code> rows arrive at M3. This is the M3 picture — the one the spike actually produced."
+  }
+},
+
+/* ------------------------------------------------------------------ fig 2 */
+"939a04dc": {
+  tag: "ended",
+  title: "78,167 tokens left this window with no record of what they were",
+  sess: "session 939a04dc · 598 records · 111 requests (111 in the window) · claude-opus-5 · no compaction",
+  facts: [
+    {l:"window at the last request", v:222249, p:100.0, k:"exact"},
+    {l:"shed with no compaction boundary", v:78167, p:null, k:"exact",
+     note:"at record 288; what left is not in the file — cause: &lt;synthetic&gt; response (interrupt or API error), deferred_tools_delta", warn:true},
+    {l:"shed with no compaction boundary", v:9586, p:null, k:"exact",
+     note:"at record 404; what left is not in the file — cause: nothing in the file names a cause", warn:true}
+  ],
+  ledger: {derived:84242, dpct:37.9, est:194794, epct:87.6, resid:-56787, rpct:-25.6, window:222249},
+  solved: "3.67",
+  rows: [
+    r(1,"tool traffic",150874,67.9,"est"),
+    r(2,"tool_use inputs",91783,41.3,"est","this session pays for what it writes, not what it reads: inputs 41.3% against all four result classes at 23.8% combined"),
+    r(3,"Write  x9",48548,21.8,"est"),
+    r(3,"Edit  x76",29833,13.4,"est"),
+    r(3,"Bash  x39",9735,4.4,"est"),
+    r(3,"Agent  x3",2728,1.2,"est"),
+    r(3,"Read  x18",939,0.4,"est"),
+    r(2,"Bash results",29330,13.2,"est"),
+    r(3,"$ grep  x8",15943,7.2,"est"),
+    r(3,"$ python3  x6",4093,1.8,"est"),
+    r(3,"$ git log  x2",2400,1.1,"est"),
+    r(3,"$ sed -n  x2",2174,1.0,"est"),
+    r(3,"$ timeout  x8",2145,1.0,"est"),
+    r(3,"$ cd  x6",1395,0.6,"est"),
+    r(3,"6 more nodes, each smaller",1180,0.5,"est"),
+    r(2,"Read results",14815,6.7,"est"),
+    r(3,"...s/ContextTreemap/01-what-is-knowable.md",3015,1.4,"est"),
+    r(3,"...als/ContextTreemap/04-comparison.md  x3",2895,1.3,"est"),
+    r(3,"...ContextTreemap/05-recommendation.md  x5",2636,1.2,"est"),
+    r(3,".../proposals/ContextTreemap/00-problem.md",2360,1.1,"est"),
+    r(3,".../ContextTreemap/scratch/prefix_floor.py",1781,0.8,"est"),
+    r(3,"...ntextTreemap/scratch/floor_decompose.py",1585,0.7,"est"),
+    r(3,"4 more nodes, each smaller",542,0.2,"est"),
+    r(2,"Agent returns",8427,3.8,"est","3 sub-agents spent 369,134 tokens of their own windows to return 8,427 into this one. Their budgets are never added to it (§C11)."),
+    r(3,"...sisten  [own window 127,658, not added]",3238,1.5,"est"),
+    r(3,"...ntions  [own window 111,304, not added]",3161,1.4,"est"),
+    r(3,"...landed  [own window 130,172, not added]",2028,0.9,"est"),
+    r(2,"Edit results",5853,2.6,"est"),
+    r(3,"5 more nodes, each smaller",2420,1.1,"est"),
+    r(3,"...ontextTreemap/05-recommendation.md  x20",1498,0.7,"est","the same path as the Read node above, in a different subtree — see the re-key below","warn"),
+    r(3,"...emap/03-option-b-drill-down-tui.md  x13",1035,0.5,"est"),
+    r(3,"...s/ContextTreemap/02-constraints.md  x12",900,0.4,"est"),
+    r(2,"Write results",666,0.3,"est"),
+    r(3,"6 more nodes, each smaller",437,0.2,"est"),
+    r(3,"...eemap/03-option-d-project-of-its-own.md",77,0.0,"est"),
+    r(3,"...Treemap/03-option-a-one-shot-readout.md",77,0.0,"est"),
+    r(3,"...xtTreemap/03-option-b-drill-down-tui.md",76,0.0,"est"),
+    r(1,"retained reasoning (not in the file)",59826,26.9,"derived","= sum over 110 responses of (output_tokens - est(text + tool_use))"),
+    r(2,"thinking text",null,null,"unknown","stripped on disk; 17 blocks, 390 tok/block median for this session"),
+    r(1,"standing configuration",40823,18.4,"est"),
+    r(2,"edited_text_file",32018,14.4,"est","an attachment class, not a provenance. Nothing standing about it — spike finding 5."),
+    r(2,"nested_memory",2855,1.3,"est"),
+    r(3,"~/.claude/rules/python.md",2855,1.3,"est"),
+    r(2,"skill_listing",2592,1.2,"est"),
+    r(2,"hook_success",1748,0.8,"est"),
+    r(2,"agent_listing_delta",906,0.4,"est"),
+    r(2,"3 more nodes, each smaller",704,0.3,"est"),
+    r(1,"prefix (not in the file)",24416,11.0,"derived","= ctx(req 1) 32,420 - est(visible before it) 8,004",null,
+      "measured once, at request 1. 78,167 tokens left this window at record 288, so this node is stale for the last 60 requests and the readout cannot say by how much.","warn"),
+    r(2,"system prompt",null,null,"unknown","carried by no record type"),
+    r(2,"tool definitions",null,null,"unknown","names only, never schemas"),
+    r(1,"conversation",3097,1.4,"est"),
+    r(2,"user turns",2908,1.3,"est"),
+    r(2,"assistant text",189,0.1,"est"),
+    r(1,"unattributed",-56787,-25.6,"residual","of which unmodelled shedding 87,753 — material that left the window with no record of what it was","warn")
+  ],
+  rekey: true,
+  caption: {
+    "reads": "the residual is <b>-25.6%</b>: the parts add up to a quarter more than the window that existed. The two exact <code>shed</code> lines above the tree say why, and no other tool on this machine prints them.",
+    "exact": "<span class='mono'>222,249</span> window, <span class='mono'>78,167</span> and <span class='mono'>9,586</span> shed. All three from consecutive <code>usage</code> totals.",
+    "derived": "<span class='mono'>84,242 (37.9%)</span> — but the <code>prefix</code> half of it was measured once, at request 1, and the shedding invalidated it.",
+    "estimated": "<span class='mono'>194,794 (87.6%)</span>.",
+    "not reassuring": "nothing on this figure is wrong, and the picture is still a quarter out. 17 of 164 sampled sessions shed context with no boundary, median <b>36,714</b> tokens; <code>05-</code> has no node for any of it."
+  }
+},
+
+/* ------------------------------------------------------------------ fig 3 */
+"e268d6c5": {
+  tag: "ended",
+  title: "50.7% of this window is material the transcript does not contain",
+  sess: "session e268d6c5 · 788 records · 186 requests (186 in the window) · claude-opus-5 · no compaction",
+  facts: [ {l:"window at the last request", v:433331, p:100.0, k:"exact"} ],
+  ledger: {derived:219773, dpct:50.7, est:203311, epct:46.9, resid:10247, rpct:2.4, window:433331},
+  solved: "2.48",
+  maxDepth: 2,
+  rows: [
+    r(1,"tool traffic",185525,42.8,"est"),
+    r(2,"...__claude-in-chrome__browser_batch results",67372,15.5,"est"),
+    r(2,"Bash results",52895,12.2,"est"),
+    r(2,"tool_use inputs",44324,10.2,"est"),
+    r(2,"Read results",8690,2.0,"est"),
+    r(2,"mcp__claude-in-chrome__computer results",5727,1.3,"est"),
+    r(2,"6 more nodes, each smaller",4069,0.9,"est"),
+    r(2,"Edit results",2448,0.6,"est"),
+    r(1,"prefix (not in the file)",146870,33.9,"derived","= ctx(req 1) 152,217 - est(visible before it) 5,347. High because this session loads a browser MCP server."),
+    r(2,"system prompt",null,null,"unknown","carried by no record type"),
+    r(2,"tool definitions",null,null,"unknown","names only, never schemas"),
+    r(1,"retained reasoning (not in the file)",72903,16.8,"derived","= sum over 185 responses of (output_tokens - est(text + tool_use))"),
+    r(2,"thinking text",null,null,"unknown","stripped on disk; 100 blocks, 486 tok/block median for this session"),
+    r(1,"standing configuration",15718,3.6,"est"),
+    r(2,"nested_memory",7527,1.7,"est"),
+    r(2,"skill_listing",3028,0.7,"est"),
+    r(2,"edited_text_file",2925,0.7,"est"),
+    r(2,"6 more nodes, each smaller",2238,0.5,"est"),
+    r(1,"unattributed",10247,2.4,"residual"),
+    r(1,"conversation",2068,0.5,"est"),
+    r(2,"assistant text",1818,0.4,"est"),
+    r(2,"user turns",250,0.1,"est")
+  ],
+  caption: {
+    "reads": "the two orange rows are <b>50.7%</b> of the window and neither is in the file. Three more lines are <code>unsized</code>. Under half of this picture is a measurement of something the transcript contains.",
+    "exact": "<span class='mono'>433,331</span>, the window total.",
+    "derived": "<span class='mono'>219,773 (50.7%)</span> — prefix 33.9% + retained reasoning 16.8%.",
+    "estimated": "<span class='mono'>203,311 (46.9%)</span>, residual <span class='mono'>+10,247 (+2.4%)</span>.",
+    "images": "49 images priced at <b>66,318</b> tokens from their decoded headers. Their base64 is 3.8&nbsp;MB, which <code>len/4</code> would have called <b>939,317</b> — a 14.2&times; over-report avoided (§C5)."
+  }
+}
+};
+
+/* ------------------------------------------------------------------ render */
+const nf = function(n) { return n.toLocaleString("en-US"); };
+const POSPX = 180, ZEROPX = 60;
+
+function barFor(row) {
+  if (row.t === null) return '<div class="trk"><div class="zero"></div>' +
+    '<span class="none">unsized</span></div>';
+  var pct = row.p === null ? 0 : row.p;
+  var h = "h" + row.d;
+  var w = Math.max(2, Math.abs(pct) / 100 * POSPX);
+  var cls = row.k === "unknown" ? "est" : row.k;
+  var side = pct < 0 ? "neg" : "pos";
+  return '<div class="trk"><div class="zero"></div>' +
+         '<div class="bar ' + side + ' ' + cls + ' ' + h + '" style="width:' + w.toFixed(1) + 'px"></div></div>';
+}
+
+function rowHTML(row) {
+  var tok = row.t === null ? "—" : nf(row.t);
+  var pct = row.p === null ? "—" : row.p.toFixed(1) + "%";
+  var cls = "row d" + row.d + (row.t === null ? " unsized" : "");
+  var h = '<div class="' + cls + '">' + barFor(row) +
+          '<div class="lab" title="' + row.l.replace(/"/g, "&quot;") + '">' + row.l + '</div>' +
+          '<div class="tok">' + tok + '</div><div class="pct">' + pct + '</div>' +
+          '<div class="knd"><span class="chip ' + row.k + '"></span>' + row.k + '</div></div>';
+  if (row.note) h += '<p class="note d' + row.d + (row.flag === "warn" ? " warn" : "") + '">' + row.note + '</p>';
+  if (row.note2) h += '<p class="note d' + row.d + (row.flag2 === "warn" ? " warn" : "") + '">' + row.note2 + '</p>';
+  return h;
+}
+
+function ledgerHTML(L) {
+  var span = Math.max(100, L.dpct + L.epct);
+  var pc = function(v) { return (v / span * 100).toFixed(3) + "%"; };
+  var h = '<div class="ledger"><div class="track">';
+  h += '<div class="seg derived" style="width:' + pc(L.dpct) + '"></div>';
+  h += '<div class="seg est" style="width:' + pc(L.epct) + '"></div>';
+  if (L.rpct > 0) h += '<div class="seg residual" style="width:' + pc(L.rpct) + '"></div>';
+  h += '<div class="winline" style="left:' + pc(100) + '"></div>';
+  if (L.rpct < 0) h += '<div class="over" style="left:' + pc(100) + ';right:0"></div>';
+  h += '</div>';
+  h += '<div class="lg' + (L.rpct < 0 ? " pad" : "") + '">' +
+       '<span class="chip derived"></span>derived ' + nf(L.derived) + ' (' + L.dpct.toFixed(1) + '%) &nbsp; ' +
+       '<span class="chip est"></span>est ' + nf(L.est) + ' (' + L.epct.toFixed(1) + '%) &nbsp; ' +
+       '<span class="chip residual"></span>residual ' + nf(L.resid) + ' (' + L.rpct.toFixed(1) + '%)' +
+       ' &nbsp;|&nbsp; the black rule is the exact window, ' + nf(L.window) + '</div>';
+  if (L.rpct < 0) h += '<div class="lg" style="color:var(--k-residual)">the parts overrun the window that existed by ' +
+       nf(Math.abs(L.resid)) + ' tokens</div>';
+  h += '</div>';
+  return h;
+}
+
+function factsHTML(facts) {
+  var h = '<div class="facts">';
+  facts.forEach(function(f) {
+    h += '<div class="fact"><span class="fl">' + f.l + '</span>' +
+         '<span class="fv">' + nf(f.v) + '</span>' +
+         '<span class="fp">' + (f.p === null ? "—" : f.p.toFixed(1) + "%") + '</span>' +
+         '<span class="fk"><span class="chip ' + f.k + '"></span>' + f.k + '</span></div>';
+    if (f.note) h += '<p class="factnote' + (f.warn ? " warn" : "") + '">' + f.note + '</p>';
+  });
+  return h + '</div>';
+}
+
+function captionHTML(c, extra) {
+  var h = '<div class="caption"><dl>';
+  for (var k in c) h += '<dt>' + k + '</dt><dd>' + c[k] + '</dd>';
+  if (extra) h += extra;
+  h += '</dl></div>';
+  return h;
+}
+
+/* the artefact-first re-key panel, figure 2 only.
+   Pooling is arithmetic over rows the spike printed; a path can only be pooled
+   here when every one of its appearances was printed rather than folded into a
+   "N more nodes, each smaller" bin. */
+const REKEY = [
+  {p:"proposals/ContextTreemap/05-recommendation.md", t:4134, pct:1.9,
+   by:"Read x5 2,636 · Edit x20 1,498", pooled:true},
+  {p:"proposals/ContextTreemap/01-what-is-knowable.md", t:3015, pct:1.4, by:"Read 3,015"},
+  {p:"proposals/ContextTreemap/04-comparison.md", t:2895, pct:1.3, by:"Read x3 2,895"},
+  {p:"proposals/ContextTreemap/00-problem.md", t:2360, pct:1.1, by:"Read 2,360"},
+  {p:"proposals/ContextTreemap/scratch/prefix_floor.py", t:1781, pct:0.8, by:"Read 1,781"},
+  {p:"proposals/ContextTreemap/scratch/floor_decompose.py", t:1585, pct:0.7, by:"Read 1,585"},
+  {p:"proposals/ContextTreemap/03-option-b-drill-down-tui.md", t:1111, pct:0.5,
+   by:"Edit x13 1,035 · Write 76", pooled:true},
+  {p:"proposals/ContextTreemap/02-constraints.md", t:900, pct:0.4, by:"Edit x12 900"}
+];
+
+function rekeyHTML() {
+  var h = '<h3 style="margin-top:22px">--depth 3, re-keyed artefact-first</h3>' +
+    '<p style="font-size:12.5px">The tree above keys the third level <i>tool then path</i>, which is what ' +
+    '<code>05-</code> §M2 mandates. On <code>f6ea2591</code> that shape reports <b>32 nodes and 16.8%</b> ' +
+    'repeated material where the measurement it is meant to reproduce says <b>29 nodes and 33.2%</b> — ' +
+    'it halves its own headline number, because one file read twice and edited once becomes two ' +
+    'singletons in two subtrees. Below is the same session keyed <i>path then tool</i>. ' +
+    '<code>05-recommendation.md</code> is one node.</p><div class="tree">';
+  REKEY.forEach(function(x) {
+    h += rowHTML(r(1, x.p, x.t, x.pct, "est", x.by + (x.pooled ? "   ← pooled across two subtrees" : ""), x.pooled ? "warn" : null));
+  });
+  h += '</div><p style="font-size:11.5px;color:var(--muted);margin-top:8px">Only paths whose every ' +
+    'appearance was printed by the spike can be pooled here; the rest are still inside the ' +
+    '“N more nodes, each smaller” bins, so this panel under-counts. It is arithmetic over ' +
+    '<code>06-</code>’s own rows, not a re-run.</p>';
+  return h;
+}
+
+/* ?depth=3 pre-renders every figure drilled, so a state is linkable and
+   screenshottable without a click. The button does the same thing. */
+const DEEP = /(\?|&)depth=3(&|$)/.test(location.search);
+
+function renderFig(key) {
+  var F = FIGS[key], el = document.getElementById("fig-" + key);
+  var maxDepth = DEEP ? 3 : (F.maxDepth || 2);
+  var body = function(depth) {
+    var h = '<div class="figbody">';
+    h += '<div class="fighead"><span class="tag">' + F.tag + '</span><h2 class="grow">' + F.title + '</h2>' +
+         '<button data-depth="' + key + '" aria-pressed="' + (depth === 3) + '">--depth 3</button></div>';
+    h += '<p class="sessline">' + F.sess + '</p>';
+    h += factsHTML(F.facts);
+    h += ledgerHTML(F.ledger);
+    h += '<div class="tree">';
+    F.rows.forEach(function(row) { if (row.d <= depth) h += rowHTML(row); });
+    h += '</div>';
+    if (depth === 3 && F.rekey) h += rekeyHTML();
+    if (depth === 2) h += '<p class="note" style="padding-left:0;margin-top:10px">' +
+      'level 3 is an opt-in. The spike found it added nothing level 2 had not already said on ' +
+      'any of seven sessions, and on one it halved the number it was supposed to reproduce.</p>';
+    h += '</div>';
+    h += captionHTML(F.caption,
+      '<dt>solved constant</dt><dd><span class="mono">' + F.solved + '</span> chars/token would zero ' +
+      'this session’s residual (shipped: 2.6). <b>NOT APPLIED</b> — §C10.</dd>' +
+      '<dt>drawn from</dt><dd><code>06-spike-findings.md</code>, session <code>' + key + '</code>. ' +
+      'Every figure on this row is a number that file printed. Nothing here was computed at render time.</dd>');
+    return h;
+  };
+  el.innerHTML = body(maxDepth);
+  el.addEventListener("click", function(e) {
+    var b = e.target.closest("button[data-depth]");
+    if (!b) return;
+    maxDepth = maxDepth === 3 ? 2 : 3;
+    el.innerHTML = body(maxDepth);
+  });
+}
+
+["b66837ed", "939a04dc", "e268d6c5"].forEach(renderFig);
+
+/* ------------------------------------------------------------------ fig 4 */
+/* Live mode. The tree is figure 1's, unchanged and exact as of its anchor.
+   Everything in the "since the anchor" strip is invented — see the caption. */
+const LIVE_ROWS = FIGS["b66837ed"].rows.filter(function(x) { return x.d === 1; });
+
+function renderLive() {
+  var el = document.getElementById("fig-live");
+  var h = '<div class="figbody">';
+  h += '<div class="fighead"><span class="tag">live</span>' +
+       '<h2 class="grow">The exact number is one request old, and the readout says how old</h2>' +
+       '<button id="live-toggle" aria-pressed="true">pause</button></div>';
+  h += '<p class="sessline">session b66837ed · watching · poll 250 ms · redraw on change</p>';
+
+  h += '<div class="livebar"><span class="dot blink" id="live-dot"></span>' +
+       '<span>anchored at <b>request 107</b>, which landed <b id="anchor-age">1m 12s</b> ago</span>' +
+       '<span style="color:var(--muted)">|</span>' +
+       '<span>since then <b id="since" style="color:var(--k-est)">+4,480</b> estimated tokens have ' +
+       'been appended and <b>no exact total exists for them yet</b></span></div>';
+
+  h += '<div class="livegrid">' +
+       '<div>file lag, median &nbsp; <b>102 ms</b> <span style="color:var(--muted)">measured, 59,100 polls</span></div>' +
+       '<div>pricing lag &nbsp; <b id="price-lag">1m 12s</b> <span style="color:var(--muted)">the one that matters</span></div>' +
+       '<div>worst out-of-order record &nbsp; <b>21 s</b> <span style="color:var(--muted)">after its own timestamp</span></div>' +
+       '</div>';
+
+  h += factsHTML([{l:"window at request 107 (the anchor)", v:487584, p:100.0, k:"exact",
+                   note:"this line does not move until the next assistant record lands. It is the only exact number on screen."}]);
+
+  h += '<div class="tree">';
+  h += '<div class="row d1 pending"><div class="trk"><div class="zero"></div>' +
+       '<div class="bar pos pending h1" style="width:7.5px"></div></div>' +
+       '<div class="lab">arriving &mdash; Write input</div><div class="tok" id="pend-1">4,184</div>' +
+       '<div class="pct">—</div><div class="knd"><span class="chip est"></span>est</div></div>' +
+       '<p class="note">no percentage: the denominator is the window this material will be part of, and that window does not exist yet.</p>';
+  h += '<div class="row d1 pending"><div class="trk"><div class="zero"></div>' +
+       '<div class="bar pos pending h1" style="width:2px"></div></div>' +
+       '<div class="lab">in flight &mdash; Bash <span class="mono">$ node scripts/verify.mjs</span></div>' +
+       '<div class="tok" id="pend-2">—</div><div class="pct">—</div>' +
+       '<div class="knd"><span class="chip unknown"></span>no result</div></div>' +
+       '<p class="note">a <code>tool_use</code> with no <code>tool_result</code> is the normal state of a running ' +
+       'tool, not a parse error. Elapsed <b id="inflight">41 s</b>.</p>';
+  LIVE_ROWS.forEach(function(row) { h += rowHTML(row); });
+  h += '</div>';
+
+  h += '<p class="torn">last line of the file, 214 bytes, incomplete — buffered, not parsed, not counted:\n' +
+       '{"parentUuid":"9c1f…","type":"assistant","message":{"content":[{"type":"tool_use","name":"Write",' +
+       '"input":{"file_path":"/workspace/…/report.md","content":"# Findings\\n\\nThe skil<span id="torn-tail"></span>' +
+       '</p>';
+
+  h += '</div>';
+  h += captionHTML({
+    "reads": "the same picture as figure 1, with three things figure 1 cannot have: an <b>anchor age</b>, an <b>estimated-since</b> figure with no percentage, and an <b>in-flight call with no result</b>.",
+    "exact": "one line only — the window at request 107. It is deliberately frozen; a live single number with no anchor age is the failure mode this whole proposal exists to replace.",
+    "measured": "the <b>102 ms</b> median file lag over <b>59,100</b> polls, and the record that appeared <b>21 s</b> after its own timestamp. Both from <code>01-</code> §4.2, both real.",
+    "invented": "<b>everything in the live strip.</b> The anchor age, the <span class='mono'>+4,480</span> since, the 41 s elapsed, and the torn fragment have no counterpart in the spike, which reads ended sessions only. The <span class='mono'>+4,480</span> is this session's own per-call averages — one <code>Write</code> input at 66,947/16 = 4,184 and one <code>Bash</code> input at 28,686/97 = 296 — not a measurement.",
+    "not drawn": "how the tree behaves when the window <i>sheds</i> mid-watch, which figure 2 shows is a 10.4%-of-sessions event. Nobody has designed that yet."
+  });
+  el.innerHTML = h;
+
+  var t0 = 72, inflight = 41, since = 4480, running = true;
+  var fmt = function(s) { return s >= 60 ? Math.floor(s/60) + "m " + (s%60) + "s" : s + "s"; };
+  setInterval(function() {
+    if (!running) return;
+    t0 += 1; inflight += 1;
+    if (t0 % 4 === 0) since += 37;
+    var a = document.getElementById("anchor-age"); if (!a) return;
+    a.textContent = fmt(t0);
+    document.getElementById("price-lag").textContent = fmt(t0);
+    document.getElementById("inflight").textContent = fmt(inflight);
+    document.getElementById("since").textContent = "+" + nf(since);
+    var tail = document.getElementById("torn-tail");
+    tail.textContent = "l bod".slice(0, (Math.floor(t0 / 3) % 6));
+  }, 1000);
+  document.getElementById("live-toggle").addEventListener("click", function() {
+    running = !running;
+    this.textContent = running ? "pause" : "resume";
+    this.setAttribute("aria-pressed", String(running));
+    document.getElementById("live-dot").classList.toggle("blink", running);
+  });
+  if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    document.getElementById("live-toggle").click();
+  }
+}
+renderLive();
+
+/* ------------------------------------------------------------------ fig 5 */
+(function renderTreemap() {
+  var el = document.getElementById("fig-treemap");
+  /* slice-and-dice over b66837ed's five positive level-1 nodes. Areas are exact. */
+  var big = 417842, rest = [
+    {l:"retained reasoning", v:38860, k:"derived"},
+    {l:"prefix", v:26734, k:"derived"},
+    {l:"standing config", v:18178, k:"est"},
+    {l:"conversation", v:3513, k:"est"}
+  ];
+  var restSum = rest.reduce(function(a,b){ return a + b.v; }, 0);
+  var total = big + restSum;
+  var h = '<div class="figbody"><div class="fighead"><span class="tag">the design choice</span>' +
+    '<h2 class="grow">A treemap of the same session reports a window 3.6% larger than the one that existed</h2></div>';
+  h += '<div class="tmwrap"><div>';
+  h += '<div class="tm">';
+  h += '<div class="col" style="width:' + (big/total*100).toFixed(2) + '%">' +
+       '<div class="cell est" style="flex:1"></div></div>';
+  h += '<div class="col" style="width:' + (restSum/total*100).toFixed(2) + '%">';
+  rest.forEach(function(x) {
+    h += '<div class="cell ' + x.k + '" style="flex:' + x.v + '"></div>';
+  });
+  h += '</div></div>';
+  /* labels live outside the cells: at these areas three of the five cannot hold a
+     legible label at any type size, which is itself part of the argument. */
+  h += '<div class="tmkey">';
+  h += '<span><span class="chip est"></span></span><span>tool traffic</span><span class="v">' + nf(big) + '</span>';
+  rest.forEach(function(x) {
+    h += '<span><span class="chip ' + x.k + '"></span></span><span>' + x.l +
+         '</span><span class="v">' + nf(x.v) + '</span>';
+  });
+  h += '<span></span><span style="color:var(--muted)">total drawn</span><span class="v">' + nf(total) + '</span>';
+  h += '</div>';
+  h += '<p style="font-size:12px;margin-top:10px">Five rectangles, areas exact, total <b>' + nf(total) +
+       '</b>. The window was <b>487,584</b>.</p></div>';
+  h += '<div><p style="font-size:12.5px;margin:0"><b>What the rectangles cannot hold:</b></p><ul class="cant">' +
+    '<li><code>unattributed −17,542</code> — a negative area is not a rectangle, so the ' +
+    'treemap silently drops the tool’s own confession and inflates the total by exactly that much.</li>' +
+    '<li><code>system prompt</code>, <code>tool definitions</code>, <code>thinking text</code> — ' +
+    'three <code>unsized — unknown</code> lines. A treemap has no way to draw a thing with no size, ' +
+    'so the guarantee that nothing was quietly dropped is the first casualty.</li>' +
+    '<li>Its own labels. Three of the five cells are under 30&nbsp;px tall at this aspect, so the ' +
+    'names sit in a key beside the picture and the picture is read by cross-reference.</li>' +
+    '<li>The provenance column. Four kinds of claim across five rectangles, and the only free ' +
+    'channel left is fill colour, which is already doing hierarchy.</li>' +
+    '<li>Figure 2’s two exact <code>shed</code> lines, which are facts about the window rather ' +
+    'than parts of it.</li></ul>' +
+    '<p style="font-size:12px;color:var(--muted);margin-top:10px">The spike’s verdict, after seven ' +
+    'sessions: <i>“This is not a treemap. It is a five-row receipt with a drill on one row and ' +
+    'three exact facts above it.”</i> Every figure above is drawn that way.</p></div></div>';
+  h += captionHTML({
+    "exact": "the window, <span class='mono'>487,584</span>, and the four inflated-total figures, which are arithmetic on the spike’s own rows.",
+    "estimated": "every rectangle.",
+    "the point": "the +3.6% is not a rendering bug to be fixed. It is the residual, which a treemap has no way to show and therefore absorbs."
+  });
+  el.innerHTML = h;
+})();
+
+/* ------------------------------------------------------------------ fig 6 */
+const STATES = [
+  { h: "The id does not resolve",
+    t: '<span class="cmd">winnow context b6683</span>\n' +
+       '<span class="bad">error: prefix `b6683` matches 2 sessions.</span>\n' +
+       '  b66837ed-…  511 records  last write 2026-09-02 11:04\n' +
+       '  b6683f10-…   82 records  last write 2026-08-29 19:41\n' +
+       '<span class="dim">Sibling agents share a working directory on this machine, so a\n' +
+       'short prefix is ambiguous more often than it looks. Give more of the id.</span>\n' +
+       '<span class="dim">exit 2</span>\n\n' +
+       '<span class="cmd">winnow context 9f2c1a4e</span>\n' +
+       '<span class="bad">error: no session `9f2c1a4e`.</span>\n' +
+       '<span class="dim">Searched 1,985 transcripts under ~/.claude/projects.\n' +
+       'The tool does not guess by mtime: the project-slug transform is lossy\n' +
+       'and two sessions in one directory is normal here.</span>\n' +
+       '<span class="dim">exit 2</span>',
+    why: "Two failures, one screen, because they are the same mistake and the fix is the same: type more of the id. Neither prints a partial tree." },
+
+  { h: "The file is not a transcript",
+    t: '<span class="cmd">winnow context ~/scratch/dump.jsonl</span>\n' +
+       '<span class="bad">error: `dump.jsonl` is not a Claude Code transcript.</span>\n' +
+       '  <span class="num">41</span> lines read, <span class="num">41</span> parsed as JSON,\n' +
+       '  <span class="num">0</span> carry a `type` field.\n' +
+       '  A transcript’s first record is `type: summary`\n' +
+       '  or `type: user`.\n' +
+       '<span class="dim">The trailing 217-byte fragment was buffered, not\n' +
+       'counted — that part is normal and is not why this failed.</span>\n' +
+       '<span class="dim">exit 2</span>',
+    why: "It says which check failed and what it expected. It does not skip the bad lines and price what is left, because a tree built from a partial parse is the one error the residual cannot catch." },
+
+  { h: "There is no exact number to anchor to",
+    t: '<span class="cmd">winnow context 0c4d9a11</span>\n' +
+       'session 0c4d9a11 · 46 records · 0 assistant records carrying `usage`\n' +
+       '<span class="bad">no anchoring request: every percentage below would be a\n' +
+       'fraction of a number this tool made up. None are printed.</span>\n\n' +
+       '  tool traffic                       <span class="num">14,208</span>   —   est\n' +
+       '  standing configuration              <span class="num">3,981</span>   —   est\n' +
+       '  conversation                          <span class="num">612</span>   —   est\n' +
+       '  prefix                             <span class="dim">unsized</span>   —   unknown\n' +
+       '  retained reasoning                 <span class="dim">unsized</span>   —   unknown\n\n' +
+       '<span class="dim">The estimated tree is still printed; it is a character\n' +
+       'count and it is honest as one. Nothing is derived, nothing is\n' +
+       'a share, and the residual does not exist because there is no\n' +
+       'total to subtract from.</span>\n' +
+       '<span class="dim">exit 1</span>',
+    why: "The interesting empty state. There is plenty of data and no denominator, so the tool prints the sizes and refuses the shares. This is 05- §M1’s acceptance criterion drawn." },
+
+  { h: "There is nothing to rank",
+    t: '<span class="cmd">winnow context e168a4c4 --at-request 1</span>\n' +
+       'session e168a4c4 · 4 records · 1 request (1 in the window)\n' +
+       'window at the last request                <span class="num">33,895</span>  100.0%  exact\n\n' +
+       '  prefix (not in the file)                <span class="num">29,392</span>   86.7%  derived\n' +
+       '  everything the operator and the tools\n' +
+       '  put in it, together                      <span class="num">4,503</span>   13.3%  est\n\n' +
+       '<span class="dim">One request. There is no ranking to draw and no drill-down\n' +
+       'that would say anything: 86.7% of this window is the prefix,\n' +
+       'which is roughly the same on every session on this machine.\n\n' +
+       'Three numbers, no tree. Come back after ten requests.</span>\n' +
+       '<span class="dim">exit 0</span>',
+    why: "Not an error — the data is fine. The tool declines to draw six rows where three numbers say it, and names the threshold rather than degrading into a chart of nothing." }
+];
+
+(function renderStates() {
+  var el = document.getElementById("states");
+  el.innerHTML = STATES.map(function(s) {
+    return '<div class="state"><h4>' + s.h + '</h4><p class="term">' + s.t + '</p>' +
+           '<p class="why">' + s.why + '</p></div>';
+  }).join("");
+})();
+
+/* ------------------------------------------------------------------- theme */
+(function theme() {
+  var btns = document.querySelectorAll("[data-theme-set]");
+  btns.forEach(function(b) {
+    b.addEventListener("click", function() {
+      var v = b.getAttribute("data-theme-set");
+      document.documentElement.setAttribute("data-theme", v);
+      btns.forEach(function(o) { o.setAttribute("aria-pressed", String(o === b)); });
+    });
+  });
+})();
+</script>
+</body>
+</html>

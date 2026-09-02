@@ -50,7 +50,7 @@ composition, and a composition is a tree.
 | | what it shows | why it is not this |
 |---|---|---|
 | statusline | one scalar, `used_percentage` | the statusline JSON contract exposes `context_window.{total_input_tokens, output_tokens, context_window_size, current_usage, used_percentage, remaining_percentage}` and no category split at all, so every third-party statusline is structurally capped at one number |
-| `/context` | eleven flat categories, live only | see below |
+| `/context` | eleven categories plus three per-item tables | see below |
 | `ccusage`, session-report, receipts, Dash0/OTel | tokens and dollars per day / session / billing block | cross-session **cost**, never single-session **composition**; the OTel `type` attribute splits cache class, not context category |
 | transcript→HTML viewers | the conversation, readably | they render messages; they do not price or bucket them |
 | `winnow inspect` (this repo) | byte share by content class and by pruning rule | denominator is file bytes, not window tokens; its `cache_read_input_tokens` is a lifetime sum over every assistant record, not the window — 18,378,780 on a session whose window was 219,485 |
@@ -61,8 +61,18 @@ composition, and a composition is a tree.
 clearest statement of the gap. Its eleven category labels, read out of the 2.1.226 binary on
 this machine, are: `System prompt`, `System tools`, `MCP tools`, `MCP tools (deferred)`,
 `System tools (deferred)`, `Custom agents`, `Memory files`, `Skills`, `Messages`,
-`Autocompact buffer` (or `Compact buffer`), `Free space`. Everything the operator actually
-wants to drill into is inside one of those rows — `Messages`.
+`Autocompact buffer` (or `Compact buffer`), `Free space`.
+
+It is more than a flat bar, and the earlier draft of this file was unfair to it. Running
+`claude -p "/context"` on this machine emits, beneath the category table, **three per-item
+drill-downs**: `Custom Agents` (agent type, source, tokens), `Memory Files` (type, path,
+tokens — `User`, `Project` and `AutoMem`), and `Skills` (skill, source, tokens — e.g.
+`dataviz  Built-in  ~380`). So one level of hierarchy already exists, for three of the eleven
+categories, and per-skill token costs that the operator's own knowledge vault records as
+"not published anywhere" are simply printed.
+
+What has no drill-down at all is the row that is 60–90% of a working session: `Messages`.
+That is where the operator's questions live, and it is a single number.
 
 And the CLI already computes the drill-down. The same code path builds a `messageBreakdown`
 object carrying `toolCallTokens`, `toolResultTokens`, `attachmentTokens`,
@@ -73,8 +83,9 @@ treemap, computed exactly, and it is discarded at the render boundary. It surfac
 indirectly, through five hardcoded suggestion rules whose savings estimates are literals
 (`Math.floor(tokens * 0.2)`, `* 0.3`) rather than measurements.
 
-**The gap in one sentence: the harness computes the composition, shows a flat slice of it,
-exports less than it shows, and hands downstream tools a single scalar.**
+**The gap in one sentence: the harness computes the composition, drills into the three
+categories that matter least, discards the drill-down for the one that matters most, and
+hands downstream tools a single scalar.**
 
 ## 4. What a tool would have to be honest about
 

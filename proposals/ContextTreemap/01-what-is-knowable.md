@@ -756,7 +756,49 @@ malformations actually occur in production. Read them before writing a new parse
   and its growth step 1 is literally *"Run `/context` across a spread of sessions and record
   the breakdown."*
 
-### 6.3 In the wild
+### 6.3 `/context` itself, run
+
+The most useful prior art is the built-in one, and this run executed it rather than reading
+about it. `claude -p "/context" --output-format text`, from `/workspace2`:
+
+```
+## Context Usage
+**Model:** claude-opus-5[1m]
+**Tokens:** 1.9k / 1m (0%)
+
+### Estimated usage by category
+| Category    | Tokens | Percentage |
+| Skills      | 1.9k   | 0.2%       |
+| Free space  | 998.1k | 99.8%      |
+
+### Custom Agents        | Agent Type | Source | Tokens |
+### Memory Files         | Type | Path | Tokens |
+   User    /home/node/.claude/rules/response-style.md      0
+   Project /workspace2/CLAUDE.md                           0
+   AutoMem /home/node/.claude/projects/-workspace2/memory/MEMORY.md   0
+### Skills               | Skill | Source | Tokens |
+   code-housekeeping  User      ~210
+   dataviz            Built-in  ~380
+   claude-api         Built-in  ~360
+   …
+```
+
+Four things this establishes that reading the binary did not:
+
+1. **The export has three per-item drill-down tables**, not just the category table:
+   `Custom Agents`, `Memory Files` (with a third memory type, `AutoMem`, absent from the
+   category labels) and `Skills`. One level of hierarchy already exists for three of the
+   eleven categories.
+2. **Per-skill token costs are printed.** The knowledge vault records these as "not published
+   anywhere the vault has found"; they are in the export.
+3. **The `-p` path cannot see the prefix.** `System prompt`, `System tools`, `MCP tools` and
+   `Messages` are absent — filtered out by the `tokens > 0` rule — and every memory file reads
+   `0`, because `/context` is dispatched as a local command before any request is assembled.
+   So the obvious cross-check against §3.1 is not available from `-p` alone (§7 item 7).
+4. **`Free space 998.1k` confirms the window.** The 1M figure is real and is attached to the
+   `[1m]` model suffix, which nothing in a transcript records (§7 item 9).
+
+### 6.4 In the wild
 
 Assessed from training knowledge only — **this sandbox has no network and none of this could
 be checked.** Labelled accordingly.
@@ -809,11 +851,16 @@ treat each as a task rather than a caveat.
 6. **The 21-second visibility-lag outlier.** One record of 438 appeared 21 seconds after its
    own timestamp. Cause unknown. It bounds how much a live reader can trust timestamp
    ordering, and nothing here establishes the true bound.
-7. **Whether `/context`'s numbers and this method's numbers agree.** `/context` computes the
-   composition exactly, including the prefix. Running `claude -p "/context"` in a session and
-   diffing its markdown export against a transcript-derived treemap of the same session is the
-   single best validation available, it needs no network, and this run did not do it. **A
-   later run should do this first.**
+7. **Whether `/context`'s numbers and this method's numbers agree.** *Attempted and blocked.*
+   `claude -p "/context"` runs fine here and produces real output (§6.3), but `/context` in
+   the `-p` path is dispatched **before any request is made**, so it reports a pre-request
+   skeleton: `System prompt`, `System tools`, `MCP tools` and `Messages` are all absent, and
+   every memory file is listed with `0` tokens. Populating them needs one real API call, and
+   this sandbox binds `~/.claude/.credentials.json` to `/dev/null`
+   (`claude -p "hi"` returns `Not logged in · Please run /login`). **This remains the single
+   best validation available and a later run with credentials should do it first**: resume a
+   real session, run `/context`, and diff the eleven categories against a transcript-derived
+   treemap of the same session. It would settle items 1 and 2 as a side effect.
 8. **Sub-agent return sizing.** The parent's `tool_result` for an `Agent` call is documented
    to carry a `<usage>subagent_tokens: N tool_uses: N duration_ms: N</usage>` tag. This run
    searched its own live session for it and found none — background agents appear to deliver

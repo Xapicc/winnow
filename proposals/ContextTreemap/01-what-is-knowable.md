@@ -1,8 +1,9 @@
 # What is knowable about a context window from outside it
 
 *Measured 2026-09-02 on this container against `~/.claude/projects` — 1,985 transcript files,
-400,548 records, ~2.9 GB. Every figure below is either **exact** (lifted from a number the
-CLI wrote down) or **estimated** (labelled, with its method and its error). Scripts are in
+400,548 records, 1.31 GB of JSONL (plus 205 MB of tool-result sidecars, §1.4). Every figure
+below is either **exact** (lifted from a number the CLI wrote down) or **estimated**
+(labelled, with its method and its error). Scripts are in
 `scratch/`; each one names the section it feeds. Re-running them will not reproduce these
 numbers exactly, because this run is itself writing transcripts into the corpus it measures.*
 
@@ -28,10 +29,12 @@ Nineteen record types, from `scratch/inventory.py` over a 120-file sample (34,46
 | `user` | 8,312 | human turn **or** a tool-result envelope — the same type covers both | **yes** |
 | `attachment` | 6,076 | everything the CLI injects: memory files, skill listing, agent listing, MCP instructions, hook output, environment, model identity | **yes** |
 | `system` | 98 | `turn_duration`, `stop_hook_summary`, `compact_boundary`, `local_command`, `informational` | mostly no |
-| `last-prompt`, `ai-title`, `mode`, `bridge-session`, `queue-operation`, `agent-setting`, `permission-mode`, `atis-latch`, `file-history-delta`, `file-history-snapshot`, `frame-link`, `agent-name`, `artifact-autoreact-ledger`, `cost-state`, `artifact-comment-monitor` | 6,437 | CLI bookkeeping | **no** |
+| `last-prompt`, `ai-title`, `mode`, `bridge-session`, `queue-operation`, `agent-setting`, `permission-mode`, `atis-latch`, `file-history-delta`, `file-history-snapshot`, `frame-link`, `agent-name`, `artifact-autoreact-ledger`, `cost-state`, `artifact-comment-monitor` | 6,865 | CLI bookkeeping | **no** |
 
-Bookkeeping is 20% of records and ~7% of bytes and contributes zero tokens. A treemap that
-counts records rather than context will draw it, and it should not.
+Bookkeeping is **19.9% of records and 2.7% of bytes** and contributes zero tokens. A treemap
+that counts records rather than context will draw it, and it should not. The one to watch is
+`queue-operation`, which is 1.96 MB of the sample on 530 records — it carries a copy of the
+user's prompt text, so it looks exactly like context and is not.
 
 ### 1.2 The thing-by-thing answer
 
@@ -40,7 +43,7 @@ find the record rather than quoting content. All sessions are under `~/.claude/p
 
 | kind of thing | present in the transcript? | evidence |
 |---|---|---|
-| **system prompt** | **absent** | no record of any of 19 types carries it. First-request arithmetic (§3) puts it plus tool definitions at a median 29,716 tokens |
+| **system prompt** | **absent** | not carried by any of the 19 record types. This run establishes it by subtraction — first-request arithmetic (§3.1) puts it plus tool definitions at a median 29,716 tokens that no record accounts for; the direct census is this repo's, `proposals/IntakeFilter/12-option-prefix-readout.md`, over 866 transcripts: *"nineteen distinct record types — zero carry a system prompt or a tool definition"* |
 | **tool definitions** | **absent** | same. `deferred_tools_delta` records tool *names* only — 31 names, no schemas: session `005334b4-b8f3-493c-bdc5-961ba9be1fcb`, line 4 |
 | **MCP tool schemas** | **absent** | names appear in `deferred_tools_delta`; schemas never do |
 | **MCP server instructions** | **present, in full** | `attachment` / `mcp_instructions_delta`, with `addedNames` and full `addedBlocks` prose. 73 in the sample |
@@ -632,8 +635,11 @@ want to delete "that file I read four times". Chronology also degrades as sessio
 311 requests is 311 top-level nodes, which is a bar chart, not a treemap.
 
 **Best use: not the tree, the second view.** A per-turn growth strip beside the treemap,
-where clicking a spike filters the treemap. Gregg's note on flame graphs applies exactly:
-*"dropping the time axis is what makes the visualisation scale."*
+where clicking a spike filters the treemap. The flame-graph precedent applies exactly:
+*"dropping the time axis is what makes the visualisation scale"*, and *"a flame graph inherits
+every bias in the sampler underneath it"* — both from
+`/workspace2/3 Resources/Sources/Flame Graphs (Gregg 2016).md`, and the second line is the
+warning this whole document is about.
 
 ### H3 — By artefact: *what real-world thing is this about*
 

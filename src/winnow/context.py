@@ -2374,7 +2374,8 @@ def render(composition: Composition, window_argument: int | None,
         f"{count(composition.requests, 'request')} "
         f"({composition.requests_in_window} in the window)  ·  "
         f"{composition.model or 'no model recorded'}  ·  "
-        + (count(len(composition.boundaries), "compaction boundary", "boundaries")
+        + (count(len(composition.boundaries), "compaction boundary",
+                 "compaction boundaries")
            if composition.boundaries else "no compaction")
     )
     if style.in_colour:

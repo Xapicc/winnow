@@ -2075,3 +2075,15 @@ def test_a_fault_is_a_rendering_and_never_reaches_the_document(name):
 
     assert not any("bash_head" in note or "not keyed by provenance" in note
                    for note in document["notes"])
+
+
+@pytest.mark.parametrize("name,header", [
+    ("compacted", ("9 records  ·  4 requests (2 in the window)  ·  "
+                   "claude-opus-5  ·  1 compaction boundary")),
+    ("zero_usage_anchor", "3 records  ·  1 request (1 in the window)"),
+    ("shedding", "11 records  ·  5 requests (5 in the window)"),
+])
+def test_the_header_counts_agree_with_their_own_nouns(name, header):
+    """Read one at a time, and one of these screens is entirely about there
+    being a single request."""
+    assert header in render(composition(name), None).splitlines()[0]

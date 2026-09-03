@@ -40,6 +40,7 @@ from .filter import (
     heartbeat_line,
     ledger_line,
     prefix_changes,
+    prefix_digest,
     prefix_facts,
     prefix_line,
 )
@@ -184,8 +185,13 @@ class PrefixWatch:
     changes: int = 0
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
-    def observe(self, body: dict) -> str | None:
-        """The ledger line this request's prefix warrants, or None.
+    def observe(self, body: dict) -> tuple[str | None, str | None]:
+        """`(the ledger line this prefix warrants or None, its digest)`.
+
+        The digest is returned whether or not a line is: it names the prefix
+        this request was sent under, and `ledger_line` stamps it on every
+        filtered request so that a reader can find the prefix in force for a
+        session whose own requests never changed one.
 
         Never raises: a readout that could fail a request would be a reporting
         subsystem inside the credential path with a failure mode, which is the
@@ -193,6 +199,7 @@ class PrefixWatch:
         """
         try:
             facts = prefix_facts(body)
+            digest = prefix_digest(facts)
             with self._lock:
                 previous = self.seen
                 if previous is not None and (
@@ -200,16 +207,16 @@ class PrefixWatch:
                     and previous["tools_digest"] == facts["tools_digest"]
                     and previous["breakpoints"] == facts["breakpoints"]
                 ):
-                    return None
+                    return None, digest
                 changes = prefix_changes(previous, facts)
                 self.seen = facts
                 self.lines += 1
                 self.changes += int(changes is not None)
-            return prefix_line(facts, changes)
+            return prefix_line(facts, changes), digest
         except Exception as exc:  # noqa: BLE001 — a missing line, never a failed request
             print(f"winnow: prefix readout skipped: {type(exc).__name__}: {exc}",
                   file=sys.stderr)
-            return None
+            return None, None
 
 
 # The kill switch. While this file exists the proxy keeps listening and keeps
@@ -299,12 +306,20 @@ def _filtering_disabled(config: Config) -> bool:
 
 
 def _rewrite(raw: bytes, config: Config, stats: Stats,
-             watch: PrefixWatch | None = None) -> tuple[bytes, str | None]:
+             watch: PrefixWatch | None = None
+             ) -> tuple[bytes, str | None, str | None]:
     """Apply the filter to one request body.
 
-    Returns `(body, ledger line or None)`. Any failure returns the original
-    bytes: SPEC §10's discipline is that this cannot be the thing that breaks a
-    run, and a request it cannot parse is one it has no business editing.
+    Returns `(body, filter line or None, prefix line or None)`. Any failure
+    returns the original bytes: SPEC §10's discipline is that this cannot be the
+    thing that breaks a run, and a request it cannot parse is one it has no
+    business editing.
+
+    **Neither line is written here.** Both are handed back for the caller to
+    write once the upstream has answered, because the only thing that identifies
+    either of them to any other reader is the API's own request id, and that
+    arrives with the response. The prefix line used to be written on this side
+    of the call with a null id, which made it joinable to nothing.
 
     Every exit counts the request, including the ones where nothing was removed —
     that population is precisely what a health signal is about, and it is the one
@@ -317,15 +332,14 @@ def _rewrite(raw: bytes, config: Config, stats: Stats,
     except (json.JSONDecodeError, TypeError, ValueError, UnicodeDecodeError) as exc:
         _count(config, stats, error=True, unreadable=True)
         print(f"winnow: forwarding unfiltered, unreadable body: {exc}", file=sys.stderr)
-        return raw, None
+        return raw, None, None
 
     # Before the rewrite, and independent of it: the readout is about a region
     # `apply` never touches, and it should still report on a request no rule
     # claims — which is most of them.
+    prefix, digest = None, None
     if watch is not None and config.prefix_readout and config.ledger:
-        line = watch.observe(body)
-        if line is not None:
-            _append_ledger(config.ledger, line, None)
+        prefix, digest = watch.observe(body)
 
     try:
         body, plan = apply(
@@ -338,7 +352,7 @@ def _rewrite(raw: bytes, config: Config, stats: Stats,
         _count(config, stats, error=True)
         print(f"winnow: forwarding unfiltered, filter raised: "
               f"{type(exc).__name__}: {exc}", file=sys.stderr)
-        return raw, None
+        return raw, None, prefix
 
     seen = {
         "results_seen": plan.tool_results_seen,
@@ -362,7 +376,7 @@ def _rewrite(raw: bytes, config: Config, stats: Stats,
         # `tests/test_filter_golden.py` cannot test I11 and makes any change to
         # that line visible.
         _count(config, stats, **seen)
-        return raw, None
+        return raw, None, prefix
 
     _count(config, stats, filtered=True, dropped=plan.bytes_dropped,
            deferred=plan.bytes_deferred, **seen)
@@ -370,7 +384,7 @@ def _rewrite(raw: bytes, config: Config, stats: Stats,
         print(f"winnow: dropped {len(plan.dropped)} results "
               f"({plan.bytes_dropped:,} bytes), deferred {len(plan.deferred)}",
               file=sys.stderr)
-    return json.dumps(body).encode("utf-8"), ledger_line(plan)
+    return json.dumps(body).encode("utf-8"), ledger_line(plan, None, digest), prefix
 
 
 def _count(config: Config, stats: Stats, **kw) -> None:
@@ -402,9 +416,9 @@ class _Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("content-length") or 0)
         raw = self.rfile.read(length) if length else b""
 
-        ledger = None
+        ledger = prefix = None
         if _is_filtered(self.path) and raw and not _filtering_disabled(self.config):
-            raw, ledger = _rewrite(raw, self.config, self.stats, self.watch)
+            raw, ledger, prefix = _rewrite(raw, self.config, self.stats, self.watch)
         elif raw:
             _count(self.config, self.stats)
 
@@ -422,8 +436,16 @@ class _Handler(BaseHTTPRequestHandler):
                 headers["Content-Length"] = str(len(raw))
             conn.request(self.command, self.path, body=raw or None, headers=headers)
             upstream = conn.getresponse()
-            if ledger and self.config.ledger:
-                _append_ledger(self.config.ledger, ledger, upstream.getheader("request-id"))
+            if self.config.ledger:
+                request_id = upstream.getheader("request-id")
+                # The prefix first: it describes the request the filter line
+                # then reports on, and a reader walking the file in order should
+                # meet the prefix before the traffic sent under it.
+                if prefix:
+                    _append_ledger(self.config.ledger, prefix, request_id)
+                    prefix = None
+                if ledger:
+                    _append_ledger(self.config.ledger, ledger, request_id)
 
             self.send_response(upstream.status)
             for name, value in upstream.getheaders():
@@ -449,6 +471,15 @@ class _Handler(BaseHTTPRequestHandler):
             except OSError:
                 pass
         finally:
+            # An upstream that never answered still moved the prefix, and
+            # `PrefixWatch` has already forgotten the one before it: unwritten
+            # here, the observation is lost for the life of the process. So it
+            # is written with no request id rather than not at all — which is
+            # exactly what every prefix line carried before this change, and is
+            # the reason a reader must treat a null id as "unjoinable" rather
+            # than as "the prefix of no session".
+            if prefix and self.config.ledger:
+                _append_ledger(self.config.ledger, prefix, None)
             conn.close()
 
     do_POST = _relay

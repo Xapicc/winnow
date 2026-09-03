@@ -596,7 +596,8 @@ def _entry(block: dict, name: str, rule: str, size: int) -> dict:
     }
 
 
-def ledger_line(plan: Plan, request_id: str | None = None) -> str:
+def ledger_line(plan: Plan, request_id: str | None = None,
+                prefix_digest: str | None = None) -> str:
     """One JSON line per changed request.
 
     The filter never touches the transcript — Claude Code writes what it holds,
@@ -626,12 +627,24 @@ def ledger_line(plan: Plan, request_id: str | None = None) -> str:
     tag, so without it the first heartbeat would land in `savings.read_ledger` as a
     malformed entry and in `inspect.read_filter_ledger` as a request id matching
     nothing.
+
+    `prefix_digest` names the fixed prefix this request was sent under. A `kind:
+    prefix` line is written only when the prefix *moves*, so on a stable install
+    there is one of them per process and it belongs to whichever session happened
+    to start it — a reader that wanted the prefix in force for some *other*
+    session would have to reason about where that session sits in an append-only
+    file, against lines that are themselves written only on change. Naming the
+    prefix by content identity on a line that already carries a request id makes
+    that lookup positional in nothing: the digests join to the `kind: prefix` line
+    that defined them wherever in the file it sits. This is what `winnow context
+    --filter-ledger` joins on.
     """
     return json.dumps(
         {
             "v": LEDGER_VERSION,
             "kind": "filter",
             "request_id": request_id,
+            "prefix_digest": prefix_digest,
             "model": plan.model,
             "cache_ttl": plan.cache_ttl,
             "dropped": plan.dropped,
@@ -797,10 +810,28 @@ def prefix_changes(previous: dict | None, current: dict) -> dict | None:
     }
 
 
+def prefix_digest(facts: dict) -> str:
+    """The two region digests as one key. What a `kind: filter` line names.
+
+    Both regions rather than either alone: `system` and `tools` are separately
+    cacheable and each moves without the other, so a single-region identity
+    would join two genuinely different prefixes to the same sizes.
+    """
+    return f"{facts.get('system_digest')}.{facts.get('tools_digest')}"
+
+
 def prefix_line(facts: dict, changes: dict | None) -> str:
-    """One ledger line, emitted only when the prefix is new or has moved."""
+    """One ledger line, emitted only when the prefix is new or has moved.
+
+    `request_id` is null here and filled in by `proxy._append_ledger` from the
+    response that answered the request this prefix was observed on. It is a
+    declared key rather than an absent one because that is how the stamping is
+    addressed — and without it a prefix line joins to no session at all, which
+    is what it did until this carried the field.
+    """
     return json.dumps(
-        {"v": LEDGER_VERSION, "kind": "prefix", **facts, "changed": changes},
+        {"v": LEDGER_VERSION, "kind": "prefix", "request_id": None,
+         "digest": prefix_digest(facts), **facts, "changed": changes},
         sort_keys=True,
     )
 

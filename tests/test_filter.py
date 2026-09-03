@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import socket
 import threading
 import time
 import typing
+import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -308,9 +310,9 @@ def test_the_rule_set_is_resolved_once_not_per_request(monkeypatch):
     stats = Stats()
     first = json.dumps(body(*turn("a", "Bash", {"command": "git status"}),
                             *turn("b", "Bash", {"command": "git diff"}))).encode()
-    once, _ = _rewrite(first, config, stats)
+    once, _, _ = _rewrite(first, config, stats)
     monkeypatch.setenv("WINNOW_RULES_OFF", "B2")
-    twice, _ = _rewrite(first, config, stats)
+    twice, _, _ = _rewrite(first, config, stats)
     assert once == twice
 
 
@@ -537,7 +539,7 @@ def test_the_pointer_says_where_the_bytes_went():
 def test_an_unparseable_body_is_forwarded_unchanged():
     stats = Stats()
     raw = b"{not json"
-    out, ledger = _rewrite(raw, Config(), stats)
+    out, ledger, _ = _rewrite(raw, Config(), stats)
     assert out == raw and ledger is None and stats.errors == 1
 
 
@@ -545,13 +547,13 @@ def test_a_filter_that_raises_forwards_the_original(monkeypatch):
     stats = Stats()
     monkeypatch.setattr("winnow.proxy.apply", lambda *a, **k: 1 / 0)
     raw = json.dumps(body(*turn("a", "Bash", {"command": "ls -la"}))).encode()
-    out, ledger = _rewrite(raw, Config(), stats)
+    out, ledger, _ = _rewrite(raw, Config(), stats)
     assert out == raw and ledger is None and stats.errors == 1
 
 
 def test_a_json_body_that_is_not_an_object_is_forwarded():
     stats = Stats()
-    out, _ = _rewrite(b"[1,2,3]", Config(), stats)
+    out, _, _ = _rewrite(b"[1,2,3]", Config(), stats)
     assert out == b"[1,2,3]" and stats.errors == 1
 
 
@@ -713,6 +715,100 @@ def test_the_prefix_is_reported_once_while_it_is_stable(wired):
     assert "be helpful" not in config.ledger.read_text(), "sizes and hashes, never content"
 
 
+def test_a_prefix_line_carries_the_request_it_was_observed_on(wired):
+    """The join `winnow context --filter-ledger` needs, and the one this line
+    could not make: it used to be written before the upstream call with a null
+    id, so a prefix observation belonged to no session at all."""
+    base, config, _ = wired
+    payload = body(*turn("a", "Bash", {"command": "python train.py"}))
+    payload["system"] = [{"type": "text", "text": "be helpful"}]
+    payload["tools"] = [{"name": "Bash", "description": "run a command"}]
+    _post(base, payload)
+
+    records = [json.loads(line) for line in
+               config.ledger.read_text().strip().splitlines()]
+    prefix = next(r for r in records if r["kind"] == "prefix")
+    assert prefix["request_id"] == "req_test"
+    assert prefix["digest"] == (f"{prefix['system_digest']}."
+                                f"{prefix['tools_digest']}")
+
+
+def test_the_prefix_line_precedes_the_filter_line_it_describes(wired):
+    """Both are written on the response path now, so the order is a choice: a
+    reader walking an append-only file should meet the prefix before the traffic
+    sent under it."""
+    base, config, _ = wired
+    payload = body(*turn("a", "Bash", {"command": "ls -la"}),
+                   *turn("b", "Bash", {"command": "git diff"}))
+    payload["system"] = [{"type": "text", "text": "be helpful"}]
+    _post(base, payload)
+
+    kinds = [json.loads(line)["kind"] for line
+             in config.ledger.read_text().strip().splitlines()]
+    assert kinds[:2] == ["prefix", "filter"]
+
+
+def test_every_filter_line_names_the_prefix_in_force(wired):
+    """The digest is on the line whether or not the prefix moved, which is the
+    whole point: a `kind: prefix` line is written once per process and belongs
+    to whichever session started it, so a later session can only find its own
+    prefix by being told which one it was sent under."""
+    base, config, _ = wired
+    payload = body(*turn("a", "Bash", {"command": "ls -la"}),
+                   *turn("b", "Bash", {"command": "git diff"}))
+    payload["system"] = [{"type": "text", "text": "be helpful"}]
+    payload["tools"] = [{"name": "Bash", "description": "run a command"}]
+    for _ in range(3):
+        _post(base, json.loads(json.dumps(payload)))
+
+    records = [json.loads(line) for line in
+               config.ledger.read_text().strip().splitlines()]
+    prefixes = [r for r in records if r["kind"] == "prefix"]
+    filters = [r for r in records if r["kind"] == "filter"]
+    assert len(prefixes) == 1 and len(filters) == 3
+    assert {r["prefix_digest"] for r in filters} == {prefixes[0]["digest"]}
+
+
+def test_an_upstream_that_never_answers_still_records_the_prefix(wired):
+    """`PrefixWatch` has already forgotten the prefix before this one, so an
+    observation dropped here is lost for the life of the process. It is written
+    with no request id rather than not at all — unjoinable, which is what a
+    reader must treat a null id as, but not absent."""
+    base, config, _ = wired
+    # A port nothing is listening on, so the proxy's own upstream call fails
+    # after the prefix has been observed and before any response exists to
+    # stamp it with. Closed here rather than never opened, so the port is known
+    # to be free and known to be dead.
+    dead = socket.socket()
+    dead.bind(("127.0.0.1", 0))
+    config.upstream = f"http://127.0.0.1:{dead.getsockname()[1]}"
+    dead.close()
+
+    payload = body(*turn("a", "Bash", {"command": "ls -la"}),
+                   *turn("b", "Bash", {"command": "git diff"}))
+    payload["system"] = [{"type": "text", "text": "be helpful"}]
+    with pytest.raises(urllib.error.HTTPError) as caught:
+        _post(base, payload)
+    assert caught.value.code == 502
+
+    # The 502 is sent before the handler unwinds, so the client is back here
+    # while the write is still pending. That order is the right one — the
+    # operator's request should not wait on a ledger — and it is the test that
+    # has to wait.
+    for _ in range(200):  # up to 2s
+        if config.ledger.exists():
+            break
+        time.sleep(0.01)
+    records = [json.loads(line) for line in
+               config.ledger.read_text().strip().splitlines()]
+    prefixes = [r for r in records if r["kind"] == "prefix"]
+    assert len(prefixes) == 1
+    assert prefixes[0]["request_id"] is None
+    assert prefixes[0]["system_bytes"] > 0
+    # And nothing claims a removal that never reached the API.
+    assert not [r for r in records if r["kind"] == "filter"]
+
+
 def test_a_moved_prefix_is_reported_and_attributed(wired):
     """Enough to attribute a prefix break to the thing the operator did that
     morning: which region moved, which tools appeared, and which kept their name
@@ -769,7 +865,7 @@ def test_a_prefix_readout_that_raises_does_not_fail_the_request(monkeypatch):
 
     monkeypatch.setattr(proxy_mod, "prefix_facts", boom)
     watch = PrefixWatch()
-    assert watch.observe({"model": "claude-opus-5"}) is None
+    assert watch.observe({"model": "claude-opus-5"}) == (None, None)
 
 
 def test_the_readout_is_skipped_when_asked(tmp_path):
@@ -1051,7 +1147,7 @@ def test_a_request_that_changed_nothing_is_still_counted():
     stats = Stats()
     config = Config(rules=frozenset({"C1", "C3", "B2"}))
     payload = json.dumps(body(*turn("a", "Bash", {"command": "python train.py"}))).encode()
-    _, ledger = _rewrite(payload, config, stats)
+    _, ledger, _ = _rewrite(payload, config, stats)
     assert ledger is None
     assert stats.requests == 1
     assert stats.tool_results_seen == 1

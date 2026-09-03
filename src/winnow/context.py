@@ -43,6 +43,7 @@ import re
 import shutil
 import sys
 from dataclasses import dataclass, field
+from itertools import groupby
 from pathlib import Path
 
 from .legacy.session import load_messages
@@ -1350,6 +1351,47 @@ PALETTE_16 = {
 # so that the absence reads as a decision rather than an omission.
 COLOR_CHOICES = ("auto", "always", "never")
 
+# 07-mockup.md item 2, the diverging track: one scale for every row, a zero line,
+# and deficit room to the left of it. The mockup gives the negative side 60px
+# against 180px of positive room, so a quarter of the bar column is kept for it
+# here. A quarter is measured rather than guessed: on the 922 anchored sessions
+# in ~/.claude/projects on this machine, 423 have a negative residual and their
+# median is −2.6%, the 95th percentile is −27.4%, and 16 of the 423 run past the
+# −31% a quarter of 22 columns holds. Those 16 are clipped and marked. Half the
+# column would hold all of them and spend the other half of every row on a
+# direction 54% of sessions never go.
+DEFICIT_SHARE = 0.25
+
+BAR_GLYPH = "█"
+ZERO_RULE = "│"
+# A share too small to fill a column but not zero, drawn against the zero line
+# from whichever side it is on: a row that reads as empty is the failure the
+# whole mark exists to stop.
+HAIRLINE_POSITIVE = "▏"
+HAIRLINE_DEFICIT = "▕"
+# A magnitude past the room its side of zero has. The drawn length is clipped;
+# the number two columns away is not, and the footer says so.
+OFF_SCALE = "«"
+
+# 07-mockup.md item 3, the ledger strip. The three shades are a density ramp
+# down the honesty ladder — the better a number is known, the more ink it gets —
+# so the segments are told apart by their glyph as well as by their hue, and
+# `--color never` loses the palette rather than the mark. The window is a rule
+# heavier than the track's zero line because it is a harder fact: a number the
+# CLI wrote down, not an origin the readout chose.
+LEDGER_GLYPH = {"exact": "█", "derived": "▓", "estimated": "▒", "residual": "░"}
+WINDOW_RULE = "┃"
+OVERHANG_OPEN, OVERHANG_FILL, OVERHANG_CLOSE = "└", "─", "┘"
+# One cell of overhang has no room for two corners, and the overrun still has to
+# be bracketed rather than left to the sentence beneath it.
+OVERHANG_NARROW = "┴"
+
+# Two columns of left margin, one for the window rule, and one left spare so an
+# exactly-80-column terminal does not wrap the strip onto a second line.
+STRIP_FIXED = 4
+STRIP_COLUMNS = BAR_COLUMNS + LABEL_COLUMNS + FIXED_COLUMNS - STRIP_FIXED
+NARROWEST_STRIP = 16
+
 
 @dataclass(frozen=True)
 class Style:
@@ -1363,6 +1405,7 @@ class Style:
     bar_columns: int = BAR_COLUMNS
     label_columns: int = LABEL_COLUMNS
     palette: dict[str, str] = field(default_factory=dict)
+    strip_columns: int = STRIP_COLUMNS
 
     @property
     def head_columns(self) -> int:
@@ -1451,13 +1494,27 @@ def palette() -> dict[str, str]:
     return PALETTE_16
 
 
+def strip_layout(bar_columns: int, label_columns: int, columns: int) -> int:
+    """How many columns the ledger strip gets on a terminal `columns` wide.
+
+    The strip is a header mark rather than a row, so it takes the width of a
+    tree row — it needs the resolution: a 3.6% overhang is a column and a bit at
+    22 and four columns at 104. It is capped at the *terminal* as well, which a
+    tree row is not, because the strip is the one mark that would stop being a
+    mark if it wrapped: half a proportion on a second line is not a proportion.
+    """
+    row = bar_columns + label_columns + FIXED_COLUMNS
+    return max(NARROWEST_STRIP, min(row, columns or row) - STRIP_FIXED)
+
+
 def resolve_style(color: str = "auto", columns: int | None = None) -> Style:
     """One `Style` for a whole run, decided once at the command boundary."""
     if columns is None:
         columns = terminal_columns()
     bar_columns, label_columns = layout(columns)
     return Style(bar_columns, label_columns,
-                 palette() if wants_colour(color) else {})
+                 palette() if wants_colour(color) else {},
+                 strip_layout(bar_columns, label_columns, columns))
 
 
 def key_line(style: Style) -> str:
@@ -1477,22 +1534,60 @@ def key_line(style: Style) -> str:
 # ─── rendering ───────────────────────────────────────────────────────────────
 
 
-def bar(share: float, columns: int = BAR_COLUMNS) -> str:
-    """The magnitude, in a glyph that says which side of zero it is on.
+def track_rooms(columns: int) -> tuple[int, int]:
+    """`(deficit columns, positive columns)` either side of the zero line."""
+    deficit = max(2, round(DEFICIT_SHARE * (columns - 1)))
+    return deficit, columns - 1 - deficit
 
-    A negative residual is normal rather than exceptional — the estimator
-    over-explains the window on roughly a third of sessions (02-, and 60 of 162
-    on this run's own sweep) — and `03-option-a`'s mock readout does not
-    contemplate one. Drawn hatched and leading with a minus so that
-    over-explained reads differently from under-explained at a glance, rather
-    than as an empty row that looks like a rounding artefact.
+
+def track_run(share: float, room: int, positive: int) -> str:
+    """The glyphs for one side of zero, at the scale the whole column shares.
+
+    Floors rather than rounds, so a bar is never drawn longer than its number.
+    A magnitude that runs past the room its side has — which only the deficit
+    side is narrow enough for in practice — is clipped and its first cell says
+    so; the token count and the share two columns away are the full numbers and
+    are never the thing that gets shortened.
     """
-    filled = min(columns, int(abs(share) * columns))
+    length = int(abs(share) * positive)
+    if length > room:
+        return OFF_SCALE + BAR_GLYPH * (room - 1)
+    if length:
+        return BAR_GLYPH * length
+    return HAIRLINE_DEFICIT if share < 0 else HAIRLINE_POSITIVE
+
+
+def track(share: float | None, kind: str, style: Style) -> str:
+    """The magnitude on a diverging scale, `style.bar_columns` wide.
+
+    07-mockup.md item 2. A negative residual is normal rather than exceptional —
+    the estimator over-explains the window on 423 of the 922 anchored sessions
+    on this machine — and `03-option-a`'s mock readout does not contemplate one.
+    The answer the mockup took, and this draws: one scale for every row, a zero
+    line, and the deficit drawn leftward from it, so that over-explained is a
+    direction on an axis rather than a punctuation mark in front of a bar.
+
+    The hatch the old `bar()` used for the negative side is dropped. It was
+    standing in for an axis that did not exist yet, and once there is one it
+    works against the mark: the same glyph on both sides is what makes the two
+    sides read as one quantity pointing two ways, where a hatched left side
+    reads as a different quantity. The sign is carried by the position, by the
+    printed number, by the `residual` word and by the hue — four ways without it.
+    """
+    deficit, positive = track_rooms(style.bar_columns)
+    if share is None:
+        # No anchor means no denominator and no percentages (§C2), so there is
+        # no scale: an axis drawn against nothing would claim a comparison this
+        # session cannot make.
+        return " " * style.bar_columns
+    if not share:
+        return " " * deficit + ZERO_RULE + " " * positive
+    run = track_run(share, deficit if share < 0 else positive, positive)
     if share < 0:
-        return "-" + "▒" * min(columns - 1, filled)
-    if filled:
-        return "█" * filled
-    return "▏" if share > 0 else " "
+        return (" " * (deficit - len(run)) + style.paint(run, kind)
+                + ZERO_RULE + " " * positive)
+    return (" " * deficit + ZERO_RULE + style.paint(run, kind)
+            + " " * (positive - len(run)))
 
 
 def walk(nodes: list[Node], level: int = 1):
@@ -1526,6 +1621,171 @@ def pooled_line(stats: dict[str, float]) -> str:
             f"{stats['repeated_paths']:,.0f} path(s) touched more than once")
 
 
+# ─── the ledger strip ────────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class Ledger:
+    """What claims the window and what is left of it, as quantities to draw.
+
+    07-mockup.md item 3. `06-` prints this as four lines of arithmetic under the
+    heading `audit`; the strip is the same subtraction as a mark, and the reason
+    it is worth having is that a −25.6% session prints as a number in a column
+    and reads as a rounding artefact.
+    """
+
+    window: int
+    parts: tuple[tuple[str, int], ...]
+    residual: int
+
+    @property
+    def claimed(self) -> int:
+        return sum(tokens for _, tokens in self.parts)
+
+    @property
+    def span(self) -> int:
+        """The strip's own total: the window, or the parts when they overrun it.
+
+        Not a normalisation. Nothing is rescaled to fit inside the window — the
+        strip is stretched to hold the parts and the window rule moves off the
+        right-hand end, which is what makes the overrun a length rather than a
+        footnote. The mockup's finding is that the graphic is only honest
+        because it refuses to do the other thing.
+        """
+        return max(self.window, self.claimed)
+
+
+def ledger(composition: Composition) -> Ledger | None:
+    """The strip's arithmetic, read off `audit_rows` rather than off the tree.
+
+    Off the audit, so the two cannot come apart: the constraint is that `--audit`
+    and the strip are two renderings of one subtraction, and the cheapest way to
+    hold it is to give them one source. `None` with no anchor, which is the same
+    answer §C2 gives to every percentage in this readout — no window, no
+    denominator, no scale, and so no strip rather than a strip of zeroes.
+    """
+    window = composition.window
+    if not window:
+        return None
+    claimed: dict[str, int] = {}
+    residual = 0
+    for _, tokens, kind in audit_rows(composition)[1:]:
+        if kind == "residual":
+            residual += tokens
+        else:
+            # `audit_rows` carries the claims negated, because it reads as a
+            # subtraction from the window. The strip draws them as lengths.
+            claimed[kind] = claimed.get(kind, 0) - tokens
+    return Ledger(
+        window=window,
+        parts=tuple((kind, claimed[kind]) for kind in KINDS if kind in claimed),
+        residual=residual,
+    )
+
+
+def drawn_segments(led: Ledger) -> list[tuple[str, int]]:
+    """The segments the strip actually draws, in honesty order.
+
+    The residual is one of them only when it is positive: room left in the
+    window is a length, and an overrun is the overhang past the window rule
+    rather than a fourth block on the end of the stack.
+    """
+    segments = list(led.parts)
+    if led.residual > 0:
+        segments.append(("residual", led.residual))
+    return segments
+
+
+def chip(kind: str, tokens: int, window: int, style: Style) -> tuple[str, str]:
+    """One legend entry as `(what it measures, what is printed)`.
+
+    Two strings because the escape bytes are zero columns wide and the packer
+    has to know how much room the entry takes on the line.
+    """
+    figures = f"{tokens:,} ({100 * tokens / window:.1f}%)"
+    return (f"{LEDGER_GLYPH[kind]} {kind} {figures}",
+            f"{style.paint(LEDGER_GLYPH[kind], kind)} {style.word(kind)} {figures}")
+
+
+def strip_cells(led: Ledger, width: int) -> tuple[list[str], int]:
+    """The strip's cells as one kind per column, and where the window rule goes.
+
+    Segment edges are placed on the cumulative total rather than segment by
+    segment, so the rounding cannot drift and the last cell always lands on the
+    span exactly.
+    """
+    scale = width / led.span
+    cells: list[str] = []
+    running = 0
+    for kind, tokens in drawn_segments(led):
+        running += tokens
+        edge = min(width, round(running * scale))
+        cells.extend([kind] * max(0, edge - len(cells)))
+    cells.extend([""] * (width - len(cells)))
+
+    rule = min(width, round(led.window * scale))
+    if led.residual < 0:
+        # An overrun too small to round to a column still has to be visible: a
+        # rule at the right-hand end says the parts fit, and they do not. One
+        # column of the strip is drawn on the wrong side of the rule to say the
+        # true thing, which is that there is an outside of the rule at all.
+        rule = min(rule, width - 1)
+    return cells, rule
+
+
+def paint_cells(cells: list[str], style: Style) -> str:
+    """One glyph per column, painted in runs so the escapes stay off the ink."""
+    return "".join(style.paint(LEDGER_GLYPH.get(kind, " ") * len(list(group)), kind)
+                   for kind, group in groupby(cells))
+
+
+def pack(fragments: list[tuple[str, str]], width: int) -> list[str]:
+    """`(plain, painted)` fragments onto as few lines of `width` as hold them.
+
+    Wrapped rather than shortened: the legend is what says which glyph is which
+    kind, and a narrow terminal is not a reason to stop saying what a mark means.
+    """
+    gap, lines, row, used = "   ", [], [], 0
+    for plain, painted in fragments:
+        step = len(plain) + (len(gap) if row else 0)
+        if row and used + step > width:
+            lines.append("  " + gap.join(row))
+            row, used, step = [], 0, len(plain)
+        row.append(painted)
+        used += step
+    if row:
+        lines.append("  " + gap.join(row))
+    return lines
+
+
+def ledger_lines(led: Ledger, style: Style) -> list[str]:
+    """The strip, the overhang bracket when there is one, and the legend."""
+    width = style.strip_columns
+    cells, rule = strip_cells(led, width)
+    lines = ["  " + paint_cells(cells[:rule], style) + WINDOW_RULE
+             + paint_cells(cells[rule:], style)]
+
+    overhang = width - rule
+    if led.residual < 0:
+        bracket = (OVERHANG_NARROW if overhang < 2 else
+                   OVERHANG_OPEN + OVERHANG_FILL * (overhang - 2) + OVERHANG_CLOSE)
+        lines.append(" " * (2 + rule + 1) + style.paint(bracket, "residual"))
+
+    legend = [chip(kind, tokens, led.window, style)
+              for kind, tokens in drawn_segments(led)]
+    rule_text = f"{WINDOW_RULE} the exact window, {led.window:,}"
+    legend.append((rule_text, rule_text))
+    lines.extend(pack(legend, width + 1))
+
+    if led.residual < 0:
+        over = -led.residual
+        overrun = (f"the parts overrun the window that existed by {over:,} "
+                   f"token{'' if over == 1 else 's'} "
+                   f"({100 * over / led.window:.1f}%)")
+        lines.append("  " + style.paint(overrun, "residual"))
+    return lines
+
+
 def render(composition: Composition, window_argument: int | None,
            style: Style | None = None) -> str:
     """The terminal readout: colour that means provenance, and nothing else.
@@ -1538,6 +1798,13 @@ def render(composition: Composition, window_argument: int | None,
 
     Colour lands on exactly two things per row, the bar glyph and the kind word.
     The numbers stay uncoloured so the columns still read as a table.
+
+    Two marks carry the shape of it: the ledger strip above the tree, which
+    draws `derived` and `estimated` against a hard rule at the exact window and
+    brackets the overhang when they overrun it, and the diverging track in the
+    bar column, which gives every row one scale and a zero line. Both are
+    07-mockup.md's inventions rather than anything `05-` specifies, and both are
+    drawn from the same subtraction `--audit` prints.
     """
     style = style or Style()
     lines: list[str] = []
@@ -1570,13 +1837,18 @@ def render(composition: Composition, window_argument: int | None,
         lines.append(f"{f'of a --window of {window_argument:,}':<{style.head_columns}}"
                      f"{100 * window / window_argument:8.1f}% full  "
                      f"{style.word('exact')}")
+    led = ledger(composition)
+    if led is not None:
+        lines.append("")
+        lines.extend(ledger_lines(led, style))
     lines.append("")
 
+    off_scale = False
     for node, level in walk(composition.nodes):
-        share = node.tokens / window if window else 0.0
-        percent = f"{100 * share:5.1f}%" if window else "     —"
-        glyph = style.paint(f"{bar(share, style.bar_columns):<{style.bar_columns}}",
-                            node.kind)
+        share = node.tokens / window if window else None
+        percent = f"{100 * share:5.1f}%" if share is not None else "     —"
+        glyph = track(share, node.kind, style)
+        off_scale = off_scale or OFF_SCALE in glyph
         lines.append(f"  {glyph}  "
                      f"{indent(node.label, level, style.label_columns)}"
                      f"{node.tokens:>9,}  {percent}  {style.word(node.kind)}")
@@ -1612,6 +1884,11 @@ def render(composition: Composition, window_argument: int | None,
                      "more of the window than there is. That is what an unbiased "
                      "estimator does on roughly a third of sessions and it is "
                      "printed with its sign rather than clamped (§C10).")
+    if off_scale:
+        lines.append(f"  note       a row runs past the room its side of the "
+                     f"zero line has, so its bar is clipped and its first cell "
+                     f"is '{OFF_SCALE}'. Only the drawing was shortened: the "
+                     "token count and the share beside it are the full numbers.")
     if composition.depth < 3:
         lines.append(f"  note       drawn to --depth {composition.depth}; "
                      "--depth 3 reaches the file paths and Bash command heads.")

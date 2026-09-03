@@ -30,15 +30,21 @@ import pytest
 
 from winnow.context import (
     BAR_COLUMNS,
+    BAR_GLYPH,
     CHARS_PER_TOKEN,
     COLOR_CHOICES,
     FIXED_COLUMNS,
     KINDS,
     LABEL_COLUMNS,
+    LEDGER_GLYPH,
+    OFF_SCALE,
+    OVERHANG_OPEN,
     PALETTE_16,
     PALETTE_256,
     WIDEST_BAR,
     WIDEST_LABEL,
+    WINDOW_RULE,
+    ZERO_RULE,
     Node,
     Style,
     attachment_chars,
@@ -50,12 +56,15 @@ from winnow.context import (
     indent,
     key_line,
     layout,
+    ledger,
     palette,
     priced_responses,
     render,
     render_audit,
     resolve_style,
     to_dict,
+    track,
+    track_rooms,
     wants_colour,
 )
 from winnow.legacy.session import load_messages
@@ -979,7 +988,9 @@ def test_the_residual_is_allowed_to_be_negative_and_renders_with_its_sign():
     residual_row = next(line for line in readout.splitlines()
                         if "unattributed" in line)
     assert "-7,500" in residual_row and "-50.0%" in residual_row
-    assert residual_row.lstrip().startswith("-"), "the bar says which side of zero"
+    left, _, right = residual_row[2:2 + BAR_COLUMNS].partition(ZERO_RULE)
+    assert left.strip() and not right.strip(), \
+        "the deficit is drawn on the deficit side of the zero line"
     assert any("the residual is negative" in line for line in readout.splitlines())
 
 
@@ -1194,7 +1205,7 @@ def test_colour_lands_on_the_bar_and_the_kind_word_and_on_no_number(kind):
                if "a node" in line)
     open_sequence = f"\x1b[{style.palette[kind]}m"
 
-    assert row.startswith(f"  {open_sequence}█"), "the bar is not painted"
+    assert f"{ZERO_RULE}{open_sequence}{BAR_GLYPH}" in row, "the bar is not painted"
     assert row.endswith(f"{open_sequence}{kind}\x1b[0m"), "the kind is not painted"
     # Everything between the label and the kind word is the numeric block, and
     # the only escape sequence left in it should be the one that opens the kind.
@@ -1327,3 +1338,229 @@ def test_the_audit_and_explain_are_coloured_by_the_same_style():
     assert code == 0
     assert style.word("derived") in text
     assert "\x1b" not in explain(comp, "prefix")[1]
+
+
+# ─── the ledger strip and the diverging track ────────────────────────────────
+
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+# The two marks 07-mockup.md invented and flagged as unreviewed, on the
+# fixtures that exercise each side of zero. `over_explained` and
+# `prefix_underwater` both overrun their window; `golden` and `skill_body`
+# leave room in theirs; `agent` claims 1.8% of a 100,000-token window.
+OVERRUNNING = ("over_explained", "prefix_underwater")
+UNDERCLAIMING = ("golden", "skill_body", "agent")
+UNANCHORED = ("no_anchor", "empty", "bookkeeping_only")
+
+
+def strip_block(readout: str) -> list[str]:
+    """The ledger strip's own lines, from the strip down to its last legend line."""
+    lines = readout.splitlines()
+    start = next((i for i, line in enumerate(lines) if WINDOW_RULE in line), None)
+    if start is None:
+        return []
+    return lines[start:lines.index("", start)]
+
+
+@pytest.mark.parametrize("name", OVERRUNNING)
+def test_an_overrun_window_is_drawn_as_an_overhang_with_a_bracket_under_it(name):
+    """07-mockup.md item 3, and the reason it is worth building: the same
+    arithmetic printed as a signed number in a column reads as a rounding
+    artefact, and a quarter of the strip hanging past the window rule does not.
+    """
+    comp = composition(name)
+    block = strip_block(render(comp, None))
+    strip, bracket = block[0], block[1]
+
+    assert ledger(comp).residual < 0
+    assert strip.index(WINDOW_RULE) < len(strip) - 1, \
+        "the window rule is inside the strip, so there is an outside to it"
+    assert bracket.strip().startswith(OVERHANG_OPEN), "no bracket under the overhang"
+    # The bracket starts under the first cell past the rule and ends under the
+    # last, whatever the terminal is wide enough to draw.
+    assert len(bracket) == len(strip)
+    assert bracket.index(OVERHANG_OPEN) == strip.index(WINDOW_RULE) + 1
+    assert any("overrun the window" in line for line in block)
+
+
+@pytest.mark.parametrize("name", UNDERCLAIMING)
+def test_a_window_with_room_left_in_it_gets_no_bracket_and_a_rule_at_the_end(name):
+    """The mark has to be quiet when the books balance, or it says nothing when
+    they do not. Room left over is the residual segment reaching the rule."""
+    comp = composition(name)
+    block = strip_block(render(comp, None))
+
+    assert ledger(comp).residual > 0
+    assert block[0].endswith(WINDOW_RULE), "the parts fit, so the rule is the end"
+    assert not any(OVERHANG_OPEN in line for line in block)
+    assert not any("overrun" in line for line in block)
+    assert LEDGER_GLYPH["residual"] in block[0], "the room left over is not drawn"
+
+
+@pytest.mark.parametrize("name", UNANCHORED)
+def test_an_unanchored_session_gets_no_strip_rather_than_a_strip_of_zeroes(name):
+    """§C2: no anchor, no denominator, no share — and so no scale to draw one
+    against. A strip here would be four hundred columns of nothing claiming to
+    be a proportion of a window nobody measured."""
+    comp = composition(name)
+    readout = render(comp, None)
+
+    assert ledger(comp) is None
+    assert WINDOW_RULE not in readout
+    assert not any(glyph in readout for glyph in ("▓", "▒", "░"))
+    assert ZERO_RULE not in readout, "an axis with no scale is a claim too"
+
+
+@pytest.mark.parametrize("name", OVERRUNNING + UNDERCLAIMING + (
+    "compacted", "image", "by_path", "zero_usage_anchor", "torn_trailing"))
+def test_the_strip_and_the_audit_are_two_renderings_of_one_subtraction(name):
+    """The constraint the strip is only allowed to exist under. `--audit` prints
+    the window less every claim, leaving the residual; the strip draws the same
+    rows as lengths. They are asserted equal here rather than kept equal by
+    hand, because a strip that could disagree with the audit would be a second
+    opinion about a subtraction that has only one answer."""
+    comp = composition(name)
+    led, rows = ledger(comp), audit_rows(comp)
+
+    assert rows[0][1] == led.window
+    claims: dict[str, int] = {}
+    for _, tokens, kind in rows[1:]:
+        if kind != "residual":
+            claims[kind] = claims.get(kind, 0) - tokens
+    assert dict(led.parts) == claims
+    assert led.residual == next(t for _, t, k in rows if k == "residual")
+    assert led.window - led.claimed == led.residual, "the strip is the subtraction"
+
+
+@pytest.mark.parametrize("name", OVERRUNNING + UNDERCLAIMING)
+@pytest.mark.parametrize("columns", [80, 120, 200])
+def test_the_strip_never_wraps_the_terminal_it_was_given(name, columns):
+    """A proportion continued on a second line is not a proportion. The strip is
+    the one mark capped at the terminal rather than at the tree row's width."""
+    style = resolve_style("never", columns=columns)
+    block = strip_block(render(composition(name), None, style))
+
+    assert block
+    assert all(len(line) <= columns for line in block)
+    assert len(block[0]) == style.strip_columns + 3, "margin, cells, window rule"
+
+
+def test_a_residual_past_the_deficit_room_is_clipped_and_says_which_row_was():
+    """The track keeps a quarter of the bar column for the deficit side, which
+    holds every negative residual out to −31%: on the 922 anchored sessions on
+    this machine the median negative is −2.6% and 16 of the 423 go past it. The
+    16 are the case this asserts — the drawn length stops at the edge and says
+    so, and the number two columns away is still the whole number."""
+    comp = composition("over_explained")
+    readout = render(comp, None)
+    row = next(line for line in readout.splitlines() if "unattributed" in line)
+
+    assert 100 * ledger(comp).residual / comp.window < -31
+    assert OFF_SCALE in row, "a clipped bar does not say it was clipped"
+    assert "-7,500" in row and "-50.0%" in row, "the number was shortened too"
+    assert any("Only the drawing was shortened" in line
+               for line in readout.splitlines())
+
+
+def test_a_residual_inside_the_deficit_room_is_drawn_whole():
+    """The other side of the clip: the common negative fits, so nothing is
+    marked. Without this the clip mark would be free to appear on every row."""
+    comp = composition("golden")
+    comp.nodes = [Node(label="unattributed", tokens=-1_000, kind="residual")]
+    readout = render(comp, None)
+
+    assert OFF_SCALE not in readout
+    assert not any("Only the drawing was shortened" in line
+                   for line in readout.splitlines())
+
+
+def test_a_claim_far_under_the_window_still_puts_the_rule_where_the_window_is():
+    """`agent` claims 1,771 tokens of a 100,000-token window. The strip has to
+    stay a picture of that window rather than rescale itself onto the 1.8%."""
+    comp = composition("agent")
+    led = ledger(comp)
+    strip = strip_block(render(comp, None))[0]
+
+    assert led.claimed / led.window < 0.02
+    assert strip.endswith(WINDOW_RULE)
+    assert strip.count(LEDGER_GLYPH["residual"]) > strip.count(LEDGER_GLYPH["estimated"])
+
+
+@pytest.mark.parametrize("name", OVERRUNNING + UNDERCLAIMING)
+def test_the_strip_is_drawn_to_the_parts_and_never_rescaled_to_fit(name):
+    """06-'s finding, as an assertion: the overrun 'falls out of drawing the
+    parts against an exact total and refusing to normalise'. So the rule sits at
+    the window's own share of the span, and the segments keep their ratio to
+    each other whichever side of the window they end up on."""
+    style = resolve_style("never", columns=200)
+    led = ledger(composition(name))
+    strip = strip_block(render(composition(name), None, style))[0]
+    cells = strip[2:].replace(WINDOW_RULE, "")
+
+    span = max(led.window, led.claimed)
+    assert abs(strip.index(WINDOW_RULE) - 2
+               - style.strip_columns * led.window / span) <= 1
+    for kind, tokens in led.parts:
+        assert abs(cells.count(LEDGER_GLYPH[kind])
+                   - style.strip_columns * tokens / span) <= 1
+
+
+@pytest.mark.parametrize("name", OVERRUNNING + UNDERCLAIMING)
+def test_colour_is_added_to_the_marks_and_is_never_what_carries_them(name):
+    """`--color never` has to lose the palette and nothing else. Asserted by
+    stripping the escapes back off the coloured readout and demanding the plain
+    one byte for byte: every rule, bracket and glyph survives the strip, so
+    nothing on the page is drawn in hue alone."""
+    plain = render(composition(name), None, resolve_style("never", columns=120))
+    coloured = render(composition(name), None, resolve_style("always", columns=120))
+
+    assert "\x1b" in coloured
+    # The key is the one line colour adds rather than paints — in plain mode it
+    # would name four hues that are not on the page — so it comes back out here.
+    bare = [line for line in ANSI.sub("", coloured).splitlines()
+            if not line.startswith("colour is provenance:")]
+    assert "\n".join(bare) == plain
+
+
+def test_the_plain_strip_tells_its_three_kinds_apart_by_glyph():
+    """What makes the paragraph above true of the strip in particular: three
+    segments, three glyphs, and a window rule that is none of them."""
+    glyphs = {LEDGER_GLYPH[kind] for kind in ("derived", "estimated", "residual")}
+
+    assert len(glyphs) == 3
+    assert WINDOW_RULE not in glyphs and ZERO_RULE not in glyphs
+    assert LEDGER_GLYPH["derived"] in strip_block(render(composition("golden"), None))[0]
+
+
+@pytest.mark.parametrize("columns", [BAR_COLUMNS, 24, WIDEST_BAR])
+def test_the_track_gives_the_deficit_a_quarter_of_the_column_and_keeps_one_scale(
+        columns):
+    """07-mockup.md item 2's proportions: 60px against 180px, so a quarter here.
+    One scale means the positive room is what 100% measures against on both
+    sides — a −20% row and a +20% row are the same length."""
+    deficit, positive = track_rooms(columns)
+    style = Style(bar_columns=columns)
+
+    assert deficit + 1 + positive == columns
+    assert abs(deficit / (columns - 1) - 0.25) < 0.05
+    assert (len(track(-0.2, "residual", style).strip())
+            == len(track(0.2, "estimated", style).strip())), \
+        "the same share is the same length on either side of zero"
+
+
+def test_the_track_draws_no_axis_when_there_is_no_scale():
+    """Same refusal as the strip's, one column wide: `share is None` is a
+    session with no anchor, and an origin drawn against nothing is a claim."""
+    assert track(None, "estimated", Style()).strip() == ""
+    assert ZERO_RULE in track(0.0, "residual", Style()), "zero is still on the axis"
+
+
+@pytest.mark.parametrize("share", [0.0001, -0.0001])
+def test_a_magnitude_too_small_for_a_column_still_gets_a_hairline(share):
+    """A row that reads as empty is the failure the mark exists to stop, and it
+    is the failure the old `bar()` had on a small negative residual."""
+    drawn = track(share, "residual", Style())
+    left, _, right = drawn.partition(ZERO_RULE)
+
+    assert len(drawn) == BAR_COLUMNS
+    assert (left if share < 0 else right).strip()

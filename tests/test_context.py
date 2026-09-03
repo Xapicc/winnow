@@ -41,6 +41,7 @@ from winnow.context import (
     OVERHANG_OPEN,
     PALETTE_16,
     PALETTE_256,
+    SHED_ROW,
     WIDEST_BAR,
     WIDEST_LABEL,
     WINDOW_RULE,
@@ -296,7 +297,13 @@ NOT_A_WINDOW_CLAIM = frozenset({
     "$.audit.retained_reasoning.thinking_blocks",
     "$.audit.retained_reasoning.control_responses",
     "$.audit.solved_constant.chars_per_token",
-} | {f"$.audit.reconciliation[{index}].share" for index in range(12)})
+} | {f"$.audit.reconciliation[{index}].share" for index in range(12)}
+  # Where a shedding event was measured, not how big it was: a request's
+  # position among the priced ones and the record it sits on. The three figures
+  # that are claims about the window — what it was before, what it was after,
+  # and the difference — carry their kind.
+  | {f"$.shedding.events[{index}].{key}" for index in range(8)
+     for key in ("at_record", "at_request", "of_requests")})
 
 
 def walk_numbers(document) -> tuple[list[tuple[str, dict]], list[str]]:
@@ -344,6 +351,7 @@ def walk_numbers(document) -> tuple[list[tuple[str, dict]], list[str]]:
     ("empty", None),
     ("over_explained", None),
     ("prefix_underwater", None),
+    ("shedding", None),
 ])
 def test_every_rendered_number_carries_a_provenance_label(name, window_argument,
                                                           audit):
@@ -1029,7 +1037,7 @@ def test_the_audit_changes_no_number_in_the_tree():
 def test_the_audit_reconciliation_sums_to_the_exact_window():
     """Every row after the first is subtracted from it and the last is what is
     left, so the column has to add to zero against the window."""
-    for name in ("golden", "over_explained", "compacted"):
+    for name in ("golden", "over_explained", "compacted", "shedding"):
         comp = composition(name)
         rows = audit_rows(comp)
 
@@ -1164,6 +1172,174 @@ def test_the_derived_prefix_measures_what_prefix_facts_measures(tmp_path):
 
     assert round(comp.floor.visible_before_first) == round(estimate(len(opening)))
     assert tokens(comp, "prefix") == round(prefix_tokens) == 23_110
+
+
+# ─── shedding ────────────────────────────────────────────────────────────────
+
+# `context_shedding.jsonl` states its own answer: five priced requests at
+# 12,000 / 30,000 / 22,000 / 25,000 / 24,000, so the window falls by 8,000 at the
+# third and by 1,000 at the fifth, and nothing else in the file explains either.
+SHED_EVENTS = ((3, 6, 30_000, 22_000, 8_000), (5, 10, 25_000, 24_000, 1_000))
+SHED_TOTAL = 9_000
+
+
+def test_a_shed_window_is_measured_exactly_and_labelled_with_its_request():
+    """06- §2 item 2, and the reason the kind matters.
+
+    A shed is a subtraction over two `usage` totals, both of them read: it is
+    `exact` and must never be labelled `estimated`, because an estimate would be
+    a thing the residual is entitled to argue with and this is not.
+    """
+    comp = composition("shedding")
+
+    assert [(e.at_request, e.at_record, e.before, e.after, e.tokens)
+            for e in comp.shed] == list(SHED_EVENTS)
+    assert all(e.of_requests == comp.requests_in_window for e in comp.shed)
+    document = to_dict(comp, None)["shedding"]
+    assert document["shed"] == {"tokens": SHED_TOTAL, "kind": "exact"}
+    assert [event["tokens"] for event in document["events"]] == [
+        {"tokens": 8_000, "kind": "exact"}, {"tokens": 1_000, "kind": "exact"}]
+
+
+def test_a_fall_is_counted_at_any_size_and_not_only_past_a_threshold():
+    """The spike ignored anything under 2,000 tokens; this ships no floor.
+
+    Over the 911 anchored sessions in `~/.claude/projects` the 833 falls run
+    smoothly from 1 token to 458,935 with no gap to cut at, and a 2,000-token
+    floor discards 4.7% of every shed token and silences three sessions that
+    shed thousands in small pieces and nothing in one piece. The 1,000-token
+    event in this fixture is the one the spike would have dropped.
+    """
+    comp = composition("shedding")
+    small = [event for event in comp.shed if event.tokens < 2_000]
+
+    assert [event.tokens for event in small] == [1_000]
+
+
+def test_the_shed_leaves_the_residual_rather_than_being_buried_in_it():
+    """The correctness fix. Before this the 9,000 sat inside `unattributed`.
+
+    The rows above the shed describe material the transcript recorded arriving,
+    so they over-claim the window by what has left it; the residual absorbed that
+    silently and reported a number that was wrong without saying so. Subtracting
+    a measured quantity is not fitting one — nothing here is tuned, and the
+    residual keeps its sign (§C10).
+    """
+    comp = composition("shedding")
+    residual = tokens(comp, "unattributed")
+    before = residual - SHED_TOTAL
+
+    assert before == -7_066, "what this session reported before the shed was named"
+    assert residual == 1_934
+    assert abs(residual) < abs(before)
+    assert sum(node.tokens for node in comp.nodes) == comp.window + SHED_TOTAL
+    # The audit re-prices the window at other constants and would drift from the
+    # tree silently if the shed were in only one of them.
+    assert abs(residual - comp.audit.residual_at(CHARS_PER_TOKEN)) < 5
+
+
+def test_the_reconciliation_names_the_shed_as_a_row_of_its_own():
+    """`06-` prints it as `of which unmodelled shedding`, inside the residual.
+
+    It is a row here because a quantity the tool has measured exactly is not
+    something the confession should be carrying, and because the row is the only
+    place the arithmetic can be checked: every row after the first has to add to
+    the last one.
+    """
+    comp = composition("shedding")
+    rows = audit_rows(comp)
+    shed_row = next(row for row in rows if row[0] == SHED_ROW)
+
+    assert shed_row == (SHED_ROW, SHED_TOTAL, "exact"), "it adds, and it is exact"
+    assert rows.index(shed_row) == len(rows) - 2, "the last thing before the residual"
+    assert sum(tokens for _, tokens, _ in rows[:-1]) == rows[-1][1]
+
+
+def test_a_session_that_sheds_nothing_carries_no_shed_row_at_all():
+    """The other half: 719 of the 911 anchored sessions on this machine never
+    shed, and their books must read exactly as they did before."""
+    for name in ("golden", "over_explained", "compacted"):
+        comp = composition(name)
+
+        assert comp.shed == []
+        assert not any(row[0] == SHED_ROW for row in audit_rows(comp))
+        assert sum(node.tokens for node in comp.nodes) == comp.window
+        assert "shed" not in render(comp, None)
+        assert to_dict(comp, None)["shedding"] == {
+            "events": [], "shed": {"tokens": 0, "kind": "exact"}}
+
+
+def test_the_shed_lines_are_above_the_tree_with_the_cause_the_file_names():
+    """06- calls this "the single cheapest honesty fix available".
+
+    Above the tree because what left is not in the window, and a row of the tree
+    would be putting it back. The cause is a pointer to the records worth
+    reading and is worded so it cannot be read as an attribution.
+    """
+    readout = render(composition("shedding"), None)
+    heading = next(line for line in readout.splitlines()
+                   if line.startswith("shed with no compaction boundary"))
+
+    assert "(2 events)" in heading and "9,000" in heading and "exact" in heading
+    assert readout.index(heading) < readout.index("unattributed")
+    assert "at request 3 of 5 (record 6): 30,000 -> 22,000, 8,000 gone" in readout
+    assert "cause: deferred_tools_delta" in readout
+    assert "cause: nothing in the file names a cause" in readout
+    assert "less shed 9,000" in readout, "the by-kind line still adds up"
+
+
+def test_the_audit_says_the_prefix_was_not_re_derived_and_why():
+    """§C6 offers two ways out and this takes the second: label the prefix with
+    the request it was measured at, and say on the page why the re-derivation
+    was refused rather than leaving it to a commit message."""
+    comp = composition("shedding")
+    code, output = context_command(fixture("shedding"), audit=True)
+    prefix = next(node for node in comp.nodes if node.label == "prefix")
+
+    assert code == 0
+    assert "9,000 tokens have left this window since" in prefix.note
+    assert "no record says whether any of them were prefix" in prefix.note
+    assert "not re-derived here" in output
+    assert "negative on 42 of the" in output, "the measurement, not an opinion"
+
+
+def test_the_strip_runs_past_the_window_rule_by_what_left_it():
+    """07-mockup.md item 3 draws claims against a hard rule at the window. A
+    shedding session's claims describe more material than the window now holds,
+    and the strip says so by running to what was in here at its fullest."""
+    led = ledger(composition("shedding"))
+    plain = ledger(composition("golden"))
+
+    assert led.shed == SHED_TOTAL
+    assert led.span == led.window + SHED_TOTAL
+    assert led.claimed + led.residual == led.span
+    assert plain.shed == 0 and plain.span == max(plain.window, plain.claimed)
+    lines = render(composition("shedding"), None).splitlines()
+    assert any(OVERHANG_OPEN in line for line in lines)
+    assert any("9,000 tokens left this window" in line for line in lines)
+
+
+def test_the_shed_on_the_session_the_spike_measured_it_on(real_claude_dir):
+    """939a04dc, `06-` §6: the readout that made shedding a milestone item.
+
+    The two lines the spike printed are the two largest here and reproduce to
+    the token. The three below its 2,000-token floor are the difference between
+    its 87,753 and this 89,078, and they are counted for the reason above.
+    """
+    path = real_session("939a04dc")
+    comp = compose(path, [record for _, record, _ in load_messages(path)], depth=1)
+    magnitudes = [event.tokens for event in comp.shed]
+
+    assert comp.window == 222_249
+    assert sorted(magnitudes, reverse=True)[:2] == [78_167, 9_586]
+    assert sum(magnitudes) == 89_078
+    assert sum(m for m in magnitudes if m > 2_000) == 87_753, "the spike's figure"
+    largest = next(e for e in comp.shed if e.tokens == 78_167)
+    assert largest.at_record == 288
+    assert largest.cause == ("<synthetic> response (interrupt or API error), "
+                             "deferred_tools_delta")
+    # −25.6% before, and it read as an estimator that cannot count.
+    assert tokens(comp, "unattributed") == 32_291 == -56_787 + 89_078
 
 
 # ─── colour, the key and the width ───────────────────────────────────────────

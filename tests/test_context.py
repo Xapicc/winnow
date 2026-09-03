@@ -33,24 +33,29 @@ from winnow.context import (
     BAR_GLYPH,
     CHARS_PER_TOKEN,
     COLOR_CHOICES,
+    FACT_NOTE,
     FACT_RULE,
     FACT_WARN,
     FIXED_COLUMNS,
     KINDS,
-    NO_CAUSE,
     LABEL_COLUMNS,
     LEDGER_GLYPH,
+    NO_ANCHOR,
+    NO_CAUSE,
     OFF_SCALE,
     OVERHANG_OPEN,
     PALETTE_16,
     PALETTE_256,
+    SHED_EVENTS_SHOWN,
     SHED_HEADING,
     SHED_ROW,
+    THIN_REQUESTS,
     WIDEST_BAR,
     WIDEST_LABEL,
     WINDOW_RULE,
     ZERO_RULE,
     Node,
+    Shed,
     Style,
     anchored_chain,
     attachment_chars,
@@ -69,13 +74,16 @@ from winnow.context import (
     render,
     render_audit,
     resolve_style,
+    shed_facts,
+    shed_tokens,
     to_dict,
+    too_thin,
     track,
     track_rooms,
     wants_colour,
 )
 from winnow.legacy.session import load_messages
-from winnow.report import resolve_session
+from winnow.report import inspect_command, resolve_session
 
 FIXTURES = Path(__file__).parent / "fixtures" / "sessions"
 
@@ -1784,3 +1792,208 @@ def test_a_magnitude_too_small_for_a_column_still_gets_a_hairline(share):
 
     assert len(drawn) == BAR_COLUMNS
     assert (left if share < 0 else right).strip()
+
+
+# ─── the block of exact facts, above the tree ────────────────────────────────
+
+
+def test_the_exact_facts_are_one_block_behind_one_rule():
+    """07-mockup.md draws them with a 3px left border in the `exact` colour.
+
+    The border is the whole grouping — no box, no heading — and what it groups
+    is every number in the readout that was read rather than apportioned. So the
+    rule runs down every line of the block and stops at the first line of
+    anything else.
+    """
+    readout = render(composition("compacted"), 200_000).splitlines()
+    block = [line for line in readout if line.startswith(FACT_RULE)]
+
+    assert readout[1:1 + len(block)] == block, "one block, straight under the header"
+    assert len(block) == 4, [line for line in block]
+    assert all(FACT_RULE not in line for line in readout[1 + len(block):]), \
+        "the rule is the block's and no row of the tree borrows it"
+    assert all(line.rstrip().endswith("exact") or line.lstrip(FACT_RULE).strip()
+               .startswith((FACT_NOTE, FACT_WARN)) for line in block)
+
+    # The block is the same readout as the tree and not a preamble to it, so a
+    # fact's three columns are a tree row's three columns.
+    window = next(line for line in readout if "window at the last request" in line)
+    row = next(line for line in readout if "unattributed" in line)
+    ends = window.index("12,000") + len("12,000")
+    assert row[:ends].endswith("2,476") and window[ends:] == "  100.0%  exact"
+    assert row[ends:] == "   20.6%  residual"
+
+
+def test_the_compacted_session_the_mockup_names(real_claude_dir):
+    """07-mockup.md's "first thing to add if this gets a second pass": the
+    fourth kind of above-tree fact, which it never drew. 2551cd0c's three exact
+    numbers are named in the file and are reproduced here to the token."""
+    path = real_session("2551cd0c")
+    comp = compose(path, [record for _, record, _ in load_messages(path)])
+    block = [line for line in render(comp, None).splitlines()
+             if line.startswith(FACT_RULE)]
+
+    assert comp.window == 116_030
+    assert "116,030" in block[0] and "window at the last request" in block[0]
+    assert "444,326" in block[1] and "dropped by compaction" in block[1]
+    assert block[2].endswith("170,229 -> 23,301")
+    assert block[2].lstrip(FACT_RULE).strip().startswith(FACT_NOTE), \
+        "pre and post are one fact with two numbers, so they are its note"
+
+
+def test_a_shed_row_carries_its_magnitude_in_the_number_column():
+    """07-mockup.md's figure 2 gives each fall a row rather than a sentence.
+
+    The previous slice printed them as prose beneath a total, which put the one
+    number that matters in the middle of a line. Here the row is a fact: where
+    it happened in the label, what left in the number column, `exact` beside it.
+    """
+    block = [line for line in render(composition("shedding"), None).splitlines()
+             if line.startswith(FACT_RULE)]
+    rows = [line for line in block if "at request" in line]
+    heading = next(line for line in block if SHED_HEADING in line)
+
+    assert len(rows) == 2, block
+    assert all(re.search(r"\s(8,000|1,000)\s+—\s+exact$", row) for row in rows)
+    assert rows[0].index("8,000") == heading.index("9,000"), "one number column"
+    assert "(2 events)" in heading, "the total heads them"
+
+
+def test_the_shed_block_never_grows_past_five_rows_and_says_what_it_folded():
+    """The cap is `SHED_EVENTS_SHOWN`; what it leaves out is a row of its own,
+    because a total that silently stopped adding would be the one thing this
+    readout cannot afford."""
+    events = [Shed(at_record=n, at_request=n, of_requests=40,
+                   before=1_000 * (n + 1), after=1_000 * n, cause=NO_CAUSE)
+              for n in range(1, 21)]
+    facts = shed_facts(events)
+    folded = facts[-1]
+
+    assert len(facts) == 1 + SHED_EVENTS_SHOWN + 1
+    assert folded.label.strip() == "and 15 more, each smaller"
+    assert (int(folded.value.replace(",", ""))
+            + sum(int(f.value.replace(",", "")) for f in facts[1:-1])
+            == shed_tokens(events))
+
+
+# ─── the four ways of having nothing to draw ─────────────────────────────────
+
+
+def test_no_anchor_states_the_refusal_where_the_window_would_have_been():
+    """05- §M1's acceptance criterion, given 07-mockup.md figure 6's treatment.
+
+    Unchanged in what it does — the estimated tree, no percentage anywhere, exit
+    3 — and changed in where it says why: the refusal is the reason every share
+    below is missing, so it goes where the share would have been rather than
+    into a footnote under the tree.
+    """
+    code, output = context_command(fixture("no_anchor"))
+    lines = output.splitlines()
+    refusal = next(n for n, line in enumerate(lines) if NO_ANCHOR[:40] in line)
+    first_row = next(n for n, line in enumerate(lines) if "tool traffic" in line)
+
+    assert code == 3
+    assert "%" not in output
+    assert refusal < first_row
+    assert lines[1].startswith(FACT_RULE) and "unanchored" in lines[1]
+    assert lines[refusal].lstrip(FACT_RULE).strip().startswith(FACT_WARN)
+    assert output.count(NO_ANCHOR[:40]) == 1, "said at the top, not also at the foot"
+    # It stays in the document, which has no top to say it at.
+    assert NO_ANCHOR in to_dict(composition("no_anchor"), None)["notes"]
+
+
+def test_an_ambiguous_prefix_lists_its_matches_and_refuses_as_inspect_does(
+        tmp_path, monkeypatch):
+    """The mockup invents exit 2 for this. It is 1, because `winnow inspect`
+    already answers 1 to the same mistake through the same `resolve_session`,
+    and one mistake answering differently in two commands is worse than either
+    answer. What is new is the listing: `resolve_session`'s message names up to
+    four stems and stops, and choosing between them needs more than the stems.
+    """
+    projects = tmp_path / "claude" / "projects" / "-workspace-winnow"
+    projects.mkdir(parents=True)
+    for suffix in ("aaaa", "bbbb"):
+        shutil.copy(FIXTURES / "context_golden.jsonl",
+                    projects / f"5f5f5f5f-1111-2222-3333-44444444{suffix}.jsonl")
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+
+    code, output = context_command("5f5f")
+
+    assert code == inspect_command("5f5f", "CB", 4, 300, False)[0] == 1
+    assert "matches 2 sessions" in output
+    assert output.count("5f5f5f5f-1111-2222-3333-44444444") == 2, "both, in full"
+    assert output.count(FACT_RULE) == 2
+    assert "give more of the id" in output.lower()
+
+
+def test_a_jsonl_that_is_not_a_transcript_is_refused_on_the_type_field(tmp_path):
+    """Also invented as exit 2 by the mockup, and taken as 1 here: exit 2 in
+    this CLI is "nothing to do, and that is not an error", where a file that is
+    not a transcript is a wrong argument. Nothing is priced from it — a window
+    read out of the wrong file is the one error the residual cannot catch."""
+    dump = tmp_path / "dump.jsonl"
+    dump.write_text('{"event":"start"}\n{"event":"row","n":2}\n{"event":"ro')
+
+    code, output = context_command(str(dump))
+
+    assert code == 1
+    assert output.startswith("winnow: dump.jsonl is not a Claude Code transcript.")
+    assert "carrying a `type` field" in output and "type: summary" in output
+    assert "One trailing line did not parse" in output
+    assert "is not why this failed" in output, "the torn line is named, not blamed"
+    assert "window at the last request" not in output, "nothing was priced"
+
+
+def test_an_empty_transcript_keeps_its_own_refusal(tmp_path):
+    """The `type` check must not swallow the empty file: it has no records to be
+    untyped, and 05- §M1 already answers it with the no-anchor refusal."""
+    code, output = context_command(fixture("empty"))
+
+    assert code == 3
+    assert "0 records" in output and "not a Claude Code transcript" not in output
+
+
+def test_one_request_prints_the_numbers_and_draws_no_tree():
+    """The mockup's fourth state, at the threshold this run measured rather than
+    the ten it guessed. Not an error and not a refusal: every number is here."""
+    code, output = context_command(fixture("zero_usage_anchor"))
+    lines = output.splitlines()
+
+    assert code == 0
+    assert "8,000  100.0%  exact" in lines[1]
+    assert [line.split()[-1] for line in lines if line.startswith("  ") and
+            line.strip() and line.split()[-1] in KINDS] == \
+        ["derived", "estimated", "residual"], "three numbers, and no tree"
+    assert "prefix (not in the file)" in output
+    assert "tool traffic" not in output and "conversation" not in output
+    assert f"after {THIN_REQUESTS} priced requests" in output
+
+
+def test_the_threshold_is_where_the_corpus_splits_and_not_where_the_mockup_guessed():
+    """07-mockup.md item 9 calls ten a guess and it is. Two is the count that
+    separates ~/.claude/projects cleanly, and the readout says so on the page
+    rather than in a commit message."""
+    assert THIN_REQUESTS == 2
+    assert too_thin(composition("zero_usage_anchor"))
+    assert not too_thin(composition("golden")), "three requests is a ranking"
+    assert not too_thin(composition("no_anchor")), \
+        "no window is the other refusal, and it owns the screen"
+
+
+def test_no_empty_state_writes_anything_or_raises(tmp_path, monkeypatch):
+    """§C1 holds on the failure paths too, which is where a tool usually starts
+    touching things it said it would not."""
+    projects = tmp_path / "claude" / "projects" / "-workspace-winnow"
+    projects.mkdir(parents=True)
+    shutil.copy(FIXTURES / "context_golden.jsonl", projects / "cccc0000.jsonl")
+    shutil.copy(FIXTURES / "context_golden.jsonl", projects / "cccc1111.jsonl")
+    (tmp_path / "dump.jsonl").write_text('{"not":"a transcript"}\n')
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+
+    before = {str(p): p.stat().st_mtime_ns for p in sorted(tmp_path.rglob("*"))}
+    codes = [context_command(argument)[0] for argument in
+             ("cccc", str(tmp_path / "dump.jsonl"), fixture("no_anchor"),
+              fixture("zero_usage_anchor"))]
+
+    assert codes == [1, 1, 3, 0]
+    assert {str(p): p.stat().st_mtime_ns for p in sorted(tmp_path.rglob("*"))} == before

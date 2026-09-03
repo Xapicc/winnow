@@ -44,11 +44,12 @@ import shutil
 import sys
 import textwrap
 from dataclasses import dataclass, field
+from datetime import datetime
 from itertools import groupby, pairwise
 from pathlib import Path
 
 from .legacy.session import load_messages
-from .report import resolve_session
+from .report import AmbiguousSession, resolve_session
 from .rules import bash_head
 
 # 01- §2.3 puts the constant in 2.4-3.0 by three independent methods and
@@ -2096,6 +2097,208 @@ def shed_facts(events: list[Shed]) -> list[Fact]:
     return facts
 
 
+# ─── the four ways of having nothing to draw ─────────────────────────────────
+#
+# 07-mockup.md's figure 6, and item 7 of its own list of inventions: `05-` §M1
+# settles one of these four — no anchor means the estimated tree, no percentages
+# and a non-zero exit — and says nothing about the other three. The mockup's
+# exit codes are 2 / 2 / 1 / 0 and it says outright that it made them up. Three
+# of the four are taken differently here:
+#
+#   ambiguous prefix   1, not 2. `winnow inspect` already exits 1 on exactly
+#                      this refusal, through the same `resolve_session`, and the
+#                      same mistake answering differently in two commands is
+#                      worse than either answer.
+#   not a transcript   1, not 2. Exit 2 in this CLI is "nothing to do, and that
+#                      is not an error" — `inspect` prints its whole readout and
+#                      exits 2 when no rule matched. A file that is not a
+#                      transcript is a wrong argument, which is what 1 is for.
+#   no anchor          3, which is what shipped, not the mockup's 1. It is a
+#                      refusal — the readout is printed and the shares withheld
+#                      — and `winnow` spends 3 on refusals everywhere else.
+#   too thin           0, which is the mockup's own answer and the right one:
+#                      nothing failed and the numbers are all there.
+#
+# Only the first two are errors, and both are on the path where `--json` was
+# already plain text rather than a document. The too-thin state is a decision
+# about what to draw, so `--json` prints the same document it always did.
+
+# How many of an ambiguous prefix's matches are listed before the rest are
+# counted. Six holds every real collision — sibling agents sharing a working
+# directory — without a one-character prefix printing a screenful of the
+# machine's whole history.
+MATCHES_SHOWN = 6
+
+# Fewer than this many priced requests inside the window and the tree is drawn
+# for nobody: there is one request, so there is nothing to rank.
+#
+# The mockup guesses ten and says it is a guess. Ten turns out to measure
+# something real — sweeping the 1,010 anchored transcripts in ~/.claude/projects,
+# the median share of the window taken by the prefix crosses below half at
+# exactly ten requests — but prefix-dominated is not the same as nothing-to-rank,
+# and refusing the tree on the 165 sessions under ten would withhold a readout
+# that has four top-level rows and something to say in them.
+#
+# Two is the count that separates the corpus cleanly. Every one of the 70
+# sessions with a single request in the window has at most two drawable
+# top-level rows; every one of the 940 with two or more has at least three. No
+# session on either side of the line falls on the other side of it.
+THIN_REQUESTS = 2
+
+
+def prose_lines(text: str, style: Style) -> list[str]:
+    """A paragraph under a screen, at the width the tree beside it would take.
+
+    `strip_columns` because it is the one width already capped at the terminal
+    as well as at the readout: a sentence that wraps where the terminal ends
+    rather than where the sentence does is the same fault the ledger strip is
+    capped to avoid.
+    """
+    return [f"  {line}" for line in textwrap.wrap(text, style.strip_columns)]
+
+
+def line_count(path: Path) -> int:
+    """Lines in a file, without parsing any of them.
+
+    A count rather than a record count: a line is not a record until it parses,
+    and this is used to tell two candidate transcripts apart, which does not
+    need them read. On this install the largest is 64 MB, and parsing six of
+    those to disambiguate a prefix would cost more than the refusal.
+    """
+    with path.open("rb") as handle:
+        return sum(chunk.count(b"\n")
+                   for chunk in iter(lambda: handle.read(1 << 20), b""))
+
+
+def written(path: Path) -> str:
+    """The day a file was last written, in the operator's own timezone.
+
+    Naive local time on purpose: this is beside a session id so that two of them
+    can be told apart at a glance, and it has to read the same as the `ls` the
+    operator would have run instead.
+    """
+    stamp = datetime.fromtimestamp(path.stat().st_mtime)  # noqa: DTZ006
+    return f"{stamp:%Y-%m-%d}"
+
+
+def ambiguous_screen(argument: str, matches: list[Path], style: Style) -> str:
+    """A prefix that names more than one session, and which ones it names.
+
+    The listing is the whole point: `resolve_session`'s message names up to four
+    stems and stops, and what an operator needs in order to type a longer prefix
+    is the part of the id that differs and something to choose between them by.
+    """
+    shown = matches[:MATCHES_SHOWN]
+    facts = [Fact(f"{path.stem}  last written {written(path)}",
+                  f"{line_count(path):,}")
+             for path in shown]
+    if len(shown) < len(matches):
+        facts.append(Fact(f"and {len(matches) - len(shown)} more", "—",
+                          kind="unknown"))
+    heading = (f"winnow: {argument!r} matches {len(matches)} sessions, "
+               f"of this many lines each:")
+    return "\n".join([
+        heading,
+        *fact_lines(facts, style),
+        *prose_lines(
+            "Give more of the id. Sibling agents share a working directory on "
+            "this machine, so a short prefix names more than one session more "
+            "often than it looks.", style),
+    ])
+
+
+def transcript_screen(path: Path, records: list[dict], style: Style) -> str | None:
+    """`None` for a transcript, and a refusal for a `.jsonl` that is not one.
+
+    The check is the `type` field, which every record of a Claude Code
+    transcript carries and which nothing else writing JSON lines has a reason
+    to. It refuses only when *no* record has one: a file that is partly typed is
+    a transcript this tool is reading imperfectly, which the residual can catch,
+    where a file that is not one at all would be priced against a window that
+    does not exist.
+
+    An empty file is not refused here. It has no records to be untyped, and it
+    already has an answer — no anchor, and the refusal that comes with it.
+    """
+    parsed = [record for record in records if not record.get("_parse_error")]
+    typed = sum(1 for record in parsed if "type" in record)
+    if not parsed or typed:
+        return None
+    lines = [
+        f"winnow: {path.name} is not a Claude Code transcript.",
+        *fact_lines([
+            Fact("lines read", f"{len(records):,}"),
+            Fact("parsed as JSON", f"{len(parsed):,}"),
+            Fact("carrying a `type` field", "0", kind="unknown"),
+        ], style),
+        *prose_lines(
+            "A transcript's records are typed, and the first is `type: summary` "
+            "or `type: user`. Nothing was priced: this readout apportions an "
+            "estimate into an exact window, and a window read out of a file "
+            "that is not a transcript is the one error the residual cannot "
+            "catch.", style),
+    ]
+    torn = len(records) - len(parsed)
+    if torn:
+        one = torn == 1
+        lines.extend(prose_lines(
+            f"{'One' if one else torn} trailing line{'' if one else 's'} did "
+            f"not parse; {'it was' if one else 'they were'} read around and "
+            f"{'is' if one else 'are'} not why this failed (§C8).", style))
+    return "\n".join(lines)
+
+
+def too_thin(composition: Composition) -> bool:
+    """Whether there is a window but nothing in it to rank."""
+    return (composition.window is not None
+            and composition.requests_in_window < THIN_REQUESTS)
+
+
+def thin_lines(composition: Composition, style: Style) -> list[str]:
+    """The three numbers, and the reason there is no fourth.
+
+    Not an error and not a refusal: every number this readout would have printed
+    is here, and what is withheld is a ranking of one thing against nothing. The
+    prefix is named separately because it is the row that makes the point — it
+    is most of a one-request window and it is roughly the same on every session
+    on this machine, so a tree drawn here would be a picture of the machine.
+    """
+    window = composition.window
+    prefix = next((node for node in composition.nodes
+                   if node.label == "prefix"), None)
+    residual = next((node for node in composition.nodes
+                     if node.kind == "residual"), None)
+    rest = window - (prefix.tokens if prefix else 0) - (residual.tokens
+                                                        if residual else 0)
+
+    def row(label: str, tokens: int, kind: str) -> str:
+        # A fact's columns without a fact's rule: these are apportioned rather
+        # than read, and the block above is the only thing in the readout that
+        # was read. What they keep is the number column, so the three numbers
+        # and the window they are a share of line up.
+        return (f"  {label:<{style.head_columns - 2}}{tokens:>9,}  "
+                f"{100 * tokens / window:5.1f}%  {style.word(kind)}")
+
+    lines = []
+    if prefix:
+        lines.append(row("prefix (not in the file)", prefix.tokens, "derived"))
+    lines.append(row("everything the operator and the tools put in it, together",
+                     rest, "estimated"))
+    if residual:
+        # Drawn at zero as well. It is the one number that audits the tool, and
+        # a screen that printed it only when it was interesting would be tidying
+        # up the confession (§C10).
+        lines.append(row("unattributed", residual.tokens, "residual"))
+    lines.append("")
+    lines.extend(prose_lines(
+        f"{composition.requests_in_window} request in the window. There is no "
+        "ranking to draw and no drill-down that would say anything, so this "
+        f"prints the numbers and stops. Come back after {THIN_REQUESTS} priced "
+        "requests: every session on this machine with one has at most two "
+        "drawable rows, and every session with two has at least three.", style))
+    return lines
+
+
 def exact_facts(composition: Composition,
                 window_argument: int | None) -> list[Fact]:
     """Everything above the tree that was read rather than apportioned.
@@ -2165,6 +2368,13 @@ def render(composition: Composition, window_argument: int | None,
         lines.append(key_line(style))
 
     lines.extend(fact_lines(exact_facts(composition, window_argument), style))
+    if too_thin(composition):
+        lines.append("")
+        lines.extend(thin_lines(composition, style))
+        lines.extend(derivation_lines(composition, window_argument, style,
+                                      off_scale=False))
+        return "\n".join(lines)
+
     led = ledger(composition)
     if led is not None:
         lines.append("")
@@ -2201,8 +2411,21 @@ def render(composition: Composition, window_argument: int | None,
             summary += f" · less shed {shed:,} ({100 * shed / window:.1f}%)"
         lines.append("")
         lines.append(f"{style.word('exact')} {window:,} = {summary}")
-    lines.append("")
-    lines.append("how each kind was derived")
+    lines.extend(derivation_lines(composition, window_argument, style, off_scale))
+    return "\n".join(lines)
+
+
+def derivation_lines(composition: Composition, window_argument: int | None,
+                     style: Style, off_scale: bool) -> list[str]:
+    """The foot of the readout: what each kind means, and every caveat earned.
+
+    The key at the top says which colour is which kind; this says how each
+    kind's number was got. Unconditional, and the same under every screen the
+    readout has, because a screen that prints fewer numbers does not print them
+    to a lower standard.
+    """
+    window = composition.window
+    lines = ["", "how each kind was derived"]
     for kind in KINDS:
         if any(node.kind == kind for node in composition.nodes) or kind == "exact":
             lines.append(f"  {style.paint(f'{kind:<10s}', kind)} {DERIVATION[kind]}")
@@ -2234,10 +2457,10 @@ def render(composition: Composition, window_argument: int | None,
                      f"zero line has, so its bar is clipped and its first cell "
                      f"is '{OFF_SCALE}'. Only the drawing was shortened: the "
                      "token count and the share beside it are the full numbers.")
-    if composition.depth < 3:
+    if composition.depth < 3 and not too_thin(composition):
         lines.append(f"  note       drawn to --depth {composition.depth}; "
                      "--depth 3 reaches the file paths and Bash command heads.")
-    return "\n".join(lines)
+    return lines
 
 
 # ─── the audit ───────────────────────────────────────────────────────────────
@@ -2639,8 +2862,11 @@ def context_command(session: str, *, as_json: bool = False,
     if color not in COLOR_CHOICES:
         return 1, (f"winnow: --color must be one of "
                    f"{', '.join(COLOR_CHOICES)}, got {color!r}")
+    style = resolve_style(color)
     try:
         path = resolve_session(session)
+    except AmbiguousSession as exc:
+        return 1, ambiguous_screen(session, exc.matches, style)
     except LookupError as exc:
         return 1, f"winnow: {exc}"
 
@@ -2648,10 +2874,12 @@ def context_command(session: str, *, as_json: bool = False,
         return 1, f"winnow: --depth must be at least 1, got {depth}"
 
     records = [record for _, record, _ in load_messages(path)]
+    not_a_transcript = transcript_screen(path, records, style)
+    if not_a_transcript is not None:
+        return 1, not_a_transcript
     composition = compose(path, records, depth=depth, by_path=by_path)
     refused = 0 if composition.window is not None else 3
 
-    style = resolve_style(color)
     if explain_node is not None:
         code, text = explain(composition, explain_node, style)
         return (code or refused), text

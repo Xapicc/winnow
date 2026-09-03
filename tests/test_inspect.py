@@ -626,3 +626,32 @@ def test_an_unreadable_ledger_is_a_missing_correction_not_a_crash(tmp_path):
                              filter_ledger=tmp_path / "nope.jsonl")
     assert report.filtered is not None
     assert report.filtered.bytes_dropped == 0
+
+
+def test_the_readout_is_labelled_deprecated_and_says_why(tmp_path):
+    """proposals/ContextTreemap 05-, and the reason `winnow context` lives here.
+
+    This command reports `cache_read_input_tokens` as a lifetime sum over every
+    assistant record and prints it beside a byte-share breakdown — 18,378,780
+    on a session whose window was 219,485. Repairing that is out of the
+    ContextTreemap appetite; saying so where a reader will see it is not.
+    """
+    from winnow.report import render
+
+    records = [
+        {"type": "user", "message": {"role": "user", "content": "hi"}},
+        {"type": "assistant", "message": {
+            "id": "msg_1", "model": "claude-opus-5", "role": "assistant",
+            "usage": {"input_tokens": 10, "cache_creation_input_tokens": 0,
+                      "cache_read_input_tokens": 5_000, "output_tokens": 3},
+            "content": [{"type": "text", "text": "hello"}]}},
+    ]
+    readout = render(inspect_session(write(tmp_path, records)), "CB")
+
+    assert "deprecated: prefer `winnow context <session>`" in readout
+    assert "LIFETIME SUM" in readout
+    assert "18,378,780" in readout and "219,485" in readout
+    # Beside the offending figure as well as at the top: a reader who scrolls
+    # to the cache block is the one about to misread it.
+    body = readout[readout.index("cache economics"):]
+    assert "a lifetime, not a window" in body

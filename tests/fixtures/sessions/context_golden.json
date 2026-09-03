@@ -5,6 +5,27 @@
   "requests_in_window": 3,
   "model": "claude-opus-5",
   "chars_per_token": 2.6,
+  "depth": 3,
+  "by_path": false,
+  "pooled_by_path": {
+    "tools": [
+      "Edit",
+      "NotebookEdit",
+      "Read",
+      "Write"
+    ],
+    "paths": 1,
+    "repeated_paths": 0,
+    "tokens": {
+      "tokens": 56,
+      "kind": "estimated"
+    },
+    "repeated": {
+      "tokens": 0,
+      "percent": 0.0,
+      "kind": "estimated"
+    }
+  },
   "window": {
     "tokens": 5000,
     "kind": "exact"
@@ -25,7 +46,32 @@
       "kind": "estimated",
       "share": 0.3232,
       "note": "",
-      "children": []
+      "children": [
+        {
+          "label": "images",
+          "tokens": 1586,
+          "kind": "estimated",
+          "share": 0.3172,
+          "note": "",
+          "children": []
+        },
+        {
+          "label": "user turns",
+          "tokens": 18,
+          "kind": "estimated",
+          "share": 0.0036,
+          "note": "",
+          "children": []
+        },
+        {
+          "label": "assistant text",
+          "tokens": 12,
+          "kind": "estimated",
+          "share": 0.0024,
+          "note": "",
+          "children": []
+        }
+      ]
     },
     {
       "label": "tool traffic",
@@ -33,7 +79,42 @@
       "kind": "estimated",
       "share": 0.0162,
       "note": "",
-      "children": []
+      "children": [
+        {
+          "label": "Read results",
+          "tokens": 56,
+          "kind": "estimated",
+          "share": 0.0112,
+          "note": "",
+          "children": [
+            {
+              "label": "/workspace/winnow/src/winnow/orchestrator.ts",
+              "tokens": 56,
+              "kind": "estimated",
+              "share": 0.0112,
+              "note": "",
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "tool_use inputs",
+          "tokens": 25,
+          "kind": "estimated",
+          "share": 0.005,
+          "note": "",
+          "children": [
+            {
+              "label": "Read",
+              "tokens": 25,
+              "kind": "estimated",
+              "share": 0.005,
+              "note": "",
+              "children": []
+            }
+          ]
+        }
+      ]
     },
     {
       "label": "standing configuration",
@@ -41,7 +122,25 @@
       "kind": "estimated",
       "share": 0.0136,
       "note": "",
-      "children": []
+      "children": [
+        {
+          "label": "nested_memory",
+          "tokens": 68,
+          "kind": "estimated",
+          "share": 0.0136,
+          "note": "",
+          "children": [
+            {
+              "label": "~/.claude/CLAUDE.md",
+              "tokens": 68,
+              "kind": "estimated",
+              "share": 0.0136,
+              "note": "",
+              "children": []
+            }
+          ]
+        }
+      ]
     },
     {
       "label": "unattributed",

@@ -1,19 +1,29 @@
 """`winnow context <session>` — what is actually in one context window.
 
-The walking skeleton of proposals/ContextTreemap (M1). It resolves a session,
-parses it, deduplicates the assistant responses, takes the exact window from the
-anchoring request, classifies everything still inside that window into the top
-level of H1 — provenance, *who put this here* — and apportions the estimate
-inside the exact total.
+proposals/ContextTreemap, M1 and M2. It resolves a session, parses it,
+deduplicates the assistant responses, takes the exact window from the anchoring
+request, classifies everything still inside that window into H1 — provenance,
+*who put this here* — and apportions the estimate inside the exact total.
+
+M2 is the drill-down, which is the reason the tool exists. Three levels:
+provenance, then the tool or attachment class, then the artefact — a file path
+with its repeat count, a Bash command head, an MCP tool, a memory file, one
+sub-agent's return. `--depth` caps it and `--by-path` re-keys the `tool traffic`
+subtree artefact-first, pooling a path across every tool that touched it,
+because 06-spike-findings §4 measured what tool-first keying costs: on session
+f6ea2591 the repeated-path share — 01- §5's "single most actionable question
+there is" — halves, from 33.2% to 16.8%, because one file read twice and edited
+once is two nodes in two different subtrees rather than one node marked ×3.
 
 The architecture is `02-constraints.md` §C3 and it is the whole reason to prefer
 this over counting bytes: **the total is exact and the parts are apportioned into
 it.** Estimates never sum to a total here, so the error lives entirely in *where*
-tokens are attributed and never in *how many* there are. What no category claims
-is rendered as one `residual` node rather than hidden, and on this slice that
-node is large — M1 has no `prefix` node and no `retained reasoning` node, so
-roughly the ~40% that `01-` §3.2 measured lands in it. That is the correct
-reading of this milestone, not a defect in it.
+tokens are attributed and never in *how many* there are. That holds at every
+level: a node's children are rounded by largest remainder so they sum to the row
+above them exactly. What no category claims is rendered as one `residual` node
+rather than hidden, and it is still large — there is no `prefix` node and no
+`retained reasoning` node until M3, so roughly the ~40% that `01-` §3.2 measured
+lands in it. That is the correct reading of this milestone, not a defect in it.
 
 Four labels and no others (§C2): `exact` is lifted from a number the CLI wrote
 down, `estimated` is payload characters over a constant, `derived` is an exact
@@ -27,11 +37,15 @@ from __future__ import annotations
 
 import base64
 import json
+import math
+import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from .legacy.session import load_messages
 from .report import resolve_session
+from .rules import bash_head
 
 # 01- §2.3 puts the constant in 2.4-3.0 by three independent methods and
 # 02-constraints.md's residual-zeroing solve puts it at 2.57 by a fourth. It is
@@ -79,11 +93,11 @@ NO_ANCHOR = (
 
 @dataclass
 class Node:
-    """One row of the readout. `children` is always empty in M1 (no drill-down).
+    """One row of the readout, and its drill-down.
 
-    It exists on the type anyway because `--json` is the interface M2 and M3
-    build on, and a consumer that has to learn a new shape when the drill-down
-    lands is a consumer that will not be updated.
+    `children` is empty at `--depth 1`, which is exactly M1's readout, and holds
+    the tool level at 2 and the artefact level at 3. Children's tokens always
+    sum to their parent's, whichever way the rounding falls (`apportion`).
     """
 
     label: str
@@ -106,6 +120,9 @@ class Composition:
     nodes: list[Node]
     boundaries: list[dict]
     notes: list[str]
+    depth: int = 1
+    by_path: bool = False
+    pooled: dict[str, float] = field(default_factory=dict)
 
 
 # ─── measurement ─────────────────────────────────────────────────────────────
@@ -159,6 +176,46 @@ def spill_note(text: str) -> str:
         return ""
     return ("a <persisted-output> wrapper is sized at the preview the model saw, "
             "not at the tool-results/ sidecar behind it (§C9)")
+
+
+# The wrapper states the sidecar's size in its own first line — `Output too
+# large (45.9KB). Full output saved to: …` — so the size that is *not* being
+# counted can be put in the label without opening the sidecar, and without
+# depending on the sidecar still being there.
+SPILL_SIZE = re.compile(r"Output too large \(([\d.]+)\s*(B|KB|MB|GB)\)")
+SPILL_UNITS = {"B": 1.0, "KB": 1024.0, "MB": 1024.0 ** 2, "GB": 1024.0 ** 3}
+
+
+def spilled_bytes(block: dict) -> float:
+    """Bytes behind every `<persisted-output>` preview in this block (§C9).
+
+    Carried beside the token count and never added to it: the node is sized at
+    what the model saw, and this is what it did *not* see. The two are different
+    units on purpose — bytes on disk against tokens on the wire — so that nobody
+    can accidentally sum them.
+    """
+    content = block.get("content")
+    if isinstance(content, str):
+        return sum(float(size) * SPILL_UNITS[unit]
+                   for size, unit in SPILL_SIZE.findall(content))
+    if isinstance(content, list):
+        return sum(spilled_bytes(sub) if sub.get("type") == "tool_result"
+                   else _spilled_in_text(sub)
+                   for sub in content if isinstance(sub, dict))
+    return 0.0
+
+
+def _spilled_in_text(block: dict) -> float:
+    return sum(float(size) * SPILL_UNITS[unit]
+               for size, unit in SPILL_SIZE.findall(block.get("text") or ""))
+
+
+def human_bytes(size: float) -> str:
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return f"{size:.1f} {unit}".replace(".0 ", " ")
+        size /= 1024
+    return f"{size:.1f} GB"
 
 
 def image_chars(block: dict) -> tuple[float, str]:
@@ -225,6 +282,132 @@ def attachment_chars(attachment: dict) -> float:
     return float(sum(len(s) for s in strings(attachment)))
 
 
+# ─── the artefact level (H3, under `tool traffic` rather than at the root) ───
+
+HOME_PREFIX = re.compile(r"^(/Users|/home)/[^/]+")
+
+# The tools whose artefact is a filesystem path, and therefore the tools
+# `--by-path` pools across. `Write` is in this list for a measured reason.
+# 01- §5 reports "37 distinct file paths, 211,557 characters" on f6ea2591 with
+# 34% of that output from paths touched more than once; 06-spike-findings §4
+# counted `Read` and `Edit` alone, got 29 paths and 209,163 characters, and
+# concluded the acceptance criterion was unmeetable. Counting `Write` too
+# reproduces 01- exactly: 37 paths, 211,557 characters, 33.5% repeated. The
+# criterion was reachable; one tool was missing from the set.
+PATH_TOOLS = frozenset({"Read", "Edit", "Write", "NotebookEdit"})
+
+
+def redact(path: str) -> str:
+    """Collapse any home directory to `~`, not only this process's own.
+
+    A transcript written on the laptop and read in the container carries the
+    other machine's home, and the leaf is the actionable part either way.
+    """
+    if not isinstance(path, str):
+        return path
+    return HOME_PREFIX.sub("~", path.replace(os.path.expanduser("~"), "~"))
+
+
+def artefact_key(tool: str, tool_input: dict) -> str | None:
+    """What real-world thing this call was about, or nothing.
+
+    H3's node key. `None` where a tool has no artefact — the honest answer for
+    most of them, and the reason H3 is not the root: 01- §5's "other" bin would
+    otherwise be the largest node in the tree.
+    """
+    if not isinstance(tool_input, dict):
+        return None
+    if tool == "Bash":
+        head = bash_head(tool_input.get("command") or "")
+        return f"$ {head}" if head else None
+    if tool in PATH_TOOLS:
+        path = tool_input.get("file_path") or tool_input.get("notebook_path")
+        return redact(path) if path else None
+    if tool in ("Grep", "Glob"):
+        return tool_input.get("pattern")
+    if tool == "Skill":
+        return tool_input.get("skill")
+    return None
+
+
+def result_key(tool: str, tool_input: dict, by_path: bool) -> tuple[str, ...]:
+    """Where one tool result hangs beneath `tool traffic`.
+
+    Two shapes over the same measurement. The default is tool-then-artefact,
+    which 05- §M2 mandates and acceptance 2 pins. `by_path` inverts the two so
+    that a path read twice and edited once is one node rather than two in
+    different subtrees — 06- §4 measures what the default shape costs on
+    f6ea2591: the repeated-path share halves, 33.2% to 16.8%.
+    """
+    if tool.startswith("mcp__"):
+        # `per MCP server → tool` (01- §5's H1 sketch), so that six calls to one
+        # server are one subtree rather than six second-level nodes.
+        parts = tool.split("__")
+        server = parts[1] if len(parts) > 1 else "?"
+        return (f"mcp__{server} results", "__".join(parts[2:]) or tool)
+    artefact = artefact_key(tool, tool_input)
+    if by_path and artefact:
+        return (artefact, tool)
+    return (f"{tool} results",) + ((artefact,) if artefact else ())
+
+
+def subagent_index(session_path: Path, wanted: set[str]) -> dict[str, dict]:
+    """`toolUseId` -> the sub-agent's type, description and *own* window (§C11).
+
+    Only for the ids asked for, and the transcript of each is parsed only then:
+    a session with no `Agent` call in its window pays nothing, and one with
+    forty pays for forty rather than for every sidecar ever written beside it.
+    """
+    directory = session_path.with_suffix("") / "subagents"
+    if not wanted or not directory.is_dir():
+        return {}
+    index: dict[str, dict] = {}
+    for meta_path in sorted(directory.glob("agent-*.meta.json")):
+        try:
+            meta = json.loads(meta_path.read_text())
+        except (OSError, ValueError):
+            continue
+        tool_use_id = meta.get("toolUseId")
+        if tool_use_id not in wanted or tool_use_id in index:
+            continue
+        index[tool_use_id] = {
+            "agent_type": meta.get("agentType") or "?",
+            "description": meta.get("description") or "",
+            "window": subagent_window(
+                meta_path.with_name(meta_path.name[:-len(".meta.json")] + ".jsonl")),
+        }
+    return index
+
+
+def subagent_window(transcript: Path) -> int:
+    """The last priced request in a sub-agent's own transcript, or 0.
+
+    Its *own* window, anchored the same way the parent's is, and never added to
+    the parent's total — §C11, and 05-'s fourth non-goal.
+    """
+    if not transcript.is_file():
+        return 0
+    try:
+        priced = priced_responses([r for _, r, _ in load_messages(transcript)])
+    except OSError:
+        return 0
+    return priced[-1]["context"] if priced else 0
+
+
+def agent_label(tool_use_id: str | None, meta: dict | None) -> str:
+    """The return is the node; the sub-agent's own window is a label (§C11).
+
+    Adding the two produces a number that is not the size of any window that
+    ever existed, so they are printed in one row and never summed.
+    """
+    if not meta:
+        return f"{(tool_use_id or '?')[-8:]}  [no sidecar found beside this session]"
+    own = (f"own window {meta['window']:,}, not added" if meta["window"]
+           else "own window unknown")
+    description = meta["description"][:40]
+    return f"{meta['agent_type']}: {description}  [{own}]"
+
+
 # ─── the walk ────────────────────────────────────────────────────────────────
 
 
@@ -283,14 +466,15 @@ def window_start(records: list[dict], before: int) -> int:
     return 0
 
 
-def tool_callers(records: list[dict]) -> dict[str, str]:
-    """`tool_use` id -> tool name, so a result can be attributed to its caller.
+def tool_callers(records: list[dict]) -> dict[str, tuple[str, dict]]:
+    """`tool_use` id -> (tool name, its input), so a result knows its caller.
 
     Built over the whole file rather than over the window: a result inside the
     window can answer a call that compaction has since dropped, and the pairing
-    is by id anyway.
+    is by id anyway. The input comes along because the artefact — the path, the
+    command head, the MCP server — is only in the call, never in the result.
     """
-    callers: dict[str, str] = {}
+    callers: dict[str, tuple[str, dict]] = {}
     for record in records:
         if record.get("type") != "assistant":
             continue
@@ -299,22 +483,151 @@ def tool_callers(records: list[dict]) -> dict[str, str]:
             continue
         for block in message.get("content") or []:
             if isinstance(block, dict) and block.get("type") == "tool_use":
-                callers[block.get("id")] = block.get("name") or "?"
+                callers[block.get("id")] = (block.get("name") or "?",
+                                            block.get("input") or {})
     return callers
 
 
-def classify(records: list[dict], start: int, stop: int,
-             notes: list[str]) -> dict[str, float]:
-    """H1's top level over the records still in the window, in estimated tokens.
+@dataclass
+class Leaf:
+    """One accumulation point in the flat `key -> measurement` map.
 
-    M1 stops here: no second level, no per-tool and no per-path nodes. The
-    question "*which* Bash" is M2's and this cannot answer it.
+    `count` is appearances at exactly this key — the `×N` on a path node, which
+    is the actionable half of H3 — and `spilled` is the bytes sitting behind a
+    `<persisted-output>` preview, carried so the label can name what the node is
+    deliberately *not* sized at (§C9).
     """
-    callers = tool_callers(records)
-    buckets: dict[str, float] = {}
 
-    def add(category: str, chars: float, note: str = "") -> None:
-        buckets[category] = buckets.get(category, 0.0) + estimate(chars)
+    tokens: float = 0.0
+    count: int = 0
+    spilled: float = 0.0
+
+
+@dataclass
+class PathUse:
+    """Every appearance of one artefact path, pooled across the tools that touched it.
+
+    Built during the same walk that builds the tree, whichever keying the tree
+    is using, because "which file is in my window more than once" is a fact
+    about the session and not about the shape it happens to be drawn in.
+    """
+
+    tokens: float = 0.0
+    tools: dict[str, int] = field(default_factory=dict)
+
+    @property
+    def count(self) -> int:
+        return sum(self.tools.values())
+
+    def describe(self) -> str:
+        parts = [f"{tool} ×{n}" if n > 1 else tool
+                 for tool, n in sorted(self.tools.items(), key=lambda kv: -kv[1])]
+        prefix = f"×{self.count} " if self.count > 1 else ""
+        return f"{prefix}({', '.join(parts)})"
+
+
+@dataclass
+class Delegations:
+    """§C11's tally: how many sub-agents returned into this window, and what
+    they spent in their own. Reported beside the node and never summed into it."""
+
+    count: int = 0
+    spent: int = 0
+
+    def record(self, meta: dict | None) -> None:
+        self.count += 1
+        self.spent += (meta or {}).get("window", 0)
+
+    def note(self) -> str:
+        # `spent` is zero when no sidecar was found beside the session, which is
+        # a different statement from "they spent nothing" and has to read as one.
+        own = (f"the {self.spent:,} tokens those sub-agents spent in their own "
+               "windows are printed in the label and never added to this one"
+               if self.spent else
+               "no sub-agent transcript was found beside this session, so their "
+               "own windows are unknown rather than zero")
+        return (f"{self.count} sub-agent return(s) are sized at what came back; "
+                f"{own} (§C11)")
+
+
+def content_key(block: dict, record: dict, callers: dict, agents: dict,
+                delegations: Delegations, by_path: bool) -> tuple[str, ...]:
+    """Where one content block hangs in H1. The only place the shape is decided."""
+    block_type = block.get("type")
+    if block_type == "tool_result":
+        tool, tool_input = callers.get(block.get("tool_use_id"), ("(unpaired)", {}))
+        if tool == "Agent":
+            meta = agents.get(block.get("tool_use_id"))
+            delegations.record(meta)
+            return ("tool traffic", "Agent returns",
+                    agent_label(block.get("tool_use_id"), meta))
+        return ("tool traffic",) + result_key(tool, tool_input, by_path)
+    if block_type == "tool_use":
+        # A sibling of the result nodes rather than a child of them (05- §M2's
+        # second acceptance): an `Edit` input carries the new content and is
+        # routinely larger than the result it produces, so folding the two
+        # together hides which of the pair is the cost. 06- §4 measured `Write
+        # ×9` inputs at 21.8% of one window three rows from `Write results` at
+        # 0.3%.
+        return ("tool traffic", "tool_use inputs", block.get("name") or "?")
+    if block_type == "image":
+        return ("conversation", "images")
+    if record.get("isMeta"):
+        return ("conversation", "harness notices")
+    if record.get("type") == "assistant":
+        return ("conversation", "assistant text")
+    return ("conversation", "user turns")
+
+
+def pool_paths(records: list[dict], start: int, stop: int,
+               callers: dict[str, tuple[str, dict]]) -> dict[str, PathUse]:
+    """Every artefact path in the window, pooled across the tools that touched it.
+
+    Its own walk rather than a side effect of building the tree, because "which
+    file is in my window more than once" is a fact about the session and not
+    about the shape it happens to be drawn in — so the readout can state the
+    number even in the keying that cannot reach it (06- §4).
+    """
+    paths: dict[str, PathUse] = {}
+    for record in records[start:stop]:
+        message = record.get("message")
+        if not isinstance(message, dict) or not isinstance(message.get("content"), list):
+            continue
+        for block in message["content"]:
+            if not isinstance(block, dict) or block.get("type") != "tool_result":
+                continue
+            tool, tool_input = callers.get(block.get("tool_use_id"), ("", {}))
+            if tool not in PATH_TOOLS:
+                continue
+            artefact = artefact_key(tool, tool_input)
+            if not artefact:
+                continue
+            use = paths.setdefault(artefact, PathUse())
+            use.tokens += estimate(payload_chars(block)[0])
+            use.tools[tool] = use.tools.get(tool, 0) + 1
+    return paths
+
+
+def classify(records: list[dict], start: int, stop: int, notes: list[str],
+             callers: dict[str, tuple[str, dict]], agents: dict[str, dict],
+             *, by_path: bool = False) -> dict[tuple[str, ...], Leaf]:
+    """H1 over the records still in the window, keyed all the way to the artefact.
+
+    The key is a tuple, which is the whole of M2: `("tool traffic", "Read
+    results", "~/src/db.ts")` is one row of a flat map that `build_tree` nests.
+    Nothing here knows about depth, sorting or rendering.
+    """
+    leaves: dict[tuple[str, ...], Leaf] = {}
+    delegations = Delegations()
+
+    def add(key: tuple[str, ...], chars: float, note: str = "",
+            spilled: float = 0.0) -> None:
+        leaf = leaves.setdefault(key, Leaf())
+        leaf.tokens += estimate(chars)
+        leaf.count += 1
+        leaf.spilled += spilled
+        # A block can raise several notes at once; dedupe the reasons rather
+        # than the joined string, or a session with ten images prints ten lines.
         for reason in note.split("; ") if note else ():
             if reason and reason not in notes:
                 notes.append(reason)
@@ -324,18 +637,18 @@ def classify(records: list[dict], start: int, stop: int,
         if kind in BOOKKEEPING or record.get("_parse_error"):
             continue
         if kind == "attachment":
-            add("standing configuration",
-                attachment_chars(record.get("attachment") or {}))
+            for key, chars in attachment_keys(record.get("attachment") or {}):
+                add(key, chars)
             continue
         message = record.get("message")
         if not isinstance(message, dict):
             continue
         if record.get("isCompactSummary"):
-            add("compaction summary", message_chars(message, notes))
+            add(("compaction summary",), message_chars(message, notes))
             continue
         content = message.get("content")
         if isinstance(content, str):
-            add("conversation", len(content))
+            add(("conversation", "user turns"), len(content))
             continue
         if not isinstance(content, list):
             continue
@@ -348,10 +661,12 @@ def classify(records: list[dict], start: int, stop: int,
         # H1 asks who put the material here and the record type does not say.
         source_tool = record.get("sourceToolUseID")
         if source_tool and source_tool in callers:
+            tool, tool_input = callers[source_tool]
             for block in content:
                 if isinstance(block, dict) and block.get("type") == "text":
-                    add("tool traffic", len(block.get("text") or ""),
-                        f"a `user` text block carrying {callers[source_tool]}'s "
+                    add(("tool traffic",) + result_key(tool, tool_input, by_path),
+                        len(block.get("text") or ""),
+                        f"a `user` text block carrying {tool}'s "
                         "return outside a tool_result envelope is counted as "
                         "tool traffic, paired by sourceToolUseID")
             continue
@@ -359,12 +674,58 @@ def classify(records: list[dict], start: int, stop: int,
             if not isinstance(block, dict):
                 continue
             chars, note = payload_chars(block)
-            block_type = block.get("type")
-            if block_type in ("tool_result", "tool_use"):
-                add("tool traffic", chars, note)
-            else:
-                add("conversation", chars, note)
-    return buckets
+            add(content_key(block, record, callers, agents, delegations, by_path),
+                chars, note, spilled_bytes(block))
+
+    if delegations.count:
+        notes.append(delegations.note())
+    return leaves
+
+
+def agent_results(records: list[dict], start: int, stop: int,
+                  callers: dict[str, tuple[str, dict]]) -> set[str]:
+    """The `tool_use` ids of every `Agent` return still inside the window."""
+    wanted: set[str] = set()
+    for record in records[start:stop]:
+        message = record.get("message")
+        if not isinstance(message, dict) or not isinstance(message.get("content"), list):
+            continue
+        for block in message["content"]:
+            if not isinstance(block, dict) or block.get("type") != "tool_result":
+                continue
+            tool_use_id = block.get("tool_use_id")
+            if callers.get(tool_use_id, ("", {}))[0] == "Agent":
+                wanted.add(tool_use_id)
+    return wanted
+
+
+def attachment_keys(attachment: dict) -> list[tuple[tuple[str, ...], float]]:
+    """`standing configuration` → attachment class → the file or server named.
+
+    Only the two classes that name one (05- §M2): `nested_memory` carries the
+    memory file's path, and `mcp_instructions_delta` carries one block of prose
+    per server, so the server can take its own block's characters rather than a
+    share of the whole attachment.
+    """
+    kind = attachment.get("type") or "?"
+    if kind == "nested_memory":
+        leaf = redact(attachment.get("path") or attachment.get("displayPath") or "")
+        return [(("standing configuration", kind) + ((leaf,) if leaf else ()),
+                 attachment_chars(attachment))]
+    if kind == "mcp_instructions_delta":
+        names = attachment.get("addedNames") or []
+        blocks = attachment.get("addedBlocks") or []
+        weights = [float(len(name) + len(block)) for name, block in zip(names, blocks)]
+        if names and len(names) == len(blocks) and sum(weights) > 0:
+            # The attachment's own total, split between servers by the length of
+            # each server's block. Splitting rather than taking the blocks
+            # directly keeps the parent equal to the sum of its children, which
+            # is the one thing a drill-down must not get wrong.
+            total = attachment_chars(attachment)
+            return [(("standing configuration", kind, str(name)),
+                     total * weight / sum(weights))
+                    for name, weight in zip(names, weights)]
+    return [(("standing configuration", kind), attachment_chars(attachment))]
 
 
 def message_chars(message: dict, notes: list[str]) -> float:
@@ -386,10 +747,143 @@ def message_chars(message: dict, notes: list[str]) -> float:
     return total
 
 
+# ─── the tree ────────────────────────────────────────────────────────────────
+
+
+@dataclass
+class Branch:
+    """The nested form of `classify`'s flat map, still in unrounded tokens."""
+
+    key: str
+    tokens: float = 0.0
+    count: int = 0
+    spilled: float = 0.0
+    children: dict[str, Branch] = field(default_factory=dict)
+
+
+def build_tree(leaves: dict[tuple[str, ...], Leaf]) -> dict[str, Branch]:
+    """Nest the flat map, summing tokens and sidecar bytes up every level."""
+    roots: dict[str, Branch] = {}
+    for key, leaf in leaves.items():
+        here, branch = roots, None
+        for part in key:
+            branch = here.setdefault(part, Branch(key=part))
+            branch.tokens += leaf.tokens
+            branch.spilled += leaf.spilled
+            here = branch.children
+        if branch is not None:
+            # The repeat count belongs to the exact key, not to its ancestors:
+            # `Read results` appearing 40 times is not `db.ts ×40`.
+            branch.count += leaf.count
+    return roots
+
+
+def apportion(values: list[float], target: int) -> list[int]:
+    """Round a level's shares so they sum to their parent's rounded total exactly.
+
+    Largest remainder, because the alternative — rounding each child on its own
+    — leaves a drill-down whose children do not add up to the row above them,
+    and a tool whose whole claim is that the rows sum cannot afford that.
+    """
+    if not values:
+        return []
+    total = sum(values)
+    if total <= 0:
+        return [0] * len(values)
+    scaled = [value * target / total for value in values]
+    amounts = [math.floor(share) for share in scaled]
+    short = target - sum(amounts)
+    order = sorted(range(len(values)), key=lambda i: -(scaled[i] - amounts[i]))
+    for index in order[:max(0, short)]:
+        amounts[index] += 1
+    return amounts
+
+
+def materialise(branches: dict[str, Branch], target: int, labels: dict, prefix: tuple,
+                depth: int, level: int) -> list[Node]:
+    """Turn one level of `Branch` into sorted, rounded `Node`s.
+
+    `level` is the depth of the nodes being made — 2 for a top node's children —
+    so `--depth 1` is exactly M1's readout and `--depth 3` reaches the artefact.
+    Biggest-first at every level, and no roll-up of the tail: the tree and
+    `--json` render identically, and a tool asked *which* file cannot answer
+    "17 more, each smaller".
+    """
+    if level > depth or not branches:
+        return []
+    ordered = sorted(branches.values(), key=lambda branch: -branch.tokens)
+    nodes = []
+    for branch, amount in zip(ordered, apportion([b.tokens for b in ordered], target)):
+        key = prefix + (branch.key,)
+        node = Node(label=decorate(branch, labels.get(key), level),
+                    tokens=amount, kind="estimated", note=spill_label(branch))
+        node.children = materialise(branch.children, amount, labels, key,
+                                    depth, level + 1)
+        # §C9 belongs on the innermost row that is drawn: the sidecar figure is
+        # summed up the tree, so a parent whose child already says it would
+        # print the same sentence twice. At a depth that cuts the child off,
+        # the parent says it instead.
+        if any(child.note for child in node.children):
+            node.note = ""
+        nodes.append(node)
+    return nodes
+
+
+def decorate(branch: Branch, override: str | None, level: int) -> str:
+    """The rendered label: the key, its repeat count, and nothing else.
+
+    The count goes on the label rather than into a note because it is the
+    actionable half of H3 — 01- §5 measured 34% of `Read`/`Edit` output on
+    f6ea2591 coming from paths touched more than once — and a note is read last.
+    Only from the third level down, where the key is an artefact rather than a
+    category: `Read results ×40` says nothing anyone can act on.
+    """
+    if override:
+        return override
+    return f"{branch.key}  ×{branch.count}" if level >= 3 and branch.count > 1 \
+        else branch.key
+
+
+def spill_label(branch: Branch) -> str:
+    """§C9, on the node it happened to: what this row is *not* sized at."""
+    if not branch.spilled:
+        return ""
+    return (f"sized at the <persisted-output> preview the model saw; "
+            f"{human_bytes(branch.spilled)} of sidecar behind it, not counted (§C9)")
+
+
+def path_labels(paths: dict[str, PathUse]) -> dict[tuple[str, ...], str]:
+    """`--by-path`'s second-level labels: the path, with its per-tool counts.
+
+    Visible at `--depth 2`, where the per-tool children are cut, which is the
+    point of pooling — one row per file that says how it got there.
+    """
+    return {("tool traffic", path): f"{path}  {use.describe()}"
+            for path, use in paths.items()}
+
+
+def pooled(paths: dict[str, PathUse]) -> dict[str, float]:
+    """01- §5's headline, computed on this session rather than transcribed.
+
+    "Which file is in my window more than once, and do I need any of them" —
+    the number that keying the tree tool-first halves (06- §4).
+    """
+    total = sum(use.tokens for use in paths.values())
+    repeated = sum(use.tokens for use in paths.values() if use.count > 1)
+    return {
+        "paths": len(paths),
+        "repeated_paths": sum(1 for use in paths.values() if use.count > 1),
+        "tokens": total,
+        "repeated_tokens": repeated,
+        "repeated_percent": 100 * repeated / total if total else 0.0,
+    }
+
+
 # ─── composition ─────────────────────────────────────────────────────────────
 
 
-def compose(path: Path, records: list[dict]) -> Composition:
+def compose(path: Path, records: list[dict], *, depth: int = 1,
+            by_path: bool = False) -> Composition:
     """Resolve the exact window and apportion the estimate inside it (§C3)."""
     notes: list[str] = []
     priced = priced_responses(records)
@@ -406,7 +900,12 @@ def compose(path: Path, records: list[dict]) -> Composition:
             "a compaction boundary follows the anchoring request, so this "
             "describes the window as it stood at that request and not the one "
             "the session is in now — nothing has been priced since (§C6)")
-    buckets = classify(records, start, stop, notes)
+    callers = tool_callers(records)
+    agents = subagent_index(path, agent_results(records, start, stop, callers))
+    leaves = classify(records, start, stop, notes, callers, agents, by_path=by_path)
+    paths = pool_paths(records, start, stop, callers)
+    tree = build_tree(leaves)
+    labels = path_labels(paths) if by_path else {}
 
     # §C8's trailing fragment: the CLI is appending to this file while it is
     # read, so the last physical line can be half-written JSON. The parser hands
@@ -419,9 +918,12 @@ def compose(path: Path, records: list[dict]) -> Composition:
             "session the last one is normally a record the CLI is still writing "
             "(§C8)")
 
-    nodes = [Node(label=label, tokens=round(buckets[label]), kind="estimated")
-             for label in TOP_LEVEL if round(buckets.get(label, 0.0))]
+    nodes = [Node(label=label, tokens=round(tree[label].tokens), kind="estimated")
+             for label in TOP_LEVEL if label in tree and round(tree[label].tokens)]
     nodes.sort(key=lambda node: -node.tokens)
+    for node in nodes:
+        node.children = materialise(tree[node.label].children, node.tokens,
+                                    labels, (node.label,), depth, level=2)
     if window is not None:
         # Subtraction rather than addition, so that the rendered rows sum to the
         # exact window however the rounding falls. This node is the tool's
@@ -442,6 +944,9 @@ def compose(path: Path, records: list[dict]) -> Composition:
         nodes=nodes,
         boundaries=boundaries,
         notes=notes,
+        depth=depth,
+        by_path=by_path,
+        pooled=pooled(paths),
     )
 
 
@@ -457,7 +962,7 @@ def dropped_tokens(boundaries: list[dict]) -> int:
 # ─── rendering ───────────────────────────────────────────────────────────────
 
 BAR_COLUMNS = 22
-LABEL_COLUMNS = 44
+LABEL_COLUMNS = 54
 _HEAD_COLUMNS = BAR_COLUMNS + LABEL_COLUMNS + 4
 
 
@@ -466,6 +971,37 @@ def bar(share: float) -> str:
     if filled:
         return "█" * filled
     return "▏" if share > 0 else " "
+
+
+def walk(nodes: list[Node], level: int = 1):
+    """Every node in render order, with its depth, parents before children."""
+    for node in nodes:
+        yield node, level
+        yield from walk(node.children, level + 1)
+
+
+def indent(label: str, level: int) -> str:
+    """One label column, indented by level, truncated from the *left*.
+
+    Left, because these labels are mostly paths and the leaf is the actionable
+    part: `…/winnow/src/winnow/context.py` beats `/workspace/.uf-worktree…`.
+    """
+    room = LABEL_COLUMNS - 2 * (level - 1)
+    if len(label) > room:
+        label = "…" + label[-(room - 1):]
+    return "  " * (level - 1) + f"{label:<{room}}"
+
+
+def pooled_line(stats: dict[str, float]) -> str:
+    """Acceptance 5: the pooled figures, computed here rather than transcribed."""
+    if not stats.get("paths"):
+        return ("pooled by path: no Read/Edit/Write result in this window names a "
+                "file path")
+    return (f"pooled by path: {stats['paths']:,.0f} distinct paths across "
+            f"{'/'.join(sorted(PATH_TOOLS - {'NotebookEdit'}))}, "
+            f"{stats['tokens']:,.0f} estimated tokens, of which "
+            f"{stats['repeated_percent']:.1f}% came from the "
+            f"{stats['repeated_paths']:,.0f} path(s) touched more than once")
 
 
 def render(composition: Composition, window_argument: int | None) -> str:
@@ -498,13 +1034,17 @@ def render(composition: Composition, window_argument: int | None) -> str:
                      f"{100 * window / window_argument:8.1f}% full  exact")
     lines.append("")
 
-    for node in composition.nodes:
+    for node, level in walk(composition.nodes):
         share = node.tokens / window if window else 0.0
         percent = f"{100 * share:5.1f}%" if window else "     —"
-        label = node.label if len(node.label) <= LABEL_COLUMNS else (
-            "…" + node.label[-(LABEL_COLUMNS - 1):])
-        lines.append(f"  {bar(share):<{BAR_COLUMNS}}  {label:<{LABEL_COLUMNS}}"
+        lines.append(f"  {bar(share):<{BAR_COLUMNS}}  {indent(node.label, level)}"
                      f"{node.tokens:>9,}  {percent}  {node.kind}")
+        if node.note:
+            lines.append(f"  {'':<{BAR_COLUMNS}}  {'  ' * level}· {node.note}")
+
+    if composition.by_path:
+        lines.append("")
+        lines.append(pooled_line(composition.pooled))
 
     if window is not None:
         by_kind: dict[str, int] = {}
@@ -527,8 +1067,11 @@ def render(composition: Composition, window_argument: int | None) -> str:
                      "transcript states the window size (§C7). Pass --window N to "
                      "state the denominator yourself.")
     if window is not None:
-        lines.append("  note       M1: no prefix node and no retained-reasoning "
-                     "node yet, so both sit inside `unattributed`.")
+        lines.append("  note       no prefix node and no retained-reasoning node "
+                     "yet (M3), so both sit inside `unattributed`.")
+    if composition.depth < 3:
+        lines.append(f"  note       drawn to --depth {composition.depth}; "
+                     "--depth 3 reaches the file paths and Bash command heads.")
     return "\n".join(lines)
 
 
@@ -565,6 +1108,22 @@ def to_dict(composition: Composition, window_argument: int | None) -> dict:
         "requests_in_window": composition.requests_in_window,
         "model": composition.model,
         "chars_per_token": CHARS_PER_TOKEN,
+        "depth": composition.depth,
+        "by_path": composition.by_path,
+        # 01- §5's headline, always computed and never transcribed, whichever
+        # keying the tree above is drawn in: it is a fact about the session.
+        "pooled_by_path": {
+            "tools": sorted(PATH_TOOLS),
+            "paths": int(composition.pooled.get("paths", 0)),
+            "repeated_paths": int(composition.pooled.get("repeated_paths", 0)),
+            "tokens": _figure(round(composition.pooled.get("tokens", 0.0)),
+                              "estimated"),
+            "repeated": {
+                "tokens": round(composition.pooled.get("repeated_tokens", 0.0)),
+                "percent": round(composition.pooled.get("repeated_percent", 0.0), 4),
+                "kind": "estimated",
+            },
+        },
         "window": _figure(window, "exact") if window is not None else None,
         "fullness": None if not (window and window_argument) else {
             "window_argument": window_argument,
@@ -590,7 +1149,8 @@ def to_dict(composition: Composition, window_argument: int | None) -> dict:
 
 
 def context_command(session: str, *, as_json: bool = False,
-                    window: int | None = None) -> tuple[int, str]:
+                    window: int | None = None, depth: int = 3,
+                    by_path: bool = False) -> tuple[int, str]:
     """`(exit code, output)`. 1 usage error, 3 refused — no anchor, no shares.
 
     Exit 3 rather than 0 when no assistant record carries `usage`: the readout
@@ -603,8 +1163,11 @@ def context_command(session: str, *, as_json: bool = False,
     except LookupError as exc:
         return 1, f"winnow: {exc}"
 
+    if depth < 1:
+        return 1, f"winnow: --depth must be at least 1, got {depth}"
+
     records = [record for _, record, _ in load_messages(path)]
-    composition = compose(path, records)
+    composition = compose(path, records, depth=depth, by_path=by_path)
     payload = (json.dumps(to_dict(composition, window), indent=2) if as_json
                else render(composition, window))
     return (0 if composition.window is not None else 3), payload

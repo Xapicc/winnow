@@ -365,6 +365,8 @@ def cmd_context(args: argparse.Namespace) -> int:
         session=args.session,
         as_json=args.json,
         window=args.window,
+        depth=args.depth,
+        by_path=args.by_path,
     )
     print(output, file=sys.stderr if code == EXIT_USAGE else sys.stdout)
     if code == EXIT_REFUSED:
@@ -381,21 +383,39 @@ def add_context_subparser(sub) -> None:
     withhold from it and an operator should not need an environment variable to
     read their own transcript.
 
-    This is the walking skeleton. It prints H1's top level and a residual, and
-    the residual is large because the two blocks that would shrink it — the
+    The residual is large because the two blocks that would shrink it — the
     prefix and retained reasoning — are derived rather than estimated and are
-    the next slice. It has no drill-down, so it cannot answer *which* Bash.
+    the next slice (M3).
     """
     p = sub.add_parser(
         "context",
         help="what is actually in one session's context window; writes nothing",
         description="Take the exact window total from the last priced request "
                     "and apportion an estimate of the transcript inside it, by "
-                    "provenance. The total is exact by construction and every "
-                    "figure says whether it was read, derived or estimated. "
-                    "Writes nothing, anywhere.",
+                    "provenance, down to the file path or Bash command head. "
+                    "The total is exact by construction and every figure says "
+                    "whether it was read, derived or estimated. Writes nothing, "
+                    "anywhere.",
     )
     p.add_argument("session", help="session ID, path, or unambiguous ID prefix")
+    p.add_argument(
+        "--depth", type=int, default=3, metavar="N",
+        help="how many levels to draw: 1 is provenance alone, 2 adds the tool "
+             "or attachment class, 3 adds the artefact — the file path with "
+             "its repeat count, the Bash command head, the MCP tool, the "
+             "sub-agent. Default 3. The tree and --json are drawn identically "
+             "and neither rolls the tail up into an 'other' bin",
+    )
+    p.add_argument(
+        "--by-path", action="store_true",
+        help="re-key the `tool traffic` subtree artefact-first, so one file "
+             "read twice and edited once is one node marked with its per-tool "
+             "counts rather than two nodes in two subtrees. On session "
+             "f6ea2591 that is the difference between 16.8%% and 33.2%% of "
+             "Read/Edit/Write output coming from paths touched more than once. "
+             "A result with no path — Bash output is the largest — keeps its "
+             "command-head key and is never binned as 'other'",
+    )
     p.add_argument(
         "--window", type=int, default=None, metavar="N",
         # argparse %-expands a help string, so every literal percent is doubled.

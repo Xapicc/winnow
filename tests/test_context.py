@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -52,13 +53,29 @@ def fixture(name: str) -> str:
     return str(FIXTURES / f"context_{name}.jsonl")
 
 
-def composition(name: str):
+def composition(name: str, **options):
     path = FIXTURES / f"context_{name}.jsonl"
-    return compose(path, [record for _, record, _ in load_messages(path)])
+    return compose(path, [record for _, record, _ in load_messages(path)], **options)
 
 
 def tokens(comp, label: str) -> int:
     return next((node.tokens for node in comp.nodes if node.label == label), 0)
+
+
+def child(node, prefix: str):
+    """The one child whose label starts with `prefix`, or an AssertionError."""
+    matches = [c for c in node.children if c.label.startswith(prefix)]
+    assert len(matches) == 1, \
+        f"{prefix!r} matched {[c.label for c in matches]} in {node.label!r}"
+    return matches[0]
+
+
+def descend(comp, *labels):
+    """Walk the tree by label prefix, from a top-level node down."""
+    node = next(n for n in comp.nodes if n.label == labels[0])
+    for label in labels[1:]:
+        node = child(node, label)
+    return node
 
 
 @pytest.fixture
@@ -132,7 +149,10 @@ def test_no_percent_full_without_a_stated_denominator(real_claude_dir):
     assert code == 0
     assert "512,133" in output
     assert "% full" not in output
-    assert "256" not in output, "a hardcoded 200,000 denominator"
+    # The claim being refused is "256% full", not the digits: at --depth 3 this
+    # readout prints a few hundred token counts and one of them will eventually
+    # contain 256.
+    assert not re.search(r"\b256(\.\d+)?%", output), "a hardcoded 200,000 denominator"
     assert to_dict(compose(path, [r for _, r, _ in load_messages(path)]),
                    None)["fullness"] is None
 
@@ -213,6 +233,11 @@ def test_the_command_reaches_no_pruning_policy():
 NOT_A_WINDOW_CLAIM = frozenset({
     "$.records", "$.requests", "$.requests_in_window", "$.chars_per_token",
     "$.compaction.boundaries",
+    # M2's three. `depth` is how many levels were drawn, and the other two are
+    # counts of distinct paths — none of them says anything about the window,
+    # and the two figures that do (`pooled_by_path.tokens` and `.repeated`)
+    # carry their kind.
+    "$.depth", "$.pooled_by_path.paths", "$.pooled_by_path.repeated_paths",
 })
 
 
@@ -266,7 +291,7 @@ def test_every_rendered_number_carries_a_provenance_label(name, window_argument)
     fails the build. Both directions: every labelled figure's kind is one of the
     four, and every bare number is one the exemption list names.
     """
-    document = to_dict(composition(name), window_argument)
+    document = to_dict(composition(name, depth=3), window_argument)
     labelled, bare = walk_numbers(document)
 
     for path, figure in labelled:
@@ -300,7 +325,9 @@ def test_wall_clock_on_the_largest_session_is_under_300ms(real_claude_dir):
 
 def _timed_run(path: Path) -> float:
     start = time.perf_counter()
-    subprocess.run([sys.executable, "-m", "winnow", "context", str(path)],
+    # `--depth 3` explicitly, which is what the success-criteria row measures,
+    # and which builds and rounds every artefact node rather than only the top.
+    subprocess.run([sys.executable, "-m", "winnow", "context", str(path), "--depth", "3"],
                    capture_output=True, check=True)
     return time.perf_counter() - start
 
@@ -458,13 +485,282 @@ def test_an_unresolvable_session_is_a_usage_error_not_a_traceback():
     assert output.startswith("winnow: ")
 
 
-def test_nodes_carry_an_empty_children_list_for_the_drill_down_to_fill():
-    """M1 has no second level. `--json` is the interface M2 builds on, so the
-    shape a consumer parses must not change when the drill-down lands."""
-    document = json.loads(context_command(fixture("golden"), as_json=True)[1])
+def test_depth_one_is_still_exactly_m1s_readout():
+    """`--depth` caps rather than reshapes: at 1 the tree is M1's, unchanged.
+
+    Worth pinning, because the milestone that adds levels is also the milestone
+    most likely to move a token between two top-level categories by accident.
+    """
+    document = json.loads(
+        context_command(fixture("golden"), as_json=True, depth=1)[1])
 
     assert all(node["children"] == [] for node in document["nodes"])
     assert Node(label="x", tokens=0, kind="estimated").children == []
+
+    deep = json.loads(context_command(fixture("golden"), as_json=True, depth=3)[1])
+    assert [(n["label"], n["tokens"]) for n in deep["nodes"]] == \
+           [(n["label"], n["tokens"]) for n in document["nodes"]]
+    assert any(node["children"] for node in deep["nodes"]), "the drill-down"
+
+
+# ─── M2: the drill-down ──────────────────────────────────────────────────────
+
+
+def test_read_and_edit_pooled_by_path_reproduce_the_thirty_seven(real_claude_dir):
+    """05- M2, acceptance 1, and the criterion 06- §4 called unmeetable.
+
+    It is meetable, and the spike's diagnosis was half right. The shape does
+    halve the number — this test asserts both halves below — but the missing 8
+    nodes were `Write`, which 06- left out of the tool set. Pooled across the
+    three path-bearing tools this run measures 37 distinct paths, 81,368
+    estimated tokens and 33.5% of them from paths touched more than once,
+    against 01- §5's 37 paths / 211,557 characters / 34%. 211,557 / 2.6 =
+    81,368 exactly, so the character count agrees to the character too.
+    """
+    path = real_session("f6ea2591")
+    records = [record for _, record, _ in load_messages(path)]
+    comp = compose(path, records, depth=3, by_path=True)
+
+    assert comp.pooled["paths"] == 37
+    assert abs(comp.pooled["repeated_percent"] - 34) <= 2, \
+        f"within 2 points of 34%, got {comp.pooled['repeated_percent']:.1f}%"
+
+    # Every one of the 37 is a node in the rendered tree, not just a statistic:
+    # no roll-up, so `--json` and the terminal carry the same 37.
+    traffic = next(n for n in comp.nodes if n.label == "tool traffic")
+    drawn = [n for n in traffic.children if not n.label.startswith("$ ")
+             and n.label != "tool_use inputs"]
+    assert len(drawn) == 37
+
+    repeated = [n for n in drawn if "×" in n.label.split("  ")[-1]]
+    assert len(repeated) == comp.pooled["repeated_paths"] == 12
+    for node in repeated:
+        assert re.search(r"×\d+ \(", node.label), node.label
+
+
+def test_the_default_shape_halves_the_repeated_share_and_says_so(real_claude_dir):
+    """06- §4's measurement, kept in the suite rather than in a document.
+
+    Tool-then-path is the default because 05- §M2 mandates it and acceptance 2
+    pins it, and it is worse at the question 01- §5 calls the most actionable
+    there is. Both numbers are asserted so that a later change to either keying
+    cannot quietly move one without the other.
+    """
+    path = real_session("f6ea2591")
+    records = [record for _, record, _ in load_messages(path)]
+    comp = compose(path, records, depth=3)
+
+    traffic = next(n for n in comp.nodes if n.label == "tool traffic")
+    read_and_edit = [child(traffic, "Read results"), child(traffic, "Edit results")]
+    nodes = [n for parent in read_and_edit for n in parent.children]
+    assert len(nodes) == 32, "06- §4's 32 nodes, keyed by (tool, path)"
+
+    total = sum(n.tokens for n in nodes)
+    repeated = sum(n.tokens for n in nodes if "×" in n.label)
+    assert abs(100 * repeated / total - 16.8) < 0.5, "06- §4's 16.8%"
+
+    # And the same session's pooled figure is computed either way, so the
+    # readout can state the number the shape it is drawn in cannot reach.
+    assert comp.pooled["paths"] == 37
+
+
+def test_the_three_result_bearing_tools_and_the_sibling_inputs(real_claude_dir):
+    """05- M2, acceptance 2. The one criterion 06- §4 says the spike passed.
+
+    `tool_use` inputs are a sibling of the result nodes rather than folded into
+    them: an `Edit` input carries the new file content and is routinely larger
+    than the result it produces, so folding the two hides which is the cost.
+    """
+    path = real_session("e698739e")
+    records = [record for _, record, _ in load_messages(path)]
+    traffic = next(n for n in compose(path, records, depth=3).nodes
+                   if n.label == "tool traffic")
+
+    results = [n for n in traffic.children if n.label.endswith(" results")]
+    assert [n.label for n in results] == \
+           ["Bash results", "Read results", "Edit results"]
+    for node, expected in zip(results, (42_609, 7_650, 646)):
+        assert abs(node.tokens - expected) <= 0.02 * expected, node.label
+
+    inputs = child(traffic, "tool_use inputs")
+    assert abs(inputs.tokens - 18_087) <= 0.02 * 18_087
+    assert inputs in traffic.children, "a sibling, not a child of a result node"
+
+
+def test_a_sub_agents_own_window_is_beside_its_return_and_never_in_it():
+    """05- M2, acceptance 3, and §C11.
+
+    The fixture states its own answer: the return is 4,000 characters — 1,538
+    estimated tokens — and the sub-agent's own transcript anchors at 144,000.
+    Adding them produces a number that is not the size of any window that ever
+    existed, so the test asserts the parent's total never moves toward it.
+    """
+    comp = composition("agent", depth=3)
+    returns = descend(comp, "tool traffic", "Agent returns")
+
+    assert returns.tokens == 1_538, "the return, and only the return"
+    assert len(returns.children) == 1
+    leaf = returns.children[0]
+    assert leaf.tokens == 1_538
+    assert "Explore: map the orchestrator" in leaf.label
+    assert "own window 144,000, not added" in leaf.label
+    assert tokens(comp, "tool traffic") == 1_566, "the return plus the 28-token call"
+    assert max(node.tokens for node, _ in _walk(comp.nodes)) < 144_000, \
+        "no node anywhere grew toward the sub-agent's own budget"
+    assert any("never added to this one" in note for note in comp.notes)
+
+
+def test_a_sub_agent_with_no_sidecar_says_so_rather_than_guessing():
+    """The sidecar can be absent — a transcript copied without its directory.
+    The return is still the node; the missing half is named, not invented."""
+    comp = composition("agent_no_sidecar", depth=3)
+    leaf = descend(comp, "tool traffic", "Agent returns").children[0]
+
+    assert leaf.tokens == 1_538
+    assert "no sidecar found" in leaf.label
+    assert any("unknown rather than zero" in note for note in comp.notes)
+
+
+def test_a_persisted_output_node_is_sized_at_the_preview_and_says_so():
+    """05- M2, acceptance 4, and §C9.
+
+    The fixture's wrapper is 2,300 characters holding a preview of a 45.9 KB
+    sidecar. 2,300 / 2.6 = 885. Sizing the sidecar instead would report ~18,000.
+    """
+    comp = composition("persisted_output", depth=3)
+    node = descend(comp, "tool traffic", "Bash results", "$ gh")
+
+    assert node.tokens == 885, "the preview, not the 45.9 KB behind it"
+    assert "45.9 KB of sidecar behind it, not counted" in node.note
+    assert any("not at the tool-results/ sidecar" in note for note in comp.notes)
+
+    _, output = context_command(fixture("persisted_output"), depth=3)
+    assert "45.9 KB" in output
+    assert "18," not in output, "the sidecar sized as if it were on the wire"
+
+
+def test_bash_keeps_its_command_head_when_the_tree_is_re_keyed_by_path():
+    """`--by-path` re-keys by artefact, and Bash output has no artefact.
+
+    05- §M2 rejects H3 as a root partly because its "other" bin is routinely the
+    largest node — on 01- §2.6 the top tool by result size is Bash. So a result
+    with no path keeps its command head as its own key and is never binned.
+    """
+    comp = composition("persisted_output", depth=3, by_path=True)
+    traffic = next(n for n in comp.nodes if n.label == "tool traffic")
+
+    assert [n.label for n in traffic.children if n.label.startswith("$ ")] == ["$ gh"]
+    assert not any("other" in n.label for n in traffic.children)
+    assert child(traffic, "$ gh").children[0].label == "Bash"
+
+
+def test_pooling_a_path_across_tools_is_one_node_with_its_counts():
+    """The operator's question — *which files did the reads touch* — and the
+    part of it that is new: a path touched by two tools is one row.
+
+    The fixture reads `~/src/app.ts` twice and edits it once, so the default
+    tree draws it as `Read results → app.ts ×2` and `Edit results → app.ts` in
+    two subtrees, and `--by-path` draws one node marked `×3 (Read ×2, Edit)`.
+    """
+    default = composition("by_path", depth=3)
+    assert descend(default, "tool traffic", "Read results", "~/src/app.ts").tokens == 800
+    assert descend(default, "tool traffic", "Edit results", "~/src/app.ts").tokens == 40
+
+    pooled = composition("by_path", depth=3, by_path=True)
+    node = descend(pooled, "tool traffic", "~/src/app.ts")
+    assert node.tokens == 840, "one node, both tools"
+    assert node.label == "~/src/app.ts  ×3 (Read ×2, Edit)"
+    assert [(c.label, c.tokens) for c in node.children] == \
+           [("Read  ×2", 800), ("Edit", 40)]
+
+    # And the pooled statistic is the same number whichever way it is drawn.
+    for comp in (default, pooled):
+        assert comp.pooled["paths"] == 2
+        assert comp.pooled["repeated_paths"] == 1
+        assert round(comp.pooled["repeated_percent"], 1) == 68.9
+
+
+def test_an_image_is_priced_by_its_header_in_every_format_or_labelled_zero():
+    """05- non-goal 12 and §C5: JPEG SOF, PNG IHDR, and zero for neither.
+
+    `len(base64)/4` over-reports a real image 14x (01- §2.5). The fixture holds
+    one PNG at 1518x784, one JPEG at 600x400, and one blob whose header does not
+    parse — which is sized zero and labelled, never guessed.
+    """
+    comp = composition("image", depth=3)
+    images = descend(comp, "conversation", "images")
+
+    # 1518*784/750 = 1,586.78, 600*400/750 = 320.00, the third one 0 — so 1,907
+    # apportioned inside a 1,912 parent that also holds 13 characters of prose.
+    # By len(base64)/4 the three would be 31, 27 and 254 — which puts the blob
+    # that is not an image at all above the 1518x784 PNG. On a real image the
+    # error runs the other way and is 14x (01- §2.5); either way it is not a
+    # smaller number, it is a different ordering of the same three blocks.
+    assert images.tokens == 1_907
+    assert tokens(comp, "conversation") == 1_912
+    assert any("sized ZERO and labelled" in note for note in comp.notes)
+
+    _, output = context_command(fixture("image"), depth=3)
+    assert "never at len(base64)/4" in output
+
+
+def test_the_children_of_every_node_sum_to_it_exactly():
+    """§C3, one level down. The parts are apportioned into the total at the top
+    and at every level below it, so a drill-down can never show a row whose own
+    children disagree with it."""
+    for name in ("golden", "compacted", "skill_body", "agent", "image",
+                 "persisted_output", "by_path"):
+        for by_path in (False, True):
+            comp = composition(name, depth=4, by_path=by_path)
+            for node, _ in _walk(comp.nodes):
+                if node.children:
+                    assert sum(c.tokens for c in node.children) == node.tokens, \
+                        f"{name}: {node.label}"
+
+
+def test_every_level_is_sorted_biggest_first():
+    """05- M2: "sorted biggest-first at every level"."""
+    comp = composition("golden", depth=4)
+    for node, _ in _walk(comp.nodes):
+        sizes = [c.tokens for c in node.children]
+        assert sizes == sorted(sizes, reverse=True), node.label
+
+
+def test_the_tree_and_the_json_carry_the_same_nodes():
+    """The scope's one rendering rule: rendered in the tree and in `--json`
+    identically. No roll-up in one and not the other, no "17 more, each
+    smaller" bin that a consumer of the JSON cannot see."""
+    code, payload = context_command(fixture("golden"), as_json=True, depth=3)
+    assert code == 0
+    document = json.loads(payload)
+
+    def labels(nodes):
+        return [(n["label"], n["tokens"], labels(n["children"])) for n in nodes]
+
+    comp = composition("golden", depth=3)
+
+    def from_tree(nodes):
+        return [(n.label, n.tokens, from_tree(n.children)) for n in nodes]
+
+    assert labels(document["nodes"]) == from_tree(comp.nodes)
+
+    _, rendered = context_command(fixture("golden"), depth=3)
+    for node, _ in _walk(comp.nodes):
+        head = node.label.split("  ")[0][:24]
+        assert head[-12:] in rendered, node.label
+
+
+def _walk(nodes, level=1):
+    for node in nodes:
+        yield node, level
+        yield from _walk(node.children, level + 1)
+
+
+def test_a_depth_below_one_is_a_usage_error():
+    code, output = context_command(fixture("golden"), depth=0)
+
+    assert code == 1
+    assert output.startswith("winnow: ")
 
 
 def test_every_group_can_render_its_own_help():

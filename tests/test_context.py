@@ -1065,3 +1065,21 @@ def test_a_prefix_that_comes_out_negative_is_not_claimed():
     assert tokens(comp, "prefix") == 0, "no prefix node at all"
     assert any("no prefix node" in note for note in comp.notes)
     assert sum(node.tokens for node in comp.nodes) == comp.window
+
+
+def test_the_audit_model_reproduces_the_residual_the_tree_drew(real_claude_dir):
+    """The solve is only meaningful if it sweeps the thing on the screen.
+
+    `Audit.parts_at` re-prices the window at an arbitrary constant, which means
+    it is a second model of the same arithmetic and could drift from `compose`
+    silently — and a constant solved against a drifted model would be a
+    diagnostic for a readout nobody is looking at. At the shipped constant the
+    two must agree to within rounding, which is what this asserts.
+    """
+    for prefix in ("e698739e", "72acbacd", "2551cd0c"):
+        path = real_session(prefix)
+        comp = compose(path, [r for _, r, _ in load_messages(path)], depth=1)
+        drawn = next(n.tokens for n in comp.nodes if n.kind == "residual")
+
+        assert abs(drawn - comp.audit.residual_at(CHARS_PER_TOKEN)) < 5, \
+            f"{prefix}: the audit models a different tree than the one drawn"

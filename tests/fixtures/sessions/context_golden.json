@@ -39,6 +39,13 @@
     },
     "last_boundary": null
   },
+  "shedding": {
+    "events": [],
+    "shed": {
+      "tokens": 0,
+      "kind": "exact"
+    }
+  },
   "nodes": [
     {
       "label": "conversation",

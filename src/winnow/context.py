@@ -43,7 +43,7 @@ import re
 import shutil
 import sys
 from dataclasses import dataclass, field
-from itertools import groupby
+from itertools import groupby, pairwise
 from pathlib import Path
 
 from .legacy.session import load_messages
@@ -132,6 +132,10 @@ class Composition:
     pooled: dict[str, float] = field(default_factory=dict)
     floor: Floor | None = None
     audit: Audit | None = None
+    # Not nodes: what these measure is material that has *left* the window, so
+    # drawing it as a row of the tree would be adding it back. It sits above the
+    # tree and reconciles below it (`shed_lines`, `audit_rows`).
+    shed: list[Shed] = field(default_factory=list)
 
 
 # ─── measurement ─────────────────────────────────────────────────────────────
@@ -980,6 +984,9 @@ class Audit:
     first_context: int
     output: list[tuple[int, float]]
     claims_prefix: bool
+    # Exact, and so the one term in here the constant does not move: it is the
+    # difference of two `usage` totals and has no characters behind it.
+    shed: int = 0
 
     def parts_at(self, constant: float) -> tuple[float, float, float]:
         """Visible, prefix and retained, re-priced at one chars-per-token value.
@@ -997,7 +1004,7 @@ class Audit:
         return visible, (prefix if prefix > 0 else 0.0), retained
 
     def residual_at(self, constant: float) -> float:
-        return self.window - sum(self.parts_at(constant))
+        return self.window - sum(self.parts_at(constant)) + self.shed
 
     def solve(self) -> float | None:
         """Bisect for the constant that zeroes the residual, or `None`.
@@ -1171,6 +1178,8 @@ def compose(path: Path, records: list[dict], *, depth: int = 1,
     # carried; the anchor's own output was not in the window it was priced for.
     stop = anchor["index"] if anchor else len(records)
     start = window_start(records, stop)
+    in_window = [entry for entry in priced if start <= entry["index"] <= stop]
+    shed = shed_events(in_window, records)
     if anchor and compaction_boundaries(records[stop:]):
         notes.append(
             "a compaction boundary follows the anchoring request, so this "
@@ -1203,7 +1212,7 @@ def compose(path: Path, records: list[dict], *, depth: int = 1,
 
     floor = price_floor(records, priced, start, stop, callers) if anchor else None
     if floor is not None:
-        nodes.extend(floor_nodes(floor, notes))
+        nodes.extend(floor_nodes(floor, shed, notes))
     nodes.sort(key=lambda node: -node.tokens)
     if window is not None:
         # Subtraction rather than addition, so that the rendered rows sum to the
@@ -1212,8 +1221,17 @@ def compose(path: Path, records: list[dict], *, depth: int = 1,
         # negative: over-explaining a window is what an unbiased estimator does
         # on about a third of sessions, and hiding the sign would make the one
         # number that audits the tool the one number the tool tidies up.
+        #
+        # The shed is added back because every row above describes material the
+        # transcript recorded arriving, and a shed is that material leaving
+        # again: the rows over-claim the window by what left it. That correction
+        # is a measurement, not a fit — it is the difference of two `usage`
+        # totals — which is the line §C10 draws. What stays in the residual is
+        # everything the shed does *not* measure, including material that left
+        # and came back, and it keeps its sign.
         nodes.append(Node(label="unattributed",
-                          tokens=window - sum(node.tokens for node in nodes),
+                          tokens=window - sum(node.tokens for node in nodes)
+                          + shed_tokens(shed),
                           kind="residual"))
     else:
         notes.append(NO_ANCHOR)
@@ -1222,7 +1240,7 @@ def compose(path: Path, records: list[dict], *, depth: int = 1,
         path=path,
         records=len(records) - torn,
         requests=len(priced),
-        requests_in_window=sum(1 for e in priced if e["index"] >= start),
+        requests_in_window=len(in_window),
         model=anchor["model"] if anchor else None,
         window=window,
         nodes=nodes,
@@ -1232,12 +1250,13 @@ def compose(path: Path, records: list[dict], *, depth: int = 1,
         by_path=by_path,
         pooled=pooled(paths),
         floor=floor,
-        audit=books(window, leaves, floor),
+        audit=books(window, leaves, floor, shed_tokens(shed)),
+        shed=shed,
     )
 
 
 def books(window: int | None, leaves: dict[tuple[str, ...], Leaf],
-          floor: Floor | None) -> Audit | None:
+          floor: Floor | None, shed: int = 0) -> Audit | None:
     """What `--audit` needs to re-price the window at another constant.
 
     Characters and area-priced tokens rather than the totals the tree drew,
@@ -1256,19 +1275,28 @@ def books(window: int | None, leaves: dict[tuple[str, ...], Leaf],
         first_context=floor.first_context,
         output=floor.output,
         claims_prefix=floor.claims_prefix,
+        shed=shed,
     )
 
 
-def floor_nodes(floor: Floor, notes: list[str]) -> list[Node]:
+def floor_nodes(floor: Floor, shed: list[Shed], notes: list[str]) -> list[Node]:
     """M3's two derived rows, and the note for a prefix this session cannot claim."""
     nodes = []
     if floor.claims_prefix:
-        nodes.append(Node(
-            label="prefix", tokens=round(floor.prefix), kind="derived",
-            note=(f"{floor.first_context:,} exact at the first request in this "
-                  f"window, less {round(floor.visible_before_first):,} estimated "
-                  "visible before it — the system prompt and tool definitions, "
-                  "which no transcript records (--explain prefix)")))
+        note = (f"{floor.first_context:,} exact at the first request in this "
+                f"window, less {round(floor.visible_before_first):,} estimated "
+                "visible before it — the system prompt and tool definitions, "
+                "which no transcript records (--explain prefix)")
+        if shed:
+            # 06-spike-findings §2 item 2 gives two ways out of a prefix measured
+            # once on a window that has since shed: re-derive it at every
+            # shedding event, or label it with the request it was measured at.
+            # It is labelled. `NO_REDERIVATION` says why the other was refused.
+            note += (f"; measured at that request and not since, and "
+                     f"{shed_tokens(shed):,} tokens have left this window since "
+                     f"— no record says whether any of them were prefix (§C6)")
+        nodes.append(Node(label="prefix", tokens=round(floor.prefix),
+                          kind="derived", note=note))
     else:
         notes.append(
             f"no prefix node: the first request in this window was priced at "
@@ -1297,6 +1325,98 @@ def dropped_tokens(boundaries: list[dict]) -> int:
     last boundary rather than summed across them.
     """
     return boundaries[-1].get("cumulativeDroppedTokens") or 0 if boundaries else 0
+
+
+@dataclass(frozen=True)
+class Shed:
+    """One fall in the exact window between two consecutive priced requests.
+
+    Both figures come from a `usage` block, so the magnitude is a subtraction
+    over two numbers the CLI wrote down: `exact`, never `estimated`, and never
+    apportioned. What the event does *not* say is *what* left — no record holds
+    that — so it carries the request it was measured at and the best pointer the
+    file offers, and stops there.
+    """
+
+    at_record: int
+    at_request: int
+    of_requests: int
+    before: int
+    after: int
+    cause: str
+
+    @property
+    def tokens(self) -> int:
+        return self.before - self.after
+
+    @property
+    def where(self) -> str:
+        """The request this was measured at, which §C6 requires it be labelled with."""
+        return (f"request {self.at_request:,} of {self.of_requests:,} "
+                f"(record {self.at_record:,})")
+
+
+def shed_events(in_window: list[dict], records: list[dict]) -> list[Shed]:
+    """Every fall in the window between consecutive priced requests (§C6's gap).
+
+    Inside one window the prompt only grows: request n+1 carries everything
+    request n carried, plus the turn between them. A *fall* is therefore material
+    that left the window, and because every in-window request is after the last
+    compaction boundary by construction, no boundary explains it. On session
+    939a04dc a `deferred_tools_delta` took 78,167 tokens out mid-session by
+    moving tool schemas behind `ToolSearch`; 06-spike-findings §2 item 2 measured
+    17 of 164 sampled sessions shedding this way, median 36,714 tokens.
+
+    No size threshold, unlike the spike's 2,000 tokens. Over the 911 anchored
+    sessions in `~/.claude/projects` on this machine the 833 falls run smoothly
+    from 1 token to 458,935 with no gap to cut at, and a 2,000-token floor
+    discards 4.7% of every shed token and silences three sessions outright —
+    2ef56c0b sheds 7,310 tokens (4.5% of its window) and c2f96a57 6,702, none of
+    it in a piece that large. A fall is exact whatever its size.
+    """
+    events = []
+    for position, (earlier, later) in enumerate(pairwise(in_window), start=2):
+        if later["context"] >= earlier["context"]:
+            continue
+        events.append(Shed(
+            at_record=later["index"],
+            at_request=position,
+            of_requests=len(in_window),
+            before=earlier["context"],
+            after=later["context"],
+            cause=shed_cause(records, earlier["index"], later["index"])))
+    return events
+
+
+# What a `<synthetic>` record is, in the words the readout uses for it: the CLI
+# writes one in the model's place when a turn is interrupted or the API errors.
+SYNTHETIC_CAUSE = "<synthetic> response (interrupt or API error)"
+
+
+def shed_cause(records: list[dict], start: int, stop: int) -> str:
+    """The best pointer the file offers at what took material out, or nothing.
+
+    Two things coincide with a fall often enough to be worth naming: an
+    attachment whose type ends `_delta`, which is how the CLI records a change to
+    the standing configuration, and a `<synthetic>` response. Neither is evidence
+    of *what* left. This is a pointer to the records worth reading and it is
+    worded so it cannot be mistaken for an attribution.
+    """
+    seen: list[str] = []
+    for record in records[start:stop + 1]:
+        if record.get("type") == "attachment":
+            kind = (record.get("attachment") or {}).get("type")
+            if isinstance(kind, str) and kind.endswith("_delta") and kind not in seen:
+                seen.append(kind)
+        if ((record.get("message") or {}).get("model") == "<synthetic>"
+                and SYNTHETIC_CAUSE not in seen):
+            seen.append(SYNTHETIC_CAUSE)
+    return ", ".join(seen) if seen else "nothing in the file names a cause"
+
+
+def shed_tokens(events: list[Shed]) -> int:
+    """What left this window with no compaction boundary to explain it."""
+    return sum(event.tokens for event in events)
 
 
 # ─── colour and width ────────────────────────────────────────────────────────
@@ -1637,6 +1757,7 @@ class Ledger:
     window: int
     parts: tuple[tuple[str, int], ...]
     residual: int
+    shed: int = 0
 
     @property
     def claimed(self) -> int:
@@ -1644,15 +1765,21 @@ class Ledger:
 
     @property
     def span(self) -> int:
-        """The strip's own total: the window, or the parts when they overrun it.
+        """The strip's own total: everything that was ever in this window.
 
         Not a normalisation. Nothing is rescaled to fit inside the window — the
         strip is stretched to hold the parts and the window rule moves off the
         right-hand end, which is what makes the overrun a length rather than a
         footnote. The mockup's finding is that the graphic is only honest
         because it refuses to do the other thing.
+
+        `window + shed` rather than `window` because the parts describe material
+        that arrived and the shed is material that left again: the strip runs to
+        what was in here at its fullest and the rule marks how much of that is
+        still in the window. `claimed + residual` is exactly that total, so the
+        segments fill the strip and the length past the rule is what left.
         """
-        return max(self.window, self.claimed)
+        return max(self.window + self.shed, self.claimed)
 
 
 def ledger(composition: Composition) -> Ledger | None:
@@ -1669,7 +1796,11 @@ def ledger(composition: Composition) -> Ledger | None:
         return None
     claimed: dict[str, int] = {}
     residual = 0
-    for _, tokens, kind in audit_rows(composition)[1:]:
+    for label, tokens, kind in audit_rows(composition)[1:]:
+        if label == SHED_ROW:
+            # Not a claim on the window and so not a segment: it is the length
+            # the strip runs *past* the rule by (`Ledger.span`).
+            continue
         if kind == "residual":
             residual += tokens
         else:
@@ -1680,6 +1811,7 @@ def ledger(composition: Composition) -> Ledger | None:
         window=window,
         parts=tuple((kind, claimed[kind]) for kind in KINDS if kind in claimed),
         residual=residual,
+        shed=shed_tokens(composition.shed),
     )
 
 
@@ -1724,11 +1856,12 @@ def strip_cells(led: Ledger, width: int) -> tuple[list[str], int]:
     cells.extend([""] * (width - len(cells)))
 
     rule = min(width, round(led.window * scale))
-    if led.residual < 0:
+    if led.span > led.window:
         # An overrun too small to round to a column still has to be visible: a
-        # rule at the right-hand end says the parts fit, and they do not. One
-        # column of the strip is drawn on the wrong side of the rule to say the
-        # true thing, which is that there is an outside of the rule at all.
+        # rule at the right-hand end says everything is inside the window, and
+        # it is not. One column of the strip is drawn on the wrong side of the
+        # rule to say the true thing, which is that there is an outside of the
+        # rule at all.
         rule = min(rule, width - 1)
     return cells, rule
 
@@ -1766,7 +1899,7 @@ def ledger_lines(led: Ledger, style: Style) -> list[str]:
              + paint_cells(cells[rule:], style)]
 
     overhang = width - rule
-    if led.residual < 0:
+    if led.span > led.window:
         bracket = (OVERHANG_NARROW if overhang < 2 else
                    OVERHANG_OPEN + OVERHANG_FILL * (overhang - 2) + OVERHANG_CLOSE)
         lines.append(" " * (2 + rule + 1) + style.paint(bracket, "residual"))
@@ -1777,12 +1910,54 @@ def ledger_lines(led: Ledger, style: Style) -> list[str]:
     legend.append((rule_text, rule_text))
     lines.extend(pack(legend, width + 1))
 
-    if led.residual < 0:
-        over = -led.residual
+    if led.shed:
+        shed = (f"the strip runs to {led.span:,}: {led.shed:,} tokens left this "
+                f"window with no compaction boundary, and everything past the "
+                f"rule is gone from it")
+        lines.append("  " + style.paint(shed, "exact"))
+    if led.claimed > led.window:
+        over = led.claimed - led.window
         overrun = (f"the parts overrun the window that existed by {over:,} "
                    f"token{'' if over == 1 else 's'} "
                    f"({100 * over / led.window:.1f}%)")
         lines.append("  " + style.paint(overrun, "residual"))
+    return lines
+
+
+# How many shedding events get a line of their own before the rest are rolled
+# into one. Five covers 186 of the 192 shedding sessions in ~/.claude/projects
+# whole; the worst is 57 events, which is a session to name rather than a list
+# to print.
+SHED_EVENTS_SHOWN = 5
+
+
+def shed_lines(events: list[Shed], style: Style) -> list[str]:
+    """The exact falls, above the tree, with the request each was measured at.
+
+    06-spike-findings calls this "the single cheapest honesty fix available":
+    without it a session that lost a third of its window reads as an estimator
+    that cannot count. Above the tree rather than in it, because what left is
+    not in the window and drawing it as a row would be putting it back.
+
+    The largest five get a line each, in file order so they read as a sequence;
+    the rest are one line. The total is every event, whatever is printed.
+    """
+    if not events:
+        return []
+    total = shed_tokens(events)
+    largest = sorted(events, key=lambda event: -event.tokens)[:SHED_EVENTS_SHOWN]
+    shown = sorted(largest, key=lambda event: event.at_record)
+    plural = "" if len(events) == 1 else "s"
+    heading = f"shed with no compaction boundary ({len(events)} event{plural})"
+    lines = [(f"{heading:<{style.head_columns}}{total:>9,}       —  "
+              f"{style.word('exact')}")]
+    for event in shown:
+        lines.append(f"  at {event.where}: {event.before:,} -> {event.after:,}, "
+                     f"{event.tokens:,} gone; cause: {event.cause}")
+    if len(shown) < len(events):
+        rest = total - sum(event.tokens for event in shown)
+        lines.append(f"  and {len(events) - len(shown)} more, each smaller, "
+                     f"{rest:,} tokens between them")
     return lines
 
 
@@ -1837,6 +2012,7 @@ def render(composition: Composition, window_argument: int | None,
         lines.append(f"{f'of a --window of {window_argument:,}':<{style.head_columns}}"
                      f"{100 * window / window_argument:8.1f}% full  "
                      f"{style.word('exact')}")
+    lines.extend(shed_lines(composition.shed, style))
     led = ledger(composition)
     if led is not None:
         lines.append("")
@@ -1866,6 +2042,11 @@ def render(composition: Composition, window_argument: int | None,
         summary = " · ".join(
             f"{style.word(kind)} {value:,} ({100 * value / window:.1f}%)"
             for kind, value in sorted(by_kind.items(), key=lambda kv: -kv[1]))
+        if composition.shed:
+            # Without this term the line stops adding up: the kinds describe
+            # material that arrived and the window is what stayed.
+            shed = shed_tokens(composition.shed)
+            summary += f" · less shed {shed:,} ({100 * shed / window:.1f}%)"
         lines.append("")
         lines.append(f"{style.word('exact')} {window:,} = {summary}")
     lines.append("")
@@ -1879,6 +2060,13 @@ def render(composition: Composition, window_argument: int | None,
         lines.append("  note       no '% of window full' is printed: nothing in a "
                      "transcript states the window size (§C7). Pass --window N to "
                      "state the denominator yourself.")
+    if composition.shed:
+        lines.append(f"  note       {shed_tokens(composition.shed):,} tokens left "
+                     "this window between requests with no compaction boundary to "
+                     "explain it. The rows above describe material arriving, so "
+                     "they over-claim the window by what left; the reconciliation "
+                     "adds it back rather than leaving the residual to absorb it "
+                     "silently. Nothing in the transcript says what left (§C6).")
     if any(node.kind == "residual" and node.tokens < 0 for node in composition.nodes):
         lines.append("  note       the residual is negative: this readout explains "
                      "more of the window than there is. That is what an unbiased "
@@ -1905,18 +2093,64 @@ NOT_APPLIED = (
     "A residual that cannot be non-zero is not evidence (§C10)."
 )
 
+# 06-spike-findings §2 item 2 asks for the prefix to be re-derived at every
+# shedding event. It is not, and this says why on the page rather than in a
+# commit message, because the alternative is a node whose label stops describing
+# its own contents.
+#
+# The re-derivation available is the same subtraction taken at the first request
+# after the last fall: ctx(that request), less the estimate of everything the
+# transcript recorded before it, less the reasoning retained from those
+# responses. Its books balance well — over the 192 shedding sessions in
+# ~/.claude/projects it puts the residual at a median +0.1% and every one of
+# them inside ±15%, against −7.7% and 139 of 192 today. Two things are wrong
+# with it. The number is not a prefix: the estimate it subtracts includes
+# material that has since left, so on 42 of those 192 it comes out negative,
+# −71,067 at the worst, and §C7 already reads a subtraction at or below zero as
+# a statement about the estimate rather than about the prefix. And it balances
+# the books by moving the anchor: the residual would then audit only the
+# requests after the last fall instead of the whole window, which is the one
+# self-check this tool has (§C10).
+#
+# Re-deriving it correctly needs something no transcript holds: a record of
+# *what* left the window, or the prompt's own composition at each request. Until
+# one exists the prefix stays measured at the first request and labelled with
+# it, which is the other half of the disjunction `06-` offers.
+NO_REDERIVATION = (
+    "the prefix above was measured at the first request in this window and is",
+    "not re-derived here: after a shed the same subtraction returns the prefix",
+    "less an estimate of material that has left, which is negative on 42 of the",
+    "192 shedding sessions on this machine. It is labelled with the request it",
+    "was measured at instead (§C6, §C7).",
+)
+
+# The one row of the reconciliation that adds rather than subtracts, named here
+# because `ledger` has to tell it from a claim on the window: it is the opposite
+# of one.
+SHED_ROW = "plus unmodelled shedding"
+
 
 def audit_rows(composition: Composition) -> list[tuple[str, int, str]]:
     """The reconciliation, as `(what, tokens, kind)` in subtraction order.
 
     Every top-level node, signed the way the arithmetic reads: the window, less
     each thing that claims part of it, leaving the residual.
+
+    Shedding is the one row that adds. Every row above it is material the
+    transcript recorded arriving in this window; a shed is that material leaving
+    again, so the claims over-state the window by what left and the correction
+    goes the other way. 06-spike-findings prints it as `of which unmodelled
+    shedding` — an annotation inside a residual that had silently absorbed it.
+    It is a row of its own here because a number the tool has measured exactly is
+    not something the confession should be carrying.
     """
     rows = [("window at the last request", composition.window or 0, "exact")]
     for node in composition.nodes:
         if node.kind == "residual":
             continue
         rows.append((f"less {node.label}", -node.tokens, node.kind))
+    if composition.shed:
+        rows.append((SHED_ROW, shed_tokens(composition.shed), "exact"))
     residual = next((n for n in composition.nodes if n.kind == "residual"), None)
     if residual is not None:
         rows.append(("= unattributed", residual.tokens, "residual"))
@@ -1937,6 +2171,16 @@ def render_audit(composition: Composition, style: Style | None = None) -> str:
         share = tokens / window
         lines.append(f"  {label:<{style.head_columns - 2}}{tokens:>9,}  "
                      f"{100 * share:5.1f}%  {style.word(kind)}")
+
+    if composition.shed:
+        lines.append("")
+        lines.append("  what left this window, by consecutive-request subtraction")
+        for event in composition.shed:
+            lines.append(f"    {event.tokens:>12,}   at {event.where}: "
+                         f"{event.before:,} -> {event.after:,}")
+        lines.append(f"    {shed_tokens(composition.shed):>12,}   = shed, exact, "
+                     "and material this readout counts as still being here")
+        lines.extend(f"    {line}" for line in NO_REDERIVATION)
 
     lines.append("")
     lines.append("  the prefix, by first-request subtraction")
@@ -2186,6 +2430,25 @@ def to_dict(composition: Composition, window_argument: int | None,
                 "pre": _figure(last.get("preTokens") or 0, "exact"),
                 "post": _figure(last.get("postTokens") or 0, "exact"),
             },
+        },
+        # Compaction's sibling and not a part of it: the same fact — material
+        # left the window — with no boundary record to say so. A document of its
+        # own because a consumer that sums `nodes` against `window` gets the
+        # wrong answer on these sessions without it.
+        "shedding": {
+            "events": [
+                {
+                    "at_record": event.at_record,
+                    "at_request": event.at_request,
+                    "of_requests": event.of_requests,
+                    "before": _figure(event.before, "exact"),
+                    "after": _figure(event.after, "exact"),
+                    "tokens": _figure(event.tokens, "exact"),
+                    "cause": event.cause,
+                }
+                for event in composition.shed
+            ],
+            "shed": _figure(shed_tokens(composition.shed), "exact"),
         },
         "nodes": [as_dict(node) for node in composition.nodes],
         "notes": composition.notes,

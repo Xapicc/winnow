@@ -173,7 +173,27 @@ tokens were attributed rather than in how many there are.
 python -m winnow context <session-id>            # the readout, writes nothing
 python -m winnow context <session-id> --json     # the same tree; this is the real interface
 python -m winnow context <session-id> --window 200000   # …and then a "% full" figure
+python -m winnow context <session-id> --depth 1  # provenance only; 2 adds the tool, 3 the artefact
+python -m winnow context <session-id> --by-path  # one node per file, pooled across the tools
 ```
+
+The drill-down is the reason the command exists. Three levels: who put this here, then which tool
+or attachment class, then **which artefact** — the file path with the number of times it landed in
+the window, the Bash command head, the MCP tool, the memory file, one sub-agent's return. Sorted
+biggest-first at every level, with no "17 more, each smaller" bin, so the terminal tree and `--json`
+carry exactly the same nodes.
+
+`--by-path` re-keys the `tool traffic` subtree artefact-first, so a file read twice and edited once
+is one row marked `×3 (Read ×2, Edit)` rather than two rows in two subtrees. That is not cosmetic:
+on session `f6ea2591` the share of `Read`/`Edit`/`Write` output coming from paths touched more than
+once is **33.5%** pooled and **16.8%** keyed tool-first, over the same 211,557 characters. A result
+with no path — Bash output is the largest such node in most sessions — keeps its command head as its
+own key and is never binned as "other".
+
+Two things it shows and never adds up. A sub-agent's return is sized at **what came back**, with the
+sub-agent's own window printed beside it as a separate figure: adding them produces a number that is
+not the size of any window that ever existed. A `<persisted-output>` node is sized at the ~2 KB
+preview the model actually saw, with the size of the sidecar behind it named in the row.
 
 Every figure carries one of four labels and a test walks `--json` to enforce it: `exact` is lifted
 from something the CLI wrote down, `derived` is an exact number minus an estimate, `estimated` is
@@ -188,10 +208,9 @@ session from the top: the accumulator resets at the last `compact_boundary`, so 
 its real 116,030-token window rather than the 416,774 a walk from record zero produces, and states
 the 444,326 tokens compaction has dropped as a separate exact figure above the tree.
 
-**This is milestone M1 and it looks like one.** It has no drill-down, so it cannot yet answer *which*
-Bash; and it has no `prefix` node and no `retained reasoning` node, so both sit inside
-`unattributed`, which is why that row is 30–65% of the window rather than the ~1% the full
-decomposition reaches. `proposals/ContextTreemap/05-recommendation.md` is the plan and its non-goals
+**This is milestones M1 and M2.** It has no `prefix` node and no `retained reasoning` node yet, so
+both sit inside `unattributed`, which is why that row is 30–65% of the window rather than the ~1%
+the full decomposition reaches. `proposals/ContextTreemap/05-recommendation.md` is the plan and its non-goals
 bind: no "reclaimable space" figure, no cross-session view, no writes of any kind, and no claim of
 parity with `/context`.
 

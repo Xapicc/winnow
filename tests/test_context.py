@@ -182,8 +182,17 @@ def test_exits_zero_with_a_read_only_claude_directory(tmp_path, monkeypatch):
     projects.mkdir(parents=True)
     shutil.copy(FIXTURES / "context_golden.jsonl",
                 projects / "aaaaaaaa-1111-2222-3333-444444444444.jsonl")
+    # M2 reads one thing M1 did not: a sub-agent's own transcript, from the
+    # sidecar directory beside the session (§C11). That is new I/O under
+    # ~/.claude and it is inside this test's guarantee, so it is copied in too.
+    delegating = "bbbbbbbb-1111-2222-3333-444444444444"
+    shutil.copy(FIXTURES / "context_agent.jsonl", projects / f"{delegating}.jsonl")
+    shutil.copytree(FIXTURES / "context_agent" / "subagents",
+                    projects / delegating / "subagents")
 
-    for directory in (tmp_path / "claude", tmp_path / "claude" / "projects", projects):
+    read_only = [tmp_path / "claude", tmp_path / "claude" / "projects", projects,
+                 projects / delegating, projects / delegating / "subagents"]
+    for directory in read_only:
         directory.chmod(0o555)
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
 
@@ -196,11 +205,15 @@ def test_exits_zero_with_a_read_only_claude_directory(tmp_path, monkeypatch):
         code, output = context_command("aaaaaaaa")
         assert code == 0
         assert "5,000" in output
+
+        code, output = context_command("bbbbbbbb", depth=3, by_path=True)
+        assert code == 0
+        assert "own window 144,000, not added" in output
+
         assert snapshot() == before
     finally:
         # Restore write permission or pytest cannot remove its own tmp_path.
-        for directory in (tmp_path / "claude" / "projects" / projects.name,
-                          tmp_path / "claude" / "projects", tmp_path / "claude"):
+        for directory in reversed(read_only):
             directory.chmod(0o755)
 
 
@@ -211,7 +224,10 @@ def test_the_command_reaches_no_pruning_policy():
     program = (
         "import json, sys\n"
         "from winnow.cli import main\n"
-        f"main(['context', {fixture('golden')!r}, '--json'])\n"
+        # Every M2 flag, because a new code path is a new chance to import
+        # something. `rules.bash_head` is the one module M2 added to the reach.
+        f"main(['context', {fixture('golden')!r}, '--json', '--depth', '4'])\n"
+        f"main(['context', {fixture('agent')!r}, '--by-path'])\n"
         f"forbidden = set({sorted(FORBIDDEN_MODULES)!r})\n"
         "print('LEAKED', json.dumps(sorted(forbidden & set(sys.modules))),"
         " file=sys.stderr)\n"

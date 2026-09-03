@@ -40,6 +40,8 @@ import json
 import math
 import os
 import re
+import shutil
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -1296,14 +1298,186 @@ def dropped_tokens(boundaries: list[dict]) -> int:
     return boundaries[-1].get("cumulativeDroppedTokens") or 0 if boundaries else 0
 
 
-# ─── rendering ───────────────────────────────────────────────────────────────
+# ─── colour and width ────────────────────────────────────────────────────────
 
+# M1's widths, kept as the floor rather than as the layout: they are what the
+# readout falls back to when nothing states a terminal width, so a piped run is
+# byte-for-byte what it was before there was a layout to compute.
 BAR_COLUMNS = 22
 LABEL_COLUMNS = 54
-_HEAD_COLUMNS = BAR_COLUMNS + LABEL_COLUMNS + 4
+
+# Everything on a tree row that is neither the bar nor the label: two columns of
+# left margin, two between the bar and the label, nine for the token count, two,
+# six for the share, two, and nine for the longest kind word ("estimated").
+FIXED_COLUMNS = 2 + 2 + 9 + 2 + 6 + 2 + 9
+
+# A bar wider than this stops being a comparison and starts being a wall; a
+# label column wider than this drifts the numbers out of reach of the words they
+# belong to. Past either, extra terminal width is better left unused.
+WIDEST_BAR = 32
+WIDEST_LABEL = 72
+
+# 07-mockup.md item 4: colour means provenance, never category, and it is the
+# whole visual grammar. The four hues are the mockup's own, mapped to the fixed
+# part of the xterm 256-colour cube — slots 16-231, which a terminal theme does
+# not remap, unlike 0-15 — by nearest CIE76 distance in Lab. `exact`, `derived`
+# and `estimated` land on the same slot from either of the mockup's palettes
+# (#2a78d6/#3987e5, #eb6834/#d95926, #1baf7a/#199e70). `residual` is the one
+# that splits: light wants 214, dark wants 172, and a terminal does not say what
+# its background is. 172 is taken because it holds 2.9:1 against white where 214
+# falls to 1.8:1, and it still sits 22.9 ΔE from `derived` — well clear of the
+# 9.1 worst-adjacent that the mockup's own validator accepted.
+PALETTE_256 = {
+    "exact": "38;5;68",
+    "derived": "38;5;166",
+    "estimated": "38;5;36",
+    "residual": "38;5;172",
+}
+
+# The fallback for a terminal that claims no 256-colour support: four hues in
+# the theme's own tuned versions of them. Slots 0-15 are whatever the user's
+# colour scheme says, which is the one guarantee that they are legible against
+# the background that scheme was written for.
+PALETTE_16 = {
+    "exact": "34",
+    "derived": "31",
+    "estimated": "32",
+    "residual": "33",
+}
+
+# `unknown` is in neither palette on purpose. The mockup gives it no mark at all
+# because a thing with no size has no length to draw, and the key below names it
+# so that the absence reads as a decision rather than an omission.
+COLOR_CHOICES = ("auto", "always", "never")
 
 
-def bar(share: float) -> str:
+@dataclass(frozen=True)
+class Style:
+    """How the readout is drawn: the columns it gets, and what colour it emits.
+
+    Defaults to exactly what M1 printed — 22 and 54 columns and not one escape
+    byte — so that anything rendering without a terminal to ask (a test, a pipe,
+    a file) gets the output it got before there was a palette to apply.
+    """
+
+    bar_columns: int = BAR_COLUMNS
+    label_columns: int = LABEL_COLUMNS
+    palette: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def head_columns(self) -> int:
+        """Where the numbers start, for the exact facts printed above the tree."""
+        return self.bar_columns + self.label_columns + 4
+
+    @property
+    def in_colour(self) -> bool:
+        return bool(self.palette)
+
+    def paint(self, text: str, kind: str) -> str:
+        """`text` in `kind`'s colour, or `text` exactly as it came.
+
+        Unchanged for every kind the palette does not name — `unknown`, `note`,
+        and all four in plain mode — so no caller has to ask whether colour is
+        on before it writes a line. Pad before painting, never after: the escape
+        bytes are zero columns wide and a format spec counts them as characters.
+        """
+        code = self.palette.get(kind)
+        return f"\x1b[{code}m{text}\x1b[0m" if code else text
+
+    def word(self, kind: str) -> str:
+        """The kind's own name in its own colour, which is how a row states it.
+
+        The word carries the claim on its own and the colour only repeats it.
+        That is what discharges the light palette's contrast warning — the
+        mockup's note that two slots oblige visible labels — and it is why
+        `winnow context | cat` loses nothing but the hue.
+        """
+        return self.paint(kind, kind)
+
+
+def terminal_columns() -> int:
+    """The terminal's width, or 0 when nothing states one.
+
+    `shutil.get_terminal_size` answers 80 when it cannot tell, which is
+    indistinguishable from a terminal that really is 80 columns wide. The
+    fallback is set to zero instead so "no width" can be told from "a narrow
+    one", and the no-width case can hold the widths M1 shipped.
+    """
+    return shutil.get_terminal_size(fallback=(0, 0)).columns
+
+
+def layout(columns: int) -> tuple[int, int]:
+    """`(bar columns, label columns)` for a terminal `columns` wide.
+
+    Never narrower than M1's 22 and 54 together: below that the tree stops being
+    readable well before it stops being wide, and a row that wraps is a better
+    failure than a path truncated to nothing. Never wider than `WIDEST_BAR` and
+    `WIDEST_LABEL` either, so a 300-column terminal does not push the token
+    counts a screen away from the labels they belong to.
+    """
+    room = columns - FIXED_COLUMNS
+    if room <= BAR_COLUMNS + LABEL_COLUMNS:
+        return BAR_COLUMNS, LABEL_COLUMNS
+    bar_columns = min(WIDEST_BAR, max(BAR_COLUMNS, round(0.22 * room)))
+    return bar_columns, min(WIDEST_LABEL, room - bar_columns)
+
+
+def wants_colour(choice: str) -> bool:
+    """Whether to emit SGR at all, from the `--color` choice and the environment.
+
+    `auto` is the usual triple: something that is a terminal on the other end,
+    `NO_COLOR` unset, and a `TERM` that is not `dumb`. `NO_COLOR` set to any
+    non-empty value forces plain output whatever `auto` would have decided —
+    that is the NO_COLOR spec's rule, and its own exception is the one honoured
+    here: an explicit `--color always` still wins, because it is the operator
+    asking rather than the tool guessing.
+    """
+    if choice == "always":
+        return True
+    if choice == "never":
+        return False
+    if os.environ.get("NO_COLOR"):
+        return False
+    if os.environ.get("TERM") == "dumb":
+        return False
+    return sys.stdout.isatty()
+
+
+def palette() -> dict[str, str]:
+    """The 256-colour hues where the terminal claims them, four hues where not."""
+    term = os.environ.get("TERM", "")
+    if "256color" in term or "direct" in term or os.environ.get("COLORTERM"):
+        return PALETTE_256
+    return PALETTE_16
+
+
+def resolve_style(color: str = "auto", columns: int | None = None) -> Style:
+    """One `Style` for a whole run, decided once at the command boundary."""
+    if columns is None:
+        columns = terminal_columns()
+    bar_columns, label_columns = layout(columns)
+    return Style(bar_columns, label_columns,
+                 palette() if wants_colour(color) else {})
+
+
+def key_line(style: Style) -> str:
+    """The provenance key, as one line and as part of the readout.
+
+    The mockup makes it a permanent fixture of the page rather than a footnote,
+    because colour is the whole grammar and a reader should not have to hold it
+    in their head. It is printed only when there is colour to key: in plain mode
+    it would name four hues that are not there, and the `how each kind was
+    derived` block at the foot already names the kinds. The key says which
+    colour; the footer says how the number was got.
+    """
+    chips = "  ".join(f"{style.paint('█', kind)} {kind}" for kind in KINDS)
+    return f"colour is provenance:  {chips}  ·  unknown is unsized: no mark"
+
+
+# ─── rendering ───────────────────────────────────────────────────────────────
+
+
+def bar(share: float, columns: int = BAR_COLUMNS) -> str:
     """The magnitude, in a glyph that says which side of zero it is on.
 
     A negative residual is normal rather than exceptional — the estimator
@@ -1313,9 +1487,9 @@ def bar(share: float) -> str:
     over-explained reads differently from under-explained at a glance, rather
     than as an empty row that looks like a rounding artefact.
     """
-    filled = min(BAR_COLUMNS, int(abs(share) * BAR_COLUMNS))
+    filled = min(columns, int(abs(share) * columns))
     if share < 0:
-        return "-" + "▒" * min(BAR_COLUMNS - 1, filled)
+        return "-" + "▒" * min(columns - 1, filled)
     if filled:
         return "█" * filled
     return "▏" if share > 0 else " "
@@ -1328,13 +1502,13 @@ def walk(nodes: list[Node], level: int = 1):
         yield from walk(node.children, level + 1)
 
 
-def indent(label: str, level: int) -> str:
+def indent(label: str, level: int, columns: int = LABEL_COLUMNS) -> str:
     """One label column, indented by level, truncated from the *left*.
 
     Left, because these labels are mostly paths and the leaf is the actionable
     part: `…/winnow/src/winnow/context.py` beats `/workspace/.uf-worktree…`.
     """
-    room = LABEL_COLUMNS - 2 * (level - 1)
+    room = columns - 2 * (level - 1)
     if len(label) > room:
         label = "…" + label[-(room - 1):]
     return "  " * (level - 1) + f"{label:<{room}}"
@@ -1352,8 +1526,20 @@ def pooled_line(stats: dict[str, float]) -> str:
             f"{stats['repeated_paths']:,.0f} path(s) touched more than once")
 
 
-def render(composition: Composition, window_argument: int | None) -> str:
-    """The terminal readout. No colour, no drill-down — M1 looks like a skeleton."""
+def render(composition: Composition, window_argument: int | None,
+           style: Style | None = None) -> str:
+    """The terminal readout: colour that means provenance, and nothing else.
+
+    05- §M1 says "no colour" and this used to say so too. The operator overrode
+    that on 2026-09-03, asking for the mockup's grammar in the terminal — see
+    07-mockup.md's postscript. What the override does *not* change is that the
+    hue is never the only thing carrying a claim: every row still prints its own
+    kind word beside the colour, so `| cat` loses the palette and no meaning.
+
+    Colour lands on exactly two things per row, the bar glyph and the kind word.
+    The numbers stay uncoloured so the columns still read as a table.
+    """
+    style = style or Style()
     lines: list[str] = []
     window = composition.window
     compaction = (f"{len(composition.boundaries)} compaction boundaries"
@@ -1363,32 +1549,39 @@ def render(composition: Composition, window_argument: int | None) -> str:
         f"{composition.requests} requests ({composition.requests_in_window} in the "
         f"window)  ·  {composition.model or 'no model recorded'}  ·  {compaction}"
     )
+    if style.in_colour:
+        lines.append(key_line(style))
 
     if window is None:
-        lines.append(f"{'window at the last request':<{_HEAD_COLUMNS}}"
+        lines.append(f"{'window at the last request':<{style.head_columns}}"
                      f"{'unanchored':>9}       —  —")
     else:
-        lines.append(f"{'window at the last request':<{_HEAD_COLUMNS}}"
-                     f"{window:>9,}  100.0%  exact")
+        lines.append(f"{'window at the last request':<{style.head_columns}}"
+                     f"{window:>9,}  100.0%  {style.word('exact')}")
     if composition.boundaries:
         last = composition.boundaries[-1]
-        lines.append(f"{'dropped by compaction (cumulative)':<{_HEAD_COLUMNS}}"
-                     f"{dropped_tokens(composition.boundaries):>9,}       —  exact")
+        lines.append(f"{'dropped by compaction (cumulative)':<{style.head_columns}}"
+                     f"{dropped_tokens(composition.boundaries):>9,}       —  "
+                     f"{style.word('exact')}")
         lines.append(f"  last boundary: {last.get('trigger')} compaction, "
                      f"pre/post {last.get('preTokens') or 0:,} / "
                      f"{last.get('postTokens') or 0:,}")
     if window is not None and window_argument:
-        lines.append(f"{f'of a --window of {window_argument:,}':<{_HEAD_COLUMNS}}"
-                     f"{100 * window / window_argument:8.1f}% full  exact")
+        lines.append(f"{f'of a --window of {window_argument:,}':<{style.head_columns}}"
+                     f"{100 * window / window_argument:8.1f}% full  "
+                     f"{style.word('exact')}")
     lines.append("")
 
     for node, level in walk(composition.nodes):
         share = node.tokens / window if window else 0.0
         percent = f"{100 * share:5.1f}%" if window else "     —"
-        lines.append(f"  {bar(share):<{BAR_COLUMNS}}  {indent(node.label, level)}"
-                     f"{node.tokens:>9,}  {percent}  {node.kind}")
+        glyph = style.paint(f"{bar(share, style.bar_columns):<{style.bar_columns}}",
+                            node.kind)
+        lines.append(f"  {glyph}  "
+                     f"{indent(node.label, level, style.label_columns)}"
+                     f"{node.tokens:>9,}  {percent}  {style.word(node.kind)}")
         if node.note:
-            lines.append(f"  {'':<{BAR_COLUMNS}}  {'  ' * level}· {node.note}")
+            lines.append(f"  {'':<{style.bar_columns}}  {'  ' * level}· {node.note}")
 
     if composition.by_path:
         lines.append("")
@@ -1399,15 +1592,15 @@ def render(composition: Composition, window_argument: int | None) -> str:
         for node in composition.nodes:
             by_kind[node.kind] = by_kind.get(node.kind, 0) + node.tokens
         summary = " · ".join(
-            f"{kind} {value:,} ({100 * value / window:.1f}%)"
+            f"{style.word(kind)} {value:,} ({100 * value / window:.1f}%)"
             for kind, value in sorted(by_kind.items(), key=lambda kv: -kv[1]))
         lines.append("")
-        lines.append(f"exact {window:,} = {summary}")
+        lines.append(f"{style.word('exact')} {window:,} = {summary}")
     lines.append("")
     lines.append("how each kind was derived")
     for kind in KINDS:
         if any(node.kind == kind for node in composition.nodes) or kind == "exact":
-            lines.append(f"  {kind:<10s} {DERIVATION[kind]}")
+            lines.append(f"  {style.paint(f'{kind:<10s}', kind)} {DERIVATION[kind]}")
     for note in composition.notes:
         lines.append(f"  note       {note}")
     if window is not None and not window_argument:
@@ -1453,8 +1646,9 @@ def audit_rows(composition: Composition) -> list[tuple[str, int, str]]:
     return rows
 
 
-def render_audit(composition: Composition) -> str:
+def render_audit(composition: Composition, style: Style | None = None) -> str:
     """`--audit` — the full reconciliation, and the constant it does not apply."""
+    style = style or Style()
     audit, floor, window = composition.audit, composition.floor, composition.window
     lines = ["", f"audit — the reconciliation, at {CHARS_PER_TOKEN} chars/token"]
     if audit is None or floor is None or not window:
@@ -1464,8 +1658,8 @@ def render_audit(composition: Composition) -> str:
 
     for label, tokens, kind in audit_rows(composition):
         share = tokens / window
-        lines.append(f"  {label:<{_HEAD_COLUMNS - 2}}{tokens:>9,}  "
-                     f"{100 * share:5.1f}%  {kind}")
+        lines.append(f"  {label:<{style.head_columns - 2}}{tokens:>9,}  "
+                     f"{100 * share:5.1f}%  {style.word(kind)}")
 
     lines.append("")
     lines.append("  the prefix, by first-request subtraction")
@@ -1524,13 +1718,15 @@ def find_nodes(composition: Composition, target: str) -> list[Node]:
     return []
 
 
-def explain(composition: Composition, target: str) -> tuple[int, str]:
+def explain(composition: Composition, target: str,
+            style: Style | None = None) -> tuple[int, str]:
     """The derivation of one node, in the arithmetic that produced it.
 
     Not a paragraph. `04-comparison.md` scores option B above A on exactly two
     rows and this flag buys the first of them — floor honesty — for a small
     fraction of B's build, but only if it answers with numbers.
     """
+    style = style or Style()
     found = find_nodes(composition, target)
     if not found:
         labels = sorted({node.label for node, _ in walk(composition.nodes)})
@@ -1543,7 +1739,7 @@ def explain(composition: Composition, target: str) -> tuple[int, str]:
 
     node = found[0]
     window = composition.window
-    header = [f"{node.label} — {node.kind}, {node.tokens:,} tokens"
+    header = [f"{node.label} — {style.word(node.kind)}, {node.tokens:,} tokens"
               + (f" ({100 * node.tokens / window:.1f}% of the window)"
                  if window else "")]
     return 0, "\n".join(header + [""] + explain_body(composition, node))
@@ -1729,14 +1925,23 @@ def to_dict(composition: Composition, window_argument: int | None,
 def context_command(session: str, *, as_json: bool = False,
                     window: int | None = None, depth: int = 3,
                     by_path: bool = False, audit: bool = False,
-                    explain_node: str | None = None) -> tuple[int, str]:
+                    explain_node: str | None = None,
+                    color: str = "auto") -> tuple[int, str]:
     """`(exit code, output)`. 1 usage error, 3 refused — no anchor, no shares.
 
     Exit 3 rather than 0 when no assistant record carries `usage`: the readout
     is still printed and still useful, but every share and every percentage is
     withheld, and a caller that cannot see the stderr line has to be able to
     tell that from a normal run (§C7, and 05-'s refusable set).
+
+    The style is resolved once, here, because this is the only place that knows
+    both what the operator asked for and what is on the other end of stdout.
+    `--json` never sees it: that document is bytes for a machine and is the same
+    bytes down a pipe, into a file and onto a terminal.
     """
+    if color not in COLOR_CHOICES:
+        return 1, (f"winnow: --color must be one of "
+                   f"{', '.join(COLOR_CHOICES)}, got {color!r}")
     try:
         path = resolve_session(session)
     except LookupError as exc:
@@ -1749,12 +1954,13 @@ def context_command(session: str, *, as_json: bool = False,
     composition = compose(path, records, depth=depth, by_path=by_path)
     refused = 0 if composition.window is not None else 3
 
+    style = resolve_style(color)
     if explain_node is not None:
-        code, text = explain(composition, explain_node)
+        code, text = explain(composition, explain_node, style)
         return (code or refused), text
     if as_json:
         return refused, json.dumps(to_dict(composition, window, audit), indent=2)
-    readout = render(composition, window)
+    readout = render(composition, window, style)
     if audit:
-        readout += "\n" + render_audit(composition)
+        readout += "\n" + render_audit(composition, style)
     return refused, readout

@@ -370,6 +370,7 @@ def cmd_context(args: argparse.Namespace) -> int:
         audit=args.audit,
         explain_node=args.explain,
         color=args.color,
+        filter_ledger=Path(args.filter_ledger) if args.filter_ledger else None,
     )
     print(output, file=sys.stderr if code == EXIT_USAGE else sys.stdout)
     if code == EXIT_REFUSED:
@@ -454,6 +455,16 @@ def add_context_subparser(sub) -> None:
              "'dumb', so a piped or redirected readout is clean ASCII. Every "
              "row prints its own kind word beside the colour, so nothing is "
              "lost without it",
+    )
+    p.add_argument(
+        "--filter-ledger", default=None, metavar="PATH",
+        help="a `winnow filter --ledger` file. Joined on requestId, it is the "
+             "only thing on this machine that has ever held the system prompt "
+             "and the tool definitions, so it breaks the `prefix` row into its "
+             "regions and then into one row per tool definition — inside the "
+             "derived total, which it does not change. It also says which tool "
+             "results reached the API as a winnow pointer while reaching this "
+             "transcript whole, and those are then priced at the pointer",
     )
     p.add_argument("--json", action="store_true",
                    help="machine-readable output; the same tree, with every "

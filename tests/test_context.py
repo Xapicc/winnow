@@ -57,12 +57,14 @@ from winnow.context import (
     Node,
     Shed,
     Style,
+    _pointers,
     anchored_chain,
     attachment_chars,
     attachment_keys,
     audit_rows,
     compose,
     context_command,
+    estimate,
     explain,
     indent,
     key_line,
@@ -72,6 +74,7 @@ from winnow.context import (
     own_faults,
     palette,
     priced_responses,
+    read_wire,
     render,
     render_audit,
     resolve_style,
@@ -83,6 +86,7 @@ from winnow.context import (
     track_rooms,
     wants_colour,
 )
+from winnow.filter import pointer
 from winnow.legacy.session import load_messages
 from winnow.report import inspect_command, resolve_session
 
@@ -387,6 +391,35 @@ def test_every_rendered_number_carries_a_provenance_label(name, window_argument,
         assert figure["kind"] in KINDS, f"{path} carries a kind that is not one of {KINDS}"
     unexplained = sorted(set(bare) - NOT_A_WINDOW_CLAIM)
     assert not unexplained, f"numbers with no provenance: {unexplained}"
+
+
+def test_the_filter_ledger_document_makes_no_claim_about_the_window(tmp_path):
+    """§C2 over the one subtree that is exempt from it, and why.
+
+    `filter_ledger` is a document of *bytes* — the weights the `prefix` row's
+    children were apportioned by — and a byte count is not a figure about the
+    window, so it carries no kind and could not honestly carry one. The exemption
+    is only safe while the subtree stays bytes, so this walks it and fails if a
+    token figure ever appears in it: at that point it is a claim about the window
+    and belongs in `nodes` with a kind beside it.
+    """
+    comp = wire_composition(tmp_path, prefix_record(),
+                            filter_record("req_third", DROPPED_BASH), depth=3)
+    document = to_dict(comp, None, audit=True)
+
+    _, bare = walk_numbers(document)
+    outside = sorted(path for path in set(bare) - NOT_A_WINDOW_CLAIM
+                     if not path.startswith("$.filter_ledger."))
+    assert not outside, f"numbers with no provenance: {outside}"
+    assert all("token" not in path for path in bare
+               if path.startswith("$.filter_ledger.")), \
+        "a token figure appeared among the ledger's byte weights"
+
+    # And the tokens the join produced are in the tree, labelled.
+    labelled, _ = walk_numbers(document)
+    prefix = next(node for path, node in labelled
+                  if path.endswith("nodes[0]") and node["label"] == "prefix")
+    assert [child["kind"] for child in prefix["children"]] == ["estimated"] * 2
 
 
 def test_the_json_tree_is_the_committed_golden():
@@ -1154,7 +1187,6 @@ def test_the_derived_prefix_measures_what_prefix_facts_measures(tmp_path):
     classifier ever starts counting something into `visible` that belongs to the
     prefix, or the reverse, this fails and the residual does not.
     """
-    from winnow.context import estimate
     from winnow.filter import prefix_facts
 
     body = {
@@ -1187,6 +1219,320 @@ def test_the_derived_prefix_measures_what_prefix_facts_measures(tmp_path):
 
     assert round(comp.floor.visible_before_first) == round(estimate(len(opening)))
     assert tokens(comp, "prefix") == round(prefix_tokens) == 23_110
+
+
+# ─── --filter-ledger: what the wire held and the transcript does not ─────────
+
+# `context_wire.jsonl` states its own answer. Three priced requests at 40,000 /
+# 47,000 / 50,000, so the anchoring window is 50,000 and the prefix derives at
+# the first. Two tool results: 4,000 characters of Bash output under
+# `toolu_bash` and 2,600 of Read output under `toolu_read`.
+WIRE_SESSION = "wire"
+WIRE_TOOLS = {"Bash": 900, "Read": 700, "Edit": 1200,
+              "mcp__daiveloper__search_code": 2400}
+WIRE_DIGEST = "sysdig.tooldig"
+
+
+def prefix_record(**overrides) -> dict:
+    record = {
+        "v": 1, "kind": "prefix", "request_id": "req_from_another_session",
+        "digest": WIRE_DIGEST, "model": "claude-opus-5",
+        "system_bytes": 18_000, "tools_bytes": sum(WIRE_TOOLS.values()),
+        "system_digest": "sysdig", "tools_digest": "tooldig",
+        "tools": dict(WIRE_TOOLS), "tool_count": len(WIRE_TOOLS),
+        "breakpoints": {"system": 0, "tools": 1, "messages": 2}, "changed": None,
+    }
+    return {**record, **overrides}
+
+
+def filter_record(request_id: str, dropped: list[dict] | None = None,
+                  **overrides) -> dict:
+    record = {
+        "v": 1, "kind": "filter", "request_id": request_id,
+        "prefix_digest": WIRE_DIGEST, "model": "claude-opus-5", "cache_ttl": None,
+        "dropped": dropped or [], "deferred": [],
+        "bytes_dropped": sum(entry["bytes"] for entry in dropped or []),
+        "bytes_deferred": 0, "tool_results_seen": 1, "inflated": 0,
+    }
+    return {**record, **overrides}
+
+
+def ledger_file(tmp_path: Path, *records: dict) -> Path:
+    path = tmp_path / "filter.jsonl"
+    path.write_text("".join(json.dumps(record) + "\n" for record in records))
+    return path
+
+
+def wire_composition(tmp_path: Path, *records: dict, **options):
+    path = FIXTURES / "context_wire.jsonl"
+    return compose(path, [record for _, record, _ in load_messages(path)],
+                   filter_ledger=ledger_file(tmp_path, *records), **options)
+
+
+DROPPED_BASH = [{"tool": "Bash", "rule": "B2", "bytes": 4000,
+                 "tool_use_id": "toolu_bash"}]
+
+
+def test_a_filtered_result_is_priced_at_the_pointer_not_the_transcript(tmp_path):
+    """The correction `inspect` has always made and `context` did not.
+
+    The filter removes bytes on the wire and Claude Code writes the whole result
+    to disk, so on a proxied session every estimated row here priced material
+    the API never received. 4,000 characters of Bash output reached the anchor as
+    a 113-character pointer, and the row has to say 113.
+    """
+    plain = composition(WIRE_SESSION, depth=3)
+    corrected = wire_composition(tmp_path,
+                                 filter_record("req_third", DROPPED_BASH),
+                                 depth=3)
+
+    bash = child(next(n for n in corrected.nodes if n.label == "tool traffic"),
+                 "Bash results")
+    assert tokens(plain, "tool traffic") - tokens(corrected, "tool traffic") > 1_400
+    assert bash.tokens == round(estimate(len(pointer("Bash", "B2", 4000))))
+    # And the Read result, which the filter did not touch, does not move.
+    assert (child(next(n for n in corrected.nodes if n.label == "tool traffic"),
+                  "Read results").tokens
+            == child(next(n for n in plain.nodes if n.label == "tool traffic"),
+                     "Read results").tokens)
+
+
+def test_the_removal_the_window_never_saw_is_charged_back_to_the_residual(tmp_path):
+    """The correction has to land somewhere and it lands in the confession.
+
+    A window that was smaller than its transcript means the tree was
+    over-explaining it; correcting the rows without the residual moving would be
+    the tool quietly absorbing its own correction (§C10).
+    """
+    plain = composition(WIRE_SESSION, depth=3)
+    corrected = wire_composition(tmp_path,
+                                 filter_record("req_third", DROPPED_BASH),
+                                 depth=3)
+
+    residual = next(n for n in corrected.nodes if n.kind == "residual")
+    before = next(n for n in plain.nodes if n.kind == "residual")
+    assert residual.tokens > before.tokens
+    assert corrected.window == plain.window == 50_000
+    assert sum(node.tokens for node in corrected.nodes) == 50_000
+
+
+def test_the_correction_is_read_off_the_anchoring_request_and_no_other(tmp_path):
+    """The filter is stateless and re-drops the same result on every later
+    request that still carries it, so *which* request's manifest is asked is the
+    whole question. A removal recorded against an earlier request says nothing
+    about what the anchoring one was missing."""
+    elsewhere = wire_composition(tmp_path,
+                                 filter_record("req_first", DROPPED_BASH),
+                                 depth=3)
+    plain = composition(WIRE_SESSION, depth=3)
+    assert tokens(elsewhere, "tool traffic") == tokens(plain, "tool traffic")
+
+
+def test_the_prefix_subtraction_uses_the_first_requests_own_manifest(tmp_path):
+    """`prefix = ctx(first request) - est(visible before it)`, and the
+    subtrahend is what *that* request carried. A result the filter removed from
+    it was never in the 40,000 either, so leaving it in the subtraction shrinks
+    the prefix by material the request did not hold."""
+    opening = [{"tool": "Bash", "rule": "B2", "bytes": 20,
+                "tool_use_id": "toolu_missing"}]
+    corrected = wire_composition(tmp_path, filter_record("req_first", opening))
+    plain = composition(WIRE_SESSION)
+    # Nothing before the first request matches that id, so the prefix stands.
+    assert tokens(corrected, "prefix") == tokens(plain, "prefix")
+    assert corrected.floor.first_context == 40_000
+
+
+def test_the_prefix_row_is_broken_into_the_regions_the_ledger_measured(tmp_path):
+    """The composition the transcript cannot hold: of nineteen record types
+    across 866 transcripts, zero carry a system prompt or a tool definition."""
+    comp = wire_composition(tmp_path, prefix_record(),
+                            filter_record("req_third"), depth=3)
+
+    prefix = next(node for node in comp.nodes if node.label == "prefix")
+    assert prefix.kind == "derived"
+    assert [c.label.split("  ")[0] for c in prefix.children] == [
+        "system prompt", "tool definitions"]
+    assert all(child.kind == "estimated" for child in prefix.children)
+    # §C3 all the way down: the children sum to the row above them exactly.
+    assert sum(child.tokens for child in prefix.children) == prefix.tokens
+
+
+def test_the_ledger_supplies_weights_and_never_the_prefix_total(tmp_path):
+    """01- §3.1 measured the derived prefix as moving 14% across an 80% swing in
+    the chars-per-token constant. A prefix sized from the ledger's bytes would
+    move with the constant instead, so the ledger is not allowed to set it — it
+    splits a total it does not change."""
+    plain = composition(WIRE_SESSION, depth=3)
+    with_ledger = wire_composition(tmp_path, prefix_record(),
+                                   filter_record("req_third"), depth=3)
+    assert tokens(with_ledger, "prefix") == tokens(plain, "prefix")
+
+    # And a ledger claiming a wildly different prefix still does not move it.
+    huge = wire_composition(tmp_path, prefix_record(system_bytes=9_000_000),
+                            filter_record("req_third"), depth=3)
+    assert tokens(huge, "prefix") == tokens(plain, "prefix")
+
+
+def test_one_row_per_tool_definition_biggest_first_with_no_tail_bin(tmp_path):
+    """SPEC §3's $8.14-a-week-per-tool figure was estimated and never checked
+    against a live request. This is the row it would be checked against."""
+    comp = wire_composition(tmp_path, prefix_record(),
+                            filter_record("req_third"), depth=3)
+
+    prefix = next(node for node in comp.nodes if node.label == "prefix")
+    tools = child(prefix, "tool definitions").children
+    assert [c.label.split("  ")[0] for c in tools] == [
+        "mcp__daiveloper__search_code", "Edit", "Bash", "Read"]
+    assert [c.tokens for c in tools] == sorted((c.tokens for c in tools),
+                                              reverse=True)
+    assert sum(c.tokens for c in tools) == child(prefix, "tool definitions").tokens
+
+
+def test_the_tool_rows_stop_at_the_depth_that_stops_every_other_artefact(tmp_path):
+    """A tool definition is the artefact of this subtree, so it is drawn at the
+    level `--depth 3` already reaches for a file path."""
+    def prefix_at(depth: int):
+        comp = wire_composition(tmp_path, prefix_record(),
+                                filter_record("req_third"), depth=depth)
+        return next(node for node in comp.nodes if node.label == "prefix")
+
+    assert prefix_at(1).children == []
+    # And the row does not announce an apportionment the reader cannot see.
+    assert "apportioned into the derived total below" not in prefix_at(1).note
+    assert "apportioned into the derived total below" in prefix_at(2).note
+    assert [c.label.split("  ")[0] for c in prefix_at(2).children] == [
+        "system prompt", "tool definitions"]
+    assert child(prefix_at(2), "tool definitions").children == []
+    assert child(prefix_at(3), "tool definitions").children
+
+
+def test_a_prefix_that_moved_inside_the_window_is_named_and_not_drawn(tmp_path):
+    """The most expensive thing that can happen to a Claude Code install, and
+    otherwise completely invisible. No breakdown, because the row's total is
+    derived at the first request and a composition read off a later observation
+    would be a breakdown of a different prefix — drawn inside that total, summing
+    to it, and about the wrong thing."""
+    moved = prefix_record(digest="sysdig.moved", tools_digest="moved",
+                          tools_bytes=9_000)
+    comp = wire_composition(
+        tmp_path, prefix_record(), moved,
+        filter_record("req_second"),
+        filter_record("req_third", prefix_digest="sysdig.moved"), depth=3)
+
+    prefix = next(node for node in comp.nodes if node.label == "prefix")
+    assert prefix.children == []
+    assert comp.wire.prefixes == 2
+    assert any("2 different fixed prefixes" in note for note in comp.notes)
+
+
+def test_a_window_with_no_line_in_the_ledger_says_which_silence_it_is(tmp_path):
+    """A line is written only when the filter changed a request, so an absent
+    line is also what an unfiltered session looks like. The correction for both
+    is zero, and the note says so rather than implying a gap."""
+    comp = wire_composition(tmp_path, prefix_record(),
+                            filter_record("req_from_another_session"), depth=3)
+
+    assert comp.wire.joined == 0
+    assert tokens(comp, "tool traffic") == tokens(
+        composition(WIRE_SESSION, depth=3), "tool traffic")
+    assert any("no request in this window appears in the filter ledger" in note
+               for note in comp.notes)
+
+
+def test_a_prefix_line_of_this_windows_own_joins_without_a_digest(tmp_path):
+    """The case a session that started the proxy gets, and the case a ledger
+    written before `prefix_digest` existed gets."""
+    comp = wire_composition(
+        tmp_path,
+        prefix_record(request_id="req_second", digest=None),
+        depth=3)
+    prefix = next(node for node in comp.nodes if node.label == "prefix")
+    assert comp.wire.prefix.digest == WIRE_DIGEST  # recomposed from the regions
+    assert child(prefix, "system prompt")
+
+
+def test_the_pointer_is_reconstructed_rather_than_measured(tmp_path):
+    """`filter.pointer` is a pure function of the three fields the entry
+    records, and it is the function the filter itself called — so this is the
+    string that went on the wire, which a length stored by another version of
+    the ledger would not be."""
+    wire = read_wire(
+        ledger_file(tmp_path, filter_record("req_third", DROPPED_BASH)),
+        {"req_third"})
+    assert wire.at("req_third") == {
+        "toolu_bash": pointer("Bash", "B2", 4000)}
+    assert wire.at("req_first") == {}
+
+
+def test_an_entry_whose_tool_could_not_be_paired_uses_the_filters_own_placeholder():
+    """`filter.apply` builds the pointer with "tool" when it cannot name the
+    call, and records the empty name in the entry. Reconstructing from the entry
+    verbatim would produce a string one character short of the wire."""
+    assert _pointers([{"tool": "", "rule": "C1", "bytes": 50,
+                       "tool_use_id": "t"}]) == {"t": pointer("tool", "C1", 50)}
+
+
+def test_a_missing_ledger_is_a_usage_error_rather_than_an_empty_one(tmp_path):
+    """SPEC §10: no fallback that turns a mistyped path into a silent nothing.
+    The readout would otherwise print a note saying the ledger knew nothing about
+    this window, which is true of a file that does not exist and useless."""
+    code, output = context_command(fixture(WIRE_SESSION),
+                                   filter_ledger=tmp_path / "nope.jsonl")
+    assert code == 1
+    assert "no filter ledger at" in output
+
+
+def test_an_unreadable_ledger_line_is_skipped_and_the_rest_is_read(tmp_path):
+    """§C8's discipline, applied to the second file this command now reads: the
+    proxy appends to it while a session is running."""
+    path = tmp_path / "filter.jsonl"
+    path.write_text(json.dumps(prefix_record()) + "\n"
+                    + "{not json\n"
+                    + "\n"
+                    + "[1, 2, 3]\n"
+                    + json.dumps(filter_record("req_third", DROPPED_BASH)) + "\n")
+    comp = compose(FIXTURES / "context_wire.jsonl",
+                   [r for _, r, _ in load_messages(FIXTURES / "context_wire.jsonl")],
+                   depth=3, filter_ledger=path)
+    assert comp.wire.prefix is not None
+    assert comp.wire.at("req_third")
+
+
+def test_the_json_carries_the_join_in_bytes_and_the_tokens_stay_in_the_tree(tmp_path):
+    """The weights are a document of their own so that a consumer can
+    re-apportion them; the tokens they produced are in `nodes`, carrying the
+    `estimated` they are owed."""
+    comp = wire_composition(tmp_path, prefix_record(),
+                            filter_record("req_third", DROPPED_BASH), depth=3)
+    document = to_dict(comp, None)
+
+    joined = document["filter_ledger"]
+    assert joined["requests_joined"] == 1
+    assert joined["prefix"]["tools"] == WIRE_TOOLS
+    assert joined["dropped_results"] == {"req_third": ["toolu_bash"]}
+    # No token figure anywhere in it: these are bytes, and §C2 is about the
+    # window. The tree above is where this join became tokens.
+    assert "tokens" not in json.dumps(joined)
+
+
+def test_the_flag_left_off_is_not_the_same_as_a_ledger_that_said_nothing():
+    """`None` means unasked. A `Wire` carrying a note is a join that ran and
+    found nothing, and the two print differently."""
+    assert composition(WIRE_SESSION).wire is None
+    assert "filter_ledger" not in to_dict(composition(WIRE_SESSION), None)
+
+
+def test_explain_prefix_shows_the_weights_below_the_subtraction(tmp_path):
+    """Below it and never inside it: the three numbers are the derivation and
+    they do not move when a ledger is supplied."""
+    comp = wire_composition(tmp_path, prefix_record(),
+                            filter_record("req_third"), depth=3)
+    code, output = explain(comp, "prefix", resolve_style("never"))
+
+    assert code == 0
+    assert "40,000   context at the first priced request" in output
+    assert "18,000   bytes of system prompt" in output
+    assert "mcp__daiveloper__search_code" in output
 
 
 # ─── shedding ────────────────────────────────────────────────────────────────

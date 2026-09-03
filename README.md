@@ -177,13 +177,15 @@ python -m winnow context <session-id> --depth 1  # provenance only; 2 adds the t
 python -m winnow context <session-id> --by-path  # one node per file, pooled across the tools
 python -m winnow context <session-id> --audit    # the reconciliation, and the constant it will not apply
 python -m winnow context <session-id> --explain prefix   # the arithmetic behind one node
+python -m winnow context <session-id> --filter-ledger ~/.winnow/filter.jsonl   # what the wire held
 ```
 
 **The five modes, and they compose.** The default is the provenance tree. `--by-path` re-keys its
 `tool traffic` subtree artefact-first. `--audit` appends the full reconciliation beneath the tree and
 changes no number in it. `--explain <node>` prints one node's arithmetic *instead of* the tree.
 `--json` serialises whichever of those you asked for, and carries the audit document too when
-`--audit` is given. `--depth` and `--window` are modifiers rather than modes and apply throughout.
+`--audit` is given. `--depth`, `--window` and `--filter-ledger` are modifiers rather than
+modes and apply throughout.
 
 The drill-down is the reason the command exists. Three levels: who put this here, then which tool
 or attachment class, then **which artefact** — the file path with the number of times it landed in
@@ -216,6 +218,30 @@ come out near zero and does. Both are `derived` rather than `estimated`, and `--
 three numbers and a subtraction rather than a paragraph. Over an even 200-file sweep of
 `~/.claude/projects` on 2026-09-03 (163 qualifying sessions) this leaves a **median `unattributed` of
 0.6%**, against 43.9% for the same tree with only the visible material priced.
+
+**`--filter-ledger` is the only way to see inside the prefix, and it is not a second estimate.**
+The system prompt and the tool definitions are in no transcript — across 866 of them, nineteen
+record types, *zero* carry either — so the prefix row's total is derived by subtraction and stays
+derived whatever this flag is given. What a `winnow filter --ledger` file adds is the
+**composition**: `--depth 2` splits the row into system prompt and tool definitions, `--depth 3`
+gives one row per tool definition, biggest-first with no tail bin, apportioned into a total the
+ledger does not set. That is the row SPEC §3's "one added tool definition costs $8.14–$8.26 a week"
+was estimated against and never once checked against a live request. Supplying a ledger that claims a
+9 MB system prompt moves nothing: the flag contributes weights, in bytes, and 01- §3.1's measurement
+that the derived prefix moves 14% across an 80% swing in the constant is exactly what a
+bytes-over-a-constant prefix would throw away.
+
+It also fixes a real error on any session run behind the proxy. The filter replaces a tool result
+with a pointer *on the wire* and never touches the file, so `context` was pricing bytes the API never
+received — inflating those rows and driving the residual negative for reasons that have nothing to do
+with the estimate. The correction is exact and it is a *replacement*, not a subtraction: the pointer
+is rebuilt by the same `filter.pointer` the filter called, and it is read off the **anchoring
+request's** own ledger line, because the filter is stateless and what it removed thirty turns earlier
+is a different manifest. The join is on `requestId` — the id the API returns is the only handle the
+ledger and the transcript both hold — and a filter line names the prefix it was sent under by content
+digest, so a session that never changed a prefix can still find the one it was running. Two prefixes
+across one window means the prefix moved while the session was open; the readout says so and draws no
+breakdown, because there is no single prefix to break the row into.
 
 `--audit` reconciles the whole window row by row and then solves for the chars-per-token constant
 that *would* zero this session's residual — and prints, beside it, that it was **not applied**. There

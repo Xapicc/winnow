@@ -48,6 +48,7 @@ from datetime import datetime
 from itertools import groupby, pairwise
 from pathlib import Path
 
+from .filter import pointer
 from .legacy.session import load_messages
 from .report import AmbiguousSession, resolve_session
 from .rules import bash_head
@@ -134,6 +135,10 @@ class Composition:
     pooled: dict[str, float] = field(default_factory=dict)
     floor: Floor | None = None
     audit: Audit | None = None
+    # `--filter-ledger` only. `None` means the flag was not given, which is not
+    # the same as a ledger that said nothing about this window: that is a `Wire`
+    # carrying a note explaining which of the two silences it is.
+    wire: Wire | None = None
     # Not nodes: what these measure is material that has *left* the window, so
     # drawing it as a row of the tree would be adding it back. It sits above the
     # tree and reconciles below it (`shed_lines`, `audit_rows`).
@@ -147,7 +152,8 @@ def estimate(chars: float) -> float:
     return chars / CHARS_PER_TOKEN
 
 
-def payload_chars(block: dict) -> tuple[float, float, str]:
+def payload_chars(block: dict, dropped: dict[str, str] | None = None
+                  ) -> tuple[float, float, str]:
     """Characters on the wire, tokens on the wire, and a note if it is odd.
 
     01- §2.4's table. Two numbers rather than one because an image is priced by
@@ -155,6 +161,14 @@ def payload_chars(block: dict) -> tuple[float, float, str]:
     constant moves, and `--audit`'s solve for the constant that would zero this
     session's residual has to hold it fixed while everything else scales.
     Everything except an image returns zero in the second slot.
+
+    `dropped` is `tool_use_id -> the pointer the intake filter put in the
+    result's place on this request`, from `read_wire`, and it is the reason the
+    first line of this docstring says *on the wire* rather than *in the file*.
+    A filtered result reaches the API as that pointer and reaches the transcript
+    whole, so it is measured here at the pointer: the substitution is total —
+    text, sub-blocks and any image inside them all went with it — which is why
+    this returns before looking at the content at all.
     """
     kind = block.get("type")
     if kind == "text":
@@ -172,6 +186,10 @@ def payload_chars(block: dict) -> tuple[float, float, str]:
         tokens, note = image_tokens(block)
         return 0.0, tokens, note
     if kind == "tool_result":
+        if dropped:
+            replacement = dropped.get(block.get("tool_use_id") or "")
+            if replacement is not None:
+                return len(replacement), 0.0, ""
         content = block.get("content")
         if isinstance(content, str):
             return len(content), 0.0, spill_note(content)
@@ -428,6 +446,238 @@ def agent_label(tool_use_id: str | None, meta: dict | None) -> str:
     return f"{meta['agent_type']}: {description}  [{own}]"
 
 
+# ─── the wire, from the filter's ledger (`--filter-ledger`) ──────────────────
+#
+# Everything else in this file is read off a transcript, and a transcript records
+# what Claude Code *held*, never what the API *received*. Two consequences, and
+# `winnow filter --ledger` is the only artefact on the machine that closes either.
+#
+# **The prefix has no other witness.** `filter.py` measured it across 866
+# transcripts: of nineteen record types, zero carry a system prompt or a tool
+# definition. M3 derives the prefix's *total* by subtraction and that stands on
+# its own — the ledger does not improve it and is not allowed to replace it, at
+# 01- §3.1's measurement that the subtraction moves 14% across an 80% swing in
+# the constant while a byte count divided by the same constant would move with
+# it. What the ledger adds is the *composition*: which region, and which tool
+# definition, inside a total that is still derived.
+#
+# **A filtered request was smaller than its transcript.** The filter replaces a
+# `tool_result`'s content with a pointer on the wire and never touches the file,
+# so on a proxied session every estimated row here prices bytes the API did not
+# receive. `inspect` corrects for this and `context` did not. The correction is
+# a *replacement* rather than a subtraction — the pointer is reconstructed
+# exactly from the entry that recorded the removal — so it does not depend on
+# the ledger's `bytes` and `payload_chars` measuring a result the same way.
+
+
+@dataclass(frozen=True)
+class Prefix:
+    """One `kind: prefix` observation: sizes and names, never content.
+
+    Bytes, because that is what the filter can see without holding the prompt —
+    and bytes are what this is allowed to know. `filter.py` is emphatic that a
+    system prompt is the operator's CLAUDE.md and their plugins' injections, and
+    that MCP tool descriptions are written by whoever wrote the server.
+    """
+
+    digest: str
+    model: str | None
+    system_bytes: int
+    tools_bytes: int
+    tools: dict[str, int]
+
+    @property
+    def bytes(self) -> int:
+        return self.system_bytes + self.tools_bytes
+
+    def tool_count_note(self) -> str:
+        return (f"{human_bytes(self.system_bytes)} of system prompt and "
+                f"{human_bytes(self.tools_bytes)} across "
+                f"{count(len(self.tools), 'tool definition')}")
+
+
+@dataclass
+class Wire:
+    """What the filter's ledger says about one window's requests.
+
+    `dropped` is keyed by request id and then by `tool_use_id`, and its value is
+    the pointer that stood in the result's place on that request — not a size.
+    The filter is stateless and re-drops the same result on every later request
+    that still carries it, so *which* request is asked matters: the tree is
+    corrected against the anchoring request, whose ledger line is the exact
+    manifest of what that request was missing, and the prefix subtraction is
+    corrected against the first request in the window, which is a different one.
+
+    A window with no line in the ledger is not a gap in the correction. A line
+    is written iff the filter changed the request, so an absent line means an
+    unfiltered request, and the correction for one of those is zero.
+    """
+
+    prefix: Prefix | None = None
+    prefixes: int = 0
+    dropped: dict[str, dict[str, str]] = field(default_factory=dict)
+    joined: int = 0
+    note: str = ""
+
+    def at(self, request_id: str | None) -> dict[str, str]:
+        return self.dropped.get(request_id or "", {})
+
+
+def read_wire(ledger_path: Path, request_ids: set[str]) -> Wire:
+    """Join `winnow filter --ledger` to one window's requests.
+
+    Two joins, and they are different in kind. The **filter** lines join on the
+    request id directly: the id the API returned is the only handle both sides
+    hold, which is `inspect.read_filter_ledger`'s reason and this is the same
+    one. The **prefix** lines mostly cannot: a prefix line is written only when
+    the prefix moves, so a stable install writes one per process and it carries
+    whichever request happened to start it — usually another session's. So the
+    filter line names its prefix by content digest and the digest is looked up
+    among every prefix observation in the file, wherever it sits. The join is
+    positional in nothing, which matters for an append-only file whose lines are
+    themselves written only on change.
+
+    A prefix line whose *own* request is in this window joins directly, which is
+    the case a session that started the proxy gets, and which also covers a
+    ledger written before `prefix_digest` existed.
+    """
+    wire = Wire()
+    if not request_ids:
+        wire.note = "no request in this window carries an id to join on"
+        return wire
+    observations: dict[str, Prefix] = {}
+    direct: list[Prefix] = []
+    named: list[str] = []
+    try:
+        with ledger_path.open(encoding="utf-8") as handle:
+            for line in handle:
+                record = _ledger_record(line)
+                if record is None:
+                    continue
+                kind = record.get("kind")
+                if kind == "prefix":
+                    observed = _prefix_observation(record)
+                    if observed is None:
+                        continue
+                    observations[observed.digest] = observed
+                    if record.get("request_id") in request_ids:
+                        direct.append(observed)
+                elif kind in (None, "filter"):
+                    # `kind` absent is a line from before the field existed, and
+                    # `savings.read_ledger` reads those as filter lines.
+                    request_id = record.get("request_id")
+                    if request_id not in request_ids:
+                        continue
+                    wire.joined += 1
+                    wire.dropped.setdefault(request_id, {}).update(
+                        _pointers(record.get("dropped")))
+                    digest = record.get("prefix_digest")
+                    if isinstance(digest, str) and digest not in named:
+                        named.append(digest)
+    except OSError as exc:
+        wire.note = f"the filter ledger could not be read: {exc}"
+        return wire
+
+    resolved = [observations[digest] for digest in named if digest in observations]
+    # A direct join beats a digest lookup only in that it needs no `prefix_digest`
+    # on the filter line; both name the same observation when both are present.
+    for observed in direct:
+        if all(observed.digest != other.digest for other in resolved):
+            resolved.append(observed)
+    wire.prefixes = len({observed.digest for observed in resolved})
+    if wire.prefixes == 1:
+        wire.prefix = resolved[0]
+    elif wire.prefixes > 1:
+        # Not "take the newest". The prefix node's total is derived at the first
+        # request in the window and a composition read off a later observation
+        # would be a breakdown of a different prefix, drawn inside that total
+        # and summing to it — correct by construction and about the wrong thing.
+        wire.note = (
+            f"the filter ledger records {wire.prefixes} different fixed prefixes "
+            "across this window's requests, so the system prompt and the tool "
+            "definitions moved while it was open — every request after the "
+            "first paid a full cache write. No breakdown is drawn: the prefix "
+            "row is derived at the first request and there is no one prefix to "
+            "break it into")
+    elif wire.joined:
+        wire.note = (
+            f"{wire.joined} of this window's requests are in the filter ledger, "
+            "but none names a prefix the ledger also describes — the prefix "
+            "readout was off, or the lines predate it")
+    else:
+        wire.note = (
+            "no request in this window appears in the filter ledger. A line is "
+            "written only when the filter changed a request, so this is also "
+            "what an unfiltered session looks like; either way nothing was "
+            "removed from these requests and no correction is due")
+    return wire
+
+
+def _ledger_record(line: str) -> dict | None:
+    line = line.strip()
+    if not line:
+        return None
+    try:
+        record = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    return record if isinstance(record, dict) else None
+
+
+def _prefix_observation(record: dict) -> Prefix | None:
+    """One ledger line as a `Prefix`, or None if it is not usable as one.
+
+    `digest` was added beside the two region digests it is composed of, so it is
+    recomposed here when absent rather than making an older ledger unreadable.
+    """
+    digest = record.get("digest")
+    if not isinstance(digest, str):
+        system, tools = record.get("system_digest"), record.get("tools_digest")
+        if not isinstance(system, str) or not isinstance(tools, str):
+            return None
+        digest = f"{system}.{tools}"
+    tools = record.get("tools")
+    return Prefix(
+        digest=digest,
+        model=record.get("model") if isinstance(record.get("model"), str) else None,
+        system_bytes=_as_int(record.get("system_bytes")),
+        tools_bytes=_as_int(record.get("tools_bytes")),
+        tools={name: _as_int(size) for name, size in tools.items()
+               if isinstance(name, str)} if isinstance(tools, dict) else {},
+    )
+
+
+def _pointers(dropped) -> dict[str, str]:
+    """`tool_use_id -> the pointer that replaced it`, for one filter line.
+
+    Reconstructed rather than measured. `filter.pointer` is a pure function of
+    the three fields the entry records, and it is the same function the filter
+    called, so this is the exact string that went on the wire — which a stored
+    length would not be for a ledger written by another version.
+
+    `tool or "tool"` reproduces `filter.apply`'s own fallback for a result whose
+    `tool_use` it could not pair; the entry records the empty name and the
+    pointer was built with the placeholder.
+    """
+    if not isinstance(dropped, list):
+        return {}
+    pointers: dict[str, str] = {}
+    for entry in dropped:
+        if not isinstance(entry, dict):
+            continue
+        use_id, rule = entry.get("tool_use_id"), entry.get("rule")
+        if not isinstance(use_id, str) or not isinstance(rule, str):
+            continue
+        tool = entry.get("tool")
+        pointers[use_id] = pointer(tool if isinstance(tool, str) and tool else "tool",
+                                   rule, _as_int(entry.get("bytes")))
+    return pointers
+
+
+def _as_int(value) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
 # ─── the walk ────────────────────────────────────────────────────────────────
 
 
@@ -471,6 +721,11 @@ def priced_responses(records: list[dict]) -> list[dict]:
         entry = grouped.setdefault(message_id, {
             "index": index,
             "id": message_id,
+            # The API's own id for the request this answered, and the only
+            # handle the filter's ledger and this transcript both hold
+            # (`read_wire`). Absent on a record the CLI wrote in the model's
+            # place, which is a request that was never filtered either.
+            "request_id": record.get("requestId"),
             "model": message.get("model"),
             "context": ((usage.get("input_tokens") or 0)
                         + (usage.get("cache_creation_input_tokens") or 0)
@@ -640,7 +895,8 @@ def content_key(block: dict, record: dict, callers: dict, agents: dict,
 
 
 def pool_paths(records: list[dict], start: int, stop: int,
-               callers: dict[str, tuple[str, dict]]) -> dict[str, PathUse]:
+               callers: dict[str, tuple[str, dict]],
+               dropped: dict[str, str] | None = None) -> dict[str, PathUse]:
     """Every artefact path in the window, pooled across the tools that touched it.
 
     Its own walk rather than a side effect of building the tree, because "which
@@ -662,7 +918,7 @@ def pool_paths(records: list[dict], start: int, stop: int,
             artefact = artefact_key(tool, tool_input)
             if not artefact:
                 continue
-            chars, fixed, _ = payload_chars(block)
+            chars, fixed, _ = payload_chars(block, dropped)
             use = paths.setdefault(artefact, PathUse())
             # `Read` on a PNG comes back as an image block inside the result, so
             # a path node can carry area-priced tokens and no characters at all.
@@ -673,7 +929,8 @@ def pool_paths(records: list[dict], start: int, stop: int,
 
 def classify(records: list[dict], start: int, stop: int, notes: list[str],
              callers: dict[str, tuple[str, dict]], agents: dict[str, dict],
-             *, by_path: bool = False) -> dict[tuple[str, ...], Leaf]:
+             *, by_path: bool = False,
+             dropped: dict[str, str] | None = None) -> dict[tuple[str, ...], Leaf]:
     """H1 over the records still in the window, keyed all the way to the artefact.
 
     The key is a tuple, which is the whole of M2: `("tool traffic", "Read
@@ -738,7 +995,7 @@ def classify(records: list[dict], start: int, stop: int, notes: list[str],
         for block in content:
             if not isinstance(block, dict):
                 continue
-            chars, fixed, note = payload_chars(block)
+            chars, fixed, note = payload_chars(block, dropped)
             add(content_key(block, record, callers, agents, delegations, by_path),
                 chars, note, spilled_bytes(block), fixed)
 
@@ -900,7 +1157,8 @@ class Floor:
 
 
 def visible_material(records: list[dict], start: int, stop: int,
-                     callers: dict[str, tuple[str, dict]]) -> tuple[float, float]:
+                     callers: dict[str, tuple[str, dict]],
+                     dropped: dict[str, str] | None = None) -> tuple[float, float]:
     """Characters and area-priced tokens in one slice of the transcript.
 
     The prefix subtraction has to be in the tool's own units or the books do not
@@ -909,13 +1167,15 @@ def visible_material(records: list[dict], start: int, stop: int,
     the first time either changed.
     """
     scratch: list[str] = []
-    leaves = classify(records, start, stop, scratch, callers, {}).values()
+    leaves = classify(records, start, stop, scratch, callers, {},
+                      dropped=dropped).values()
     return (sum(leaf.chars for leaf in leaves),
             sum(leaf.fixed for leaf in leaves))
 
 
 def price_floor(records: list[dict], priced: list[dict], start: int, stop: int,
-                callers: dict[str, tuple[str, dict]]) -> Floor | None:
+                callers: dict[str, tuple[str, dict]],
+                wire: Wire | None = None) -> Floor | None:
     """Prefix by first-request subtraction; reasoning by per-response subtraction.
 
         prefix    = ctx(first request in this window) - est(visible before it)
@@ -934,8 +1194,12 @@ def price_floor(records: list[dict], priced: list[dict], start: int, stop: int,
     if not in_window:
         return None
     first = in_window[0]
-    before_chars, before_fixed = visible_material(records, start, first["index"],
-                                                  callers)
+    # The *first* request's removals, not the anchor's. This subtraction prices
+    # what that request carried, and the filter is stateless: what it took out
+    # of the anchoring request thirty turns later is a different manifest.
+    before_chars, before_fixed = visible_material(
+        records, start, first["index"], callers,
+        wire.at(first["request_id"]) if wire else None)
 
     retained, blocks, per_block, control, output = 0.0, 0, [], [], []
     for entry in in_window:
@@ -1168,7 +1432,8 @@ def pooled(paths: dict[str, PathUse]) -> dict[str, float]:
 
 
 def compose(path: Path, records: list[dict], *, depth: int = 1,
-            by_path: bool = False) -> Composition:
+            by_path: bool = False,
+            filter_ledger: Path | None = None) -> Composition:
     """Resolve the exact window and apportion the estimate inside it (§C3)."""
     notes: list[str] = []
     priced = priced_responses(records)
@@ -1182,6 +1447,21 @@ def compose(path: Path, records: list[dict], *, depth: int = 1,
     start = window_start(records, stop)
     in_window = [entry for entry in priced if start <= entry["index"] <= stop]
     shed = shed_events(in_window, records)
+    wire = None
+    if filter_ledger is not None:
+        wire = read_wire(filter_ledger, {entry["request_id"] for entry in in_window
+                                         if entry["request_id"]})
+        if wire.note:
+            notes.append(wire.note)
+    # The anchoring request is the one the window figure was read off, so its
+    # ledger line is the exact manifest of what that request was missing — and
+    # what every row of the tree must therefore not charge it for.
+    dropped = wire.at(anchor["request_id"]) if wire and anchor else None
+    if dropped:
+        notes.append(
+            f"{len(dropped)} tool result(s) reached the anchoring request as a "
+            "winnow pointer and reached this transcript whole; they are priced "
+            "at the pointer (--filter-ledger)")
     if anchor and compaction_boundaries(records[stop:]):
         notes.append(
             "a compaction boundary follows the anchoring request, so this "
@@ -1189,8 +1469,9 @@ def compose(path: Path, records: list[dict], *, depth: int = 1,
             "the session is in now — nothing has been priced since (§C6)")
     callers = tool_callers(records)
     agents = subagent_index(path, agent_results(records, start, stop, callers))
-    leaves = classify(records, start, stop, notes, callers, agents, by_path=by_path)
-    paths = pool_paths(records, start, stop, callers)
+    leaves = classify(records, start, stop, notes, callers, agents,
+                      by_path=by_path, dropped=dropped)
+    paths = pool_paths(records, start, stop, callers, dropped)
     tree = build_tree(leaves)
     labels = path_labels(paths) if by_path else {}
 
@@ -1212,9 +1493,10 @@ def compose(path: Path, records: list[dict], *, depth: int = 1,
         node.children = materialise(tree[node.label].children, node.tokens,
                                     labels, (node.label,), depth, level=2)
 
-    floor = price_floor(records, priced, start, stop, callers) if anchor else None
+    floor = (price_floor(records, priced, start, stop, callers, wire)
+             if anchor else None)
     if floor is not None:
-        nodes.extend(floor_nodes(floor, shed, notes))
+        nodes.extend(floor_nodes(floor, shed, notes, wire, depth))
     nodes.sort(key=lambda node: -node.tokens)
     if window is not None:
         # Subtraction rather than addition, so that the rendered rows sum to the
@@ -1252,6 +1534,7 @@ def compose(path: Path, records: list[dict], *, depth: int = 1,
         by_path=by_path,
         pooled=pooled(paths),
         floor=floor,
+        wire=wire,
         audit=books(window, leaves, floor, shed_tokens(shed)),
         shed=shed,
     )
@@ -1281,7 +1564,62 @@ def books(window: int | None, leaves: dict[tuple[str, ...], Leaf],
     )
 
 
-def floor_nodes(floor: Floor, shed: list[Shed], notes: list[str]) -> list[Node]:
+def prefix_children(prefix: Prefix, total: int, depth: int) -> list[Node]:
+    """The prefix's composition, apportioned into a total it does not set.
+
+    §C3 all the way down: the parent is `derived` — an exact first-request
+    context minus an estimate — and stays that number whatever the ledger says.
+    The ledger contributes *weights*, in bytes, and the children are rounded by
+    largest remainder into the row above them, so they sum to it exactly.
+
+    The children are `estimated`, not `exact`, and the byte counts being exact
+    does not change that: a byte share of a token total is an estimate of where
+    the tokens are, which is the same claim every other apportioned row makes
+    (§C2). Dividing these bytes by the chars-per-token constant instead would
+    produce a prefix that moves with the constant, which is exactly the property
+    01- §3.1 measured the derived one as not having.
+
+    `system` and `tools` at level 2, one row per tool definition at level 3 —
+    the level `--depth 3` already reaches for an artefact, and a tool definition
+    is the artefact of this subtree.
+    """
+    if depth < 2 or not prefix.bytes:
+        return []
+    regions = [("system prompt", prefix.system_bytes),
+               ("tool definitions", prefix.tools_bytes)]
+    weights = [size for _, size in regions]
+    nodes = []
+    for (label, size), amount in zip(regions, apportion(weights, total)):
+        if not amount:
+            continue
+        node = Node(label=f"{label}  {human_bytes(size)}", tokens=amount,
+                    kind="estimated")
+        if label == "tool definitions" and prefix.tools:
+            node.children = tool_children(prefix.tools, amount, depth)
+        nodes.append(node)
+    return nodes
+
+
+def tool_children(tools: dict[str, int], total: int, depth: int) -> list[Node]:
+    """One row per tool definition, biggest first and with no tail bin.
+
+    The same refusal `materialise` makes: a tool asked which tool definition is
+    in the window cannot answer "17 more, each smaller". This is the row that
+    SPEC §3's $8.14-a-week-per-tool figure was estimated against and never
+    checked, and it is the reason the composition is worth drawing at all.
+    """
+    if depth < 3:
+        return []
+    ordered = sorted(tools.items(), key=lambda item: -item[1])
+    return [Node(label=f"{name}  {human_bytes(size)}", tokens=amount,
+                 kind="estimated")
+            for (name, size), amount in
+            zip(ordered, apportion([size for _, size in ordered], total))
+            if amount]
+
+
+def floor_nodes(floor: Floor, shed: list[Shed], notes: list[str],
+                wire: Wire | None = None, depth: int = 1) -> list[Node]:
     """M3's two derived rows, and the note for a prefix this session cannot claim."""
     nodes = []
     if floor.claims_prefix:
@@ -1297,8 +1635,19 @@ def floor_nodes(floor: Floor, shed: list[Shed], notes: list[str]) -> list[Node]:
             note += (f"; measured at that request and not since, and "
                      f"{shed_tokens(shed):,} tokens have left this window since "
                      f"— no record says whether any of them were prefix (§C6)")
-        nodes.append(Node(label="prefix", tokens=round(floor.prefix),
-                          kind="derived", note=note))
+        prefix = Node(label="prefix", tokens=round(floor.prefix),
+                      kind="derived", note=note)
+        if wire is not None and wire.prefix is not None:
+            prefix.children = prefix_children(wire.prefix, prefix.tokens, depth)
+            # Only when there is something below to point at. At `--depth 1` the
+            # ledger was read and nothing was drawn from it, and a row that
+            # announced an apportionment the reader cannot see would be the
+            # readout describing a tree it did not print.
+            if prefix.children:
+                prefix.note += (
+                    f"; {wire.prefix.tool_count_note()} measured on the wire by "
+                    "the intake filter, apportioned into the derived total below")
+        nodes.append(prefix)
     else:
         notes.append(
             f"no prefix node: the first request in this window was priced at "
@@ -2716,7 +3065,7 @@ def explain_body(composition: Composition, node: Node) -> list[str]:
              " transcript holds before that request, estimated"),
             (f"= {round(floor.prefix):>12,}   prefix — the system prompt and the"
              " tool definitions, which no transcript records"),
-        ]
+        ] + prefix_composition_lines(composition)
     if node.label == "retained reasoning" and floor is not None:
         return [
             ("  per response: output_tokens (exact) − est(text + tool_use chars),"
@@ -2759,6 +3108,59 @@ def explain_body(composition: Composition, node: Node) -> list[str]:
                       f" the largest is {node.children[0].label!r} at"
                       f" {node.children[0].tokens:,}")]
     return body
+
+
+def wire_dict(wire: Wire) -> dict:
+    """`--filter-ledger`'s own document: what the join found, in bytes.
+
+    Bytes and not tokens, and no `kind` on them, because these are not figures
+    about the window — they are the weights the `prefix` row's children were
+    apportioned by, and that apportionment is already in `nodes` carrying the
+    `estimated` it is owed. A consumer that wanted to re-apportion needs the
+    weights; one that wanted the tokens has them above.
+    """
+    return {
+        "requests_joined": wire.joined,
+        "prefixes_observed": wire.prefixes,
+        "note": wire.note,
+        "dropped_results": {request: sorted(pointers)
+                            for request, pointers in wire.dropped.items()},
+        "prefix": None if wire.prefix is None else {
+            "digest": wire.prefix.digest,
+            "model": wire.prefix.model,
+            "system_bytes": wire.prefix.system_bytes,
+            "tools_bytes": wire.prefix.tools_bytes,
+            "tools": wire.prefix.tools,
+        },
+    }
+
+
+def prefix_composition_lines(composition: Composition) -> list[str]:
+    """What `--filter-ledger` adds beneath `--explain prefix`: the weights.
+
+    Below the subtraction and never inside it. The three numbers above are the
+    derivation and they do not move when a ledger is supplied; these are how the
+    result was split, in the unit the filter measured — bytes — so that the row
+    can be checked against the apportionment rather than taken on trust.
+    """
+    wire = composition.wire
+    if wire is None or wire.prefix is None:
+        return []
+    prefix = wire.prefix
+    definitions = count(len(prefix.tools), "definition")
+    lines = ["", "  and what the filter's ledger says that total is made of:",
+             f"  {prefix.system_bytes:>12,}   bytes of system prompt",
+             (f"  {prefix.tools_bytes:>12,}   bytes of tool definitions, "
+              f"over {definitions}")]
+    for name, size in sorted(prefix.tools.items(), key=lambda item: -item[1])[:5]:
+        lines.append(f"  {size:>12,}     {name}")
+    if len(prefix.tools) > 5:
+        # The one place a tail is elided rather than drawn, because this is the
+        # arithmetic behind one row and not the row itself. The tree draws all
+        # of them at --depth 3 and `--json` carries every one.
+        lines.append(f"  {'':>12}     … {len(prefix.tools) - 5} more, each "
+                     "smaller; --depth 3 draws them all")
+    return lines
 
 
 def _figure(tokens: int, kind: str) -> dict:
@@ -2891,6 +3293,8 @@ def to_dict(composition: Composition, window_argument: int | None,
         "notes": composition.notes,
         "derivations": DERIVATION,
     }
+    if composition.wire is not None:
+        document["filter_ledger"] = wire_dict(composition.wire)
     if audit:
         document["audit"] = audit_dict(composition)
     return document
@@ -2903,7 +3307,8 @@ def context_command(session: str, *, as_json: bool = False,
                     window: int | None = None, depth: int = 3,
                     by_path: bool = False, audit: bool = False,
                     explain_node: str | None = None,
-                    color: str = "auto") -> tuple[int, str]:
+                    color: str = "auto",
+                    filter_ledger: Path | None = None) -> tuple[int, str]:
     """`(exit code, output)`. 1 usage error, 3 refused — no anchor, no shares.
 
     Exit 3 rather than 0 when no assistant record carries `usage`: the readout
@@ -2934,7 +3339,12 @@ def context_command(session: str, *, as_json: bool = False,
     not_a_transcript = transcript_screen(path, records, style)
     if not_a_transcript is not None:
         return 1, not_a_transcript
-    composition = compose(path, records, depth=depth, by_path=by_path)
+    if filter_ledger is not None and not filter_ledger.exists():
+        return 1, (f"winnow: no filter ledger at {filter_ledger}. It is written "
+                   "by `winnow filter --ledger PATH`; there is no default and a "
+                   "missing one is not an empty one")
+    composition = compose(path, records, depth=depth, by_path=by_path,
+                          filter_ledger=filter_ledger)
     refused = 0 if composition.window is not None else 3
 
     if explain_node is not None:

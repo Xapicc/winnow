@@ -29,13 +29,16 @@ from pathlib import Path
 import pytest
 
 from winnow.context import (
+    CHARS_PER_TOKEN,
     KINDS,
     Node,
     attachment_chars,
     attachment_keys,
+    audit_rows,
     compose,
     context_command,
     priced_responses,
+    render,
     to_dict,
 )
 from winnow.legacy.session import load_messages
@@ -857,3 +860,189 @@ def test_every_group_can_render_its_own_help():
 def test_priced_responses_ignore_records_with_no_usage():
     path = FIXTURES / "context_no_anchor.jsonl"
     assert priced_responses([r for _, r, _ in load_messages(path)]) == []
+
+
+# ─── M3: the floor, priced, and the audit ────────────────────────────────────
+
+
+def test_the_worked_example_in_the_constraints_file_reproduces(real_claude_dir):
+    """05- M3, and the one session `02-constraints.md` works end to end.
+
+    That table was produced by `scratch/thinking_price.py` and `compose_one.py`
+    over a different parse, a different classifier and a different exclusion
+    list. Reproducing all four numbers here is the strongest evidence available
+    that the two derived blocks are a property of the session rather than of
+    either implementation.
+    """
+    path = real_session("e698739e")
+    comp = compose(path, [record for _, record, _ in load_messages(path)])
+
+    assert comp.window == 219_485
+    assert tokens(comp, "prefix") == 93_900
+    assert tokens(comp, "retained reasoning") == 46_557
+    assert tokens(comp, "unattributed") == 891
+    derived = sum(n.tokens for n in comp.nodes if n.kind == "derived")
+    assert derived == 140_457, "01- §2.6 puts this session's invisible share at 64%"
+    assert round(100 * derived / comp.window, 1) == 64.0
+
+
+def test_the_prefix_is_the_first_request_less_what_the_transcript_holds():
+    """The subtraction, on a fixture that states its own answer: the first
+    request is priced at 12,000 and the only thing before it is a 16-character
+    prompt, which the tool's own classifier estimates at 6 tokens."""
+    comp = composition("over_explained")
+
+    assert comp.floor.first_context == 12_000
+    assert round(comp.floor.visible_before_first) == 6
+    assert tokens(comp, "prefix") == 11_994
+    node = next(n for n in comp.nodes if n.label == "prefix")
+    assert node.kind == "derived", "an exact number minus an estimate (§C2)"
+
+
+def test_retained_reasoning_excludes_the_anchoring_response():
+    """`output_tokens − est(text + tool_use)`, over responses still in the window.
+
+    The fixture's first response emitted 500 tokens and wrote 306 characters of
+    them down, so 500 − 307/2.6 = 382 is what it kept. The anchoring response
+    emitted another 10 and they are *not* counted: its output was not in the
+    window it was priced for, which is the same reason the tree stops at it.
+    """
+    comp = composition("over_explained")
+
+    assert tokens(comp, "retained reasoning") == 382
+    assert comp.floor.thinking_blocks == 1
+    assert len(comp.floor.output) == 1, "the anchor's own output is excluded"
+    assert comp.floor.output == [(500, 307.0)]
+
+
+def test_the_per_response_dataset_is_built_even_though_nothing_renders_it(
+        real_claude_dir):
+    """05- M3: pricing reasoning per response *is* the whole H2 dataset.
+
+    M4 would render it as `--by-turn` and this milestone deliberately does not,
+    but the data has to be there and shaped right or M4 is a second walk. One
+    `(output_tokens, visible chars)` pair per priced response in the window,
+    minus the anchoring one.
+    """
+    path = real_session("e698739e")
+    comp = compose(path, [record for _, record, _ in load_messages(path)])
+
+    assert len(comp.floor.output) == 65, "66 requests, less the anchoring one"
+    assert all(out > 0 and chars >= 0 for out, chars in comp.floor.output)
+
+
+def test_the_residual_is_allowed_to_be_negative_and_renders_with_its_sign():
+    """The spike found two of its three worked sessions over-explained, and
+    `03-option-a`'s mock readout does not contemplate one. 67 of this run's 163
+    sweep sessions are negative, so this is the normal case, not the edge."""
+    comp = composition("over_explained")
+    readout = render(comp, None)
+
+    assert tokens(comp, "unattributed") == -7_500
+    assert sum(node.tokens for node in comp.nodes) == comp.window
+    residual_row = next(line for line in readout.splitlines()
+                        if "unattributed" in line)
+    assert "-7,500" in residual_row and "-50.0%" in residual_row
+    assert residual_row.lstrip().startswith("-"), "the bar says which side of zero"
+    assert any("the residual is negative" in line for line in readout.splitlines())
+
+
+def test_the_audit_prints_the_solved_constant_and_that_it_was_not_applied():
+    """05- M3, acceptance 2 — and §C10, which is the reason it is worded so hard."""
+    code, output = context_command(fixture("over_explained"), audit=True)
+
+    assert code == 0
+    assert "chars-per-token constant that would zero this session's residual" \
+        in output
+    assert "NOT APPLIED" in output
+    assert "a residual that cannot be non-zero is not evidence" in output.lower()
+
+
+def test_the_solved_constant_zeroes_the_residual_and_is_not_the_one_shipped():
+    """The bisection has to actually solve, or the diagnostic is decoration."""
+    comp = composition("over_explained")
+    solved = comp.audit.solve()
+
+    assert solved is not None
+    assert abs(comp.audit.residual_at(solved)) < 1.0
+    assert abs(comp.audit.residual_at(CHARS_PER_TOKEN)) > 1_000, \
+        "this fixture over-explains badly at the shipped constant"
+
+
+def test_the_audit_changes_no_number_in_the_tree():
+    """§C10 as an assertion rather than a promise: the solved constant is a
+    diagnostic, so asking for it must not move a single row."""
+    plain = context_command(fixture("over_explained"))[1]
+    audited = context_command(fixture("over_explained"), audit=True)[1]
+
+    assert audited.startswith(plain)
+    assert CHARS_PER_TOKEN == 2.6, "still the shipped constant after a solve"
+
+
+def test_the_audit_reconciliation_sums_to_the_exact_window():
+    """Every row after the first is subtracted from it and the last is what is
+    left, so the column has to add to zero against the window."""
+    for name in ("golden", "over_explained", "compacted"):
+        comp = composition(name)
+        rows = audit_rows(comp)
+
+        assert rows[0][0].startswith("window") and rows[0][1] == comp.window
+        assert rows[-1][0].startswith("= unattributed")
+        assert sum(tokens for _, tokens, _ in rows[:-1]) == rows[-1][1]
+
+
+def test_the_audit_json_says_the_constant_was_not_applied_in_a_field():
+    """A sweep reads the document rather than the prose, and a reader that only
+    saw a number would be entitled to use it."""
+    document = to_dict(composition("over_explained"), None, audit=True)
+
+    assert document["audit"]["solved_constant"]["applied"] is False
+    assert document["audit"]["solved_constant"]["chars_per_token"] != CHARS_PER_TOKEN
+    assert document["audit"]["prefix"]["prefix"] == {"tokens": 11_994,
+                                                     "kind": "derived"}
+
+
+def test_explain_prefix_is_three_numbers_and_a_subtraction():
+    """05- M3, acceptance 3. Three numbers, not a paragraph."""
+    code, output = context_command(fixture("over_explained"),
+                                   explain_node="prefix")
+
+    assert code == 0
+    body = [line for line in output.splitlines() if line.strip()]
+    assert body[0].startswith("prefix — derived, 11,994 tokens")
+    assert len(body) == 4, "a header and exactly three lines of arithmetic"
+    assert "12,000" in body[1] and "exact" in body[1]
+    assert body[2].startswith("−") and " 6 " in body[2]
+    assert body[3].startswith("=") and "11,994" in body[3]
+
+
+def test_explain_an_estimated_node_gives_its_characters_and_the_constant():
+    code, output = context_command(fixture("over_explained"),
+                                   explain_node="tool traffic")
+
+    assert code == 0
+    assert "26,047" in output, "the characters behind the estimate"
+    assert "2.6" in output and "10,018" in output
+
+
+def test_explain_refuses_an_unknown_or_ambiguous_node():
+    code, output = context_command(fixture("golden"), explain_node="nonsense")
+
+    assert code == 1
+    assert output.startswith("winnow: no node matching 'nonsense'")
+
+
+def test_a_prefix_that_comes_out_negative_is_not_claimed():
+    """§C7 — measure the prefix per session, or do not claim one.
+
+    A subtraction at or below zero is a statement about the estimate, not about
+    the prefix. The node is not drawn, the tokens stay in the residual, and the
+    readout says which of those two things happened.
+    """
+    comp = composition("prefix_underwater")
+
+    assert comp.floor.prefix < 0
+    assert not comp.floor.claims_prefix
+    assert tokens(comp, "prefix") == 0, "no prefix node at all"
+    assert any("no prefix node" in note for note in comp.notes)
+    assert sum(node.tokens for node in comp.nodes) == comp.window

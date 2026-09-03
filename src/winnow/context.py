@@ -1442,8 +1442,7 @@ def audit_rows(composition: Composition) -> list[tuple[str, int, str]]:
 def render_audit(composition: Composition) -> str:
     """`--audit` — the full reconciliation, and the constant it does not apply."""
     audit, floor, window = composition.audit, composition.floor, composition.window
-    lines = ["", "audit — the reconciliation, at "
-             f"{CHARS_PER_TOKEN} chars/token"]
+    lines = ["", f"audit — the reconciliation, at {CHARS_PER_TOKEN} chars/token"]
     if audit is None or floor is None or not window:
         lines.append("  there is no exact anchor in this session, so there are no "
                      "books to balance. " + NO_ANCHOR)
@@ -1543,27 +1542,27 @@ def explain_body(composition: Composition, node: Node) -> list[str]:
         # the largest single block in most readouts. A paragraph here would be
         # the tool explaining itself instead of showing its working.
         return [
-            f"  {floor.first_context:>12,}   context at the first priced request "
-            f"in this window (record {floor.first_index}), exact from usage",
-            f"− {round(floor.visible_before_first):>12,}   everything the "
-            "transcript holds before that request, estimated",
-            f"= {round(floor.prefix):>12,}   prefix — the system prompt and the "
-            "tool definitions, which no transcript records",
+            (f"  {floor.first_context:>12,}   context at the first priced request"
+             f" in this window (record {floor.first_index}), exact from usage"),
+            (f"− {round(floor.visible_before_first):>12,}   everything the"
+             " transcript holds before that request, estimated"),
+            (f"= {round(floor.prefix):>12,}   prefix — the system prompt and the"
+             " tool definitions, which no transcript records"),
         ]
     if node.label == "retained reasoning" and floor is not None:
         return [
-            "  per response: output_tokens (exact) − est(text + tool_use chars), "
-            "clamped at zero,",
-            f"  summed over the {len(floor.output):,} responses inside the window "
-            "and before the anchoring one.",
+            ("  per response: output_tokens (exact) − est(text + tool_use chars),"
+             " clamped at zero,"),
+            (f"  summed over the {len(floor.output):,} responses inside the"
+             " window and before the anchoring one."),
             "",
-            f"  {floor.thinking_blocks:>12,}   thinking blocks, over "
-            f"{floor.thinking_responses:,} responses",
-            f"  {floor.per_block_median:>12,.0f}   median tokens per block in "
-            "this session",
-            f"  {floor.control_median:>12,.0f}   median left over on the "
-            f"{floor.control_responses:,} responses with no thinking block — "
-            "the control",
+            (f"  {floor.thinking_blocks:>12,}   thinking blocks, over"
+             f" {floor.thinking_responses:,} responses"),
+            (f"  {floor.per_block_median:>12,.0f}   median tokens per block in"
+             " this session"),
+            (f"  {floor.control_median:>12,.0f}   median left over on the"
+             f" {floor.control_responses:,} responses with no thinking block —"
+             " the control"),
             f"  {round(floor.retained):>12,}   = retained reasoning",
         ]
     if node.kind == "residual":
@@ -1579,16 +1578,19 @@ def explain_body(composition: Composition, node: Node) -> list[str]:
             f"− {claimed:>12,}   every node above, summed",
             f"= {node.tokens:>12,}   unattributed — {sign} (§C10)",
         ]
-    return [
-        f"  {round(node.chars):>12,}   payload characters counted on the wire "
-        "(01- §2.4; §C4's exclusions already removed)",
-        f"÷ {CHARS_PER_TOKEN:>12}   chars per token, shipped fixed and never "
-        "fitted (01- §2.3, band 2.4-3.0)",
-        f"= {node.tokens:>12,}   apportioned by largest remainder inside the "
-        "exact total, so this row and its siblings sum to it",
-    ] + ([""] + [f"  its {len(node.children)} children are drawn beneath it; "
-                 f"the largest is {node.children[0].label!r} at "
-                 f"{node.children[0].tokens:,}"] if node.children else [])
+    body = [
+        (f"  {round(node.chars):>12,}   payload characters counted on the wire"
+         " (01- §2.4; §C4's exclusions already removed)"),
+        (f"÷ {CHARS_PER_TOKEN:>12}   chars per token, shipped fixed and never"
+         " fitted (01- §2.3, band 2.4-3.0)"),
+        (f"= {node.tokens:>12,}   apportioned by largest remainder inside the"
+         " exact total, so this row and its siblings sum to it"),
+    ]
+    if node.children:
+        body += ["", (f"  its {len(node.children)} children are drawn beneath it;"
+                      f" the largest is {node.children[0].label!r} at"
+                      f" {node.children[0].tokens:,}")]
+    return body
 
 
 def _figure(tokens: int, kind: str) -> dict:

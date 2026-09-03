@@ -1,0 +1,6 @@
+{
+ "agentType": "Explore",
+ "description": "map the orchestrator",
+ "toolUseId": "toolu_agent_1",
+ "spawnDepth": 1
+}

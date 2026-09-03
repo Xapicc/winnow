@@ -20,11 +20,16 @@ import sys
 from pathlib import Path
 
 from . import fork as fork_mod
-from . import orchestrator_safe as safe
 from . import plan as plan_mod
-from . import proxy as proxy_mod
 from . import rules as rules_mod
 from . import savings as savings_mod
+
+# `orchestrator_safe` and `proxy` are imported inside the handlers and subparser
+# builders that need them, not here. `context` is a read-only command that must
+# not reach pruning policy at all — 05-recommendation.md's guardrail is that
+# `winnow.proxy` and `winnow.orchestrator_safe` are absent from `sys.modules`
+# after it returns — and `build_parser` only registers the group being
+# dispatched, so an eager import here would defeat both.
 
 EXIT_OK = 0
 EXIT_USAGE = 1
@@ -84,6 +89,8 @@ def _say(message: str) -> None:
 
 def _require_mode() -> str | None:
     """The reason the mode is not on, or None."""
+    from . import orchestrator_safe as safe
+
     try:
         if safe.is_enabled():
             return None
@@ -96,6 +103,8 @@ def _require_mode() -> str | None:
 
 
 def cmd_check(args: argparse.Namespace) -> int:
+    from . import orchestrator_safe as safe
+
     findings = safe.check()
     violations = [f for f in findings if not f.ok]
     if args.json:
@@ -115,6 +124,8 @@ def cmd_check(args: argparse.Namespace) -> int:
 
 
 def cmd_env(args: argparse.Namespace) -> int:
+    from . import orchestrator_safe as safe
+
     if args.json:
         print(json.dumps(
             {
@@ -130,6 +141,8 @@ def cmd_env(args: argparse.Namespace) -> int:
 
 
 def cmd_plugin_dir(args: argparse.Namespace) -> int:
+    from . import orchestrator_safe as safe
+
     reason = _require_mode()
     if reason:
         _say(reason)
@@ -149,6 +162,8 @@ def cmd_plugin_dir(args: argparse.Namespace) -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
+    from . import orchestrator_safe as safe
+
     reason = _require_mode()
     if reason:
         _say(reason)
@@ -179,6 +194,8 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def cmd_checkpoint(args: argparse.Namespace) -> int:
+    from . import orchestrator_safe as safe
+
     reason = _require_mode()
     if reason:
         _say(reason)
@@ -200,6 +217,8 @@ def cmd_checkpoint(args: argparse.Namespace) -> int:
 
 
 def cmd_post_compact(args: argparse.Namespace) -> int:
+    from . import orchestrator_safe as safe
+
     reason = _require_mode()
     if reason:
         _say(reason)
@@ -236,6 +255,8 @@ def add_safe_subparser(sub: argparse._SubParsersAction) -> None:
     )
     p_check.add_argument("--json", action="store_true")
     p_check.set_defaults(func=cmd_check)
+
+    from . import orchestrator_safe as safe
 
     p_env = actions.add_parser(
         "env", help="the environment overlay, as shell exports or JSON with reasons"
@@ -676,6 +697,7 @@ def _filter_rules(args: argparse.Namespace) -> tuple[frozenset[str], tuple[str, 
 
 def cmd_filter(args: argparse.Namespace) -> int:
     from . import filter as filter_mod
+    from . import proxy as proxy_mod
 
     if not proxy_mod.is_enabled() and not args.force:
         _say("intake filter is off. Set WINNOW_FILTER=1, or pass --force to run "
@@ -735,6 +757,7 @@ def add_filter_subparser(sub) -> None:
     would be indistinguishable from one that was asked to.
     """
     from . import filter as filter_mod
+    from . import proxy as proxy_mod
 
     p = sub.add_parser(
         "filter",
@@ -895,7 +918,19 @@ def trial_mod_default() -> str:
     return str(trial_mod.DEFAULT_ARMS)
 
 
-def build_parser() -> argparse.ArgumentParser:
+_SUBPARSERS = {
+    "safe": add_safe_subparser,
+    "inspect": add_inspect_subparser,
+    "plan": add_plan_subparser,
+    "fork": add_fork_subparser,
+    "recover": add_recover_subparser,
+    "filter": add_filter_subparser,
+    "savings": add_savings_subparser,
+    "trial": add_trial_subparser,
+}
+
+
+def build_parser(group: str | None = None) -> argparse.ArgumentParser:
     """A parser for the groups implemented in this tree.
 
     `winnow`'s full parser is `winnow.legacy.cli.build_parser`, which registers
@@ -904,6 +939,14 @@ def build_parser() -> argparse.ArgumentParser:
     the problem but whose `main()` does an update ping and an auto-init before it
     parses — and an auto-init writes to `~/.claude`, which a read-only command
     has no business triggering.
+
+    `group` narrows it to one subcommand, which is what makes the lazy imports
+    above worth anything. Registering a subparser is not free: several of them
+    read a default out of the module that implements the command, so building
+    all of them imports all of them — the proxy and the orchestrator-safe mode
+    included — and dispatching `inspect` would pull in the whole write path
+    again by the back door. Without a group every subcommand is registered,
+    which is what `winnow --help` and the tests want.
     """
     parser = argparse.ArgumentParser(
         prog="winnow",
@@ -912,27 +955,21 @@ def build_parser() -> argparse.ArgumentParser:
                     "`recover`.",
     )
     sub = parser.add_subparsers(dest="group", required=True)
-    add_safe_subparser(sub)
-    add_inspect_subparser(sub)
-    add_plan_subparser(sub)
-    add_fork_subparser(sub)
-    add_recover_subparser(sub)
-    add_filter_subparser(sub)
-    add_savings_subparser(sub)
-    add_trial_subparser(sub)
+    for name, register in _SUBPARSERS.items():
+        if group is None or group == name:
+            register(sub)
     return parser
 
 
 # Groups this tree owns. Everything else falls through to the inherited CLI.
-_OWN_GROUPS = ("safe", "inspect", "plan", "fork", "recover", "filter", "savings",
-               "trial")
+_OWN_GROUPS = tuple(_SUBPARSERS)
 
 
 def main(argv: list[str] | None = None) -> int:
     """The `winnow` entry point: this tree's groups here, everything else inherited."""
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv[:1] and argv[0] in _OWN_GROUPS:
-        args = build_parser().parse_args(argv)
+        args = build_parser(argv[0]).parse_args(argv)
         return args.func(args)
     from .legacy.cli import main as legacy_main
 

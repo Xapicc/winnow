@@ -234,6 +234,12 @@ its `unattributed` row will be the ~40% that `01-` §3.2 measured, and for three
 will be visibly worse than what M3 makes it. It has no live mode, no `--explain`, no audit, and
 no colour.
 
+> **"no colour" was overridden by the operator on 2026-09-03**, after the mockup was drawn and
+> looked at. The readout now carries colour that means provenance and nothing else, plus a key
+> row and a terminal-width layout. What was overridden, why, and what shipped is recorded in
+> `07-mockup.md`'s postscript. This paragraph is left as written: it is the record of what was
+> decided then, not a description of the code.
+
 That ordering is deliberate and it is ordered by risk retired per hour. M1 proves the two things
 that can kill the architecture: that the exact anchor can actually be recovered from `usage`
 across compaction and `[1m]` sessions, and that the apportionment sums. If either fails,

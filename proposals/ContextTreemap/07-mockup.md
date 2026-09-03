@@ -184,3 +184,52 @@ proposals/ContextTreemap/mockup/index.html
 ```
 
 No server, no build, no network. `?depth=3` opens every figure drilled.
+
+---
+
+## Postscript, 2026-09-03 — `05-` §M1's "no colour" was overridden
+
+**The operator overrode it.** `05-recommendation.md` §M1 says "no colour" and
+`render()`'s docstring used to repeat it; item 1 above lists the picture itself
+as this mockup's invention on exactly that ground. Having looked at the mockup,
+the operator asked for its grammar in the terminal, as ANSI. `05-` is left as
+written — it is the record of what was decided then — and this is the record of
+what replaced it. A future session that finds the two disagreeing should read
+the disagreement as dated rather than as a bug.
+
+What shipped, in `src/winnow/context.py`:
+
+- **Item 4 above, and only item 4.** Colour means provenance, never category:
+  the four kinds in honesty order, `unknown` given no mark. Two things per row
+  carry it — the bar glyph and the kind word — and the numbers stay plain so the
+  columns still read as a table. The ledger strip (item 3) and the empty states
+  (item 7) are not in this slice.
+- **The mockup's own hues**, mapped to the nearest slot in the fixed part of the
+  xterm 256-colour cube: `exact` 68, `derived` 166, `estimated` 36, `residual`
+  172. Three of the four land on the same slot from either the light or the dark
+  palette. `residual` is the one that splits — light wants 214, dark wants 172 —
+  and a terminal does not say what its background is, so 172 is taken: it holds
+  2.9:1 against white where 214 falls to 1.8:1, and still sits 22.9 ΔE from
+  `derived`, well clear of the 9.1 worst-adjacent the palette validator accepted.
+  A terminal that claims no 256-colour support gets four SGR hues from its own
+  theme instead.
+- **The key as a row of the readout**, printed once under the session header,
+  because the mockup makes it part of the page rather than a footnote. It is
+  printed only when there is colour to key; the `how each kind was derived` block
+  at the foot is unconditional and unchanged. The key says which colour, the
+  footer says how the number was got.
+- **`--color auto|always|never`**, defaulting to `auto`: colour only when stdout
+  is a terminal, `NO_COLOR` is unset and `TERM` is not `dumb`. `--color always`
+  is the NO_COLOR spec's own exception and overrides it. `--json` is the same
+  bytes under all three.
+
+**What did not change, and is the reason the override is safe.** Every row still
+prints its own provenance word beside the colour, so the hue never carries a
+claim alone — which is also what discharges the light palette's contrast warning
+noted above. `winnow context <id> | cat` is byte-for-byte the readout M1 shipped.
+
+**Also in the same slice, and not from `05-`:** the readout now takes its width
+from `shutil.get_terminal_size()` rather than the hardcoded 22 and 54, clamped
+so it never goes below those two together and never past a 32-column bar or a
+72-column label. With no terminal and no `COLUMNS` it is exactly 22 and 54, which
+is why the piped output is unchanged.

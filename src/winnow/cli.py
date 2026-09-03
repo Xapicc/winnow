@@ -606,7 +606,6 @@ def cmd_savings(args: argparse.Namespace) -> int:
         ledger=args.ledger,
         projects=args.projects,
         as_json=args.json,
-        filter_ledger=Path(args.filter_ledger) if args.filter_ledger else None,
     )
     print(output, file=sys.stderr if code == EXIT_USAGE else sys.stdout)
     return code

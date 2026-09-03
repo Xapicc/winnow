@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from winnow import report, savings
+from winnow import cli, report, savings
 from winnow.filter import apply, ledger_line
 
 REPEATS = 40
@@ -668,3 +668,26 @@ def test_a_sub_agent_transcript_is_reachable(tmp_path):
 
     found = savings.find_transcripts(tmp_path, {"req_main", "req_sub"})
     assert found == {"req_main": main, "req_sub": sub}
+
+
+# ─── The CLI dispatch ────────────────────────────────────────────────────────
+
+
+def test_savings_dispatches_with_only_the_flags_it_registers(tmp_path, capsys):
+    """`cmd_savings` read `args.filter_ledger`, which its parser never registered.
+
+    The flag belongs to `inspect`, `plan` and `fork` — the commands that price a
+    cut against a transcript the filter has already thinned. `savings` reads the
+    filter's own ledger as its `--ledger`, so there is nothing for a second one to
+    correct. Threading it here (b6cae0b) made every invocation of the command
+    raise `AttributeError` before it reached `savings_command`, which does not
+    accept the parameter either.
+    """
+    ledger = write_ledger(tmp_path / "filter.jsonl",
+                          [drop_line("req_1", [entry("tu_1", BYTES)])])
+
+    code = cli.main(["savings", "--ledger", str(ledger),
+                     "--projects", str(tmp_path / "projects")])
+
+    assert code in (0, 2)
+    assert "filter_ledger" not in capsys.readouterr().out

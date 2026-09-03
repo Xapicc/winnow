@@ -233,7 +233,8 @@ LEGACY_SUBCOMMANDS = frozenset({
 # `safe` stays absent for the reason above — winnow.cli dispatches it before any
 # of this runs.
 WINNOW_SUBCOMMANDS = frozenset({
-    "inspect", "plan", "fork", "recover", "filter", "savings", "trial",
+    "inspect", "context", "plan", "fork", "recover", "filter", "savings",
+    "trial",
 })
 
 # Refused whatever the arguments, keyed by subcommand.

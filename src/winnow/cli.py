@@ -358,6 +358,59 @@ def add_inspect_subparser(sub) -> None:
     p.set_defaults(func=cmd_inspect)
 
 
+def cmd_context(args: argparse.Namespace) -> int:
+    from .context import context_command
+
+    code, output = context_command(
+        session=args.session,
+        as_json=args.json,
+        window=args.window,
+    )
+    print(output, file=sys.stderr if code == EXIT_USAGE else sys.stdout)
+    if code == EXIT_REFUSED:
+        _say("no exact anchor in this session: the tree is estimated and no "
+             "share or percentage is printed. See the readout's note.")
+    return code
+
+
+def add_context_subparser(sub) -> None:
+    """Register `winnow context` — proposals/ContextTreemap, milestone M1.
+
+    Beside `inspect` rather than under `safe`, for the reason `inspect` gives:
+    it has no write path at all, so orchestrator-safe mode has nothing to
+    withhold from it and an operator should not need an environment variable to
+    read their own transcript.
+
+    This is the walking skeleton. It prints H1's top level and a residual, and
+    the residual is large because the two blocks that would shrink it — the
+    prefix and retained reasoning — are derived rather than estimated and are
+    the next slice. It has no drill-down, so it cannot answer *which* Bash.
+    """
+    p = sub.add_parser(
+        "context",
+        help="what is actually in one session's context window; writes nothing",
+        description="Take the exact window total from the last priced request "
+                    "and apportion an estimate of the transcript inside it, by "
+                    "provenance. The total is exact by construction and every "
+                    "figure says whether it was read, derived or estimated. "
+                    "Writes nothing, anywhere.",
+    )
+    p.add_argument("session", help="session ID, path, or unambiguous ID prefix")
+    p.add_argument(
+        "--window", type=int, default=None, metavar="N",
+        # argparse %-expands a help string, so every literal percent is doubled.
+        help="the context window size, in tokens, so that a '%% full' figure "
+             "can be printed. There is no default and there will not be one: "
+             "nothing in a transcript states the window size, and a session on "
+             "a 1M-context model reports 512,133 tokens, which a hardcoded "
+             "200,000 would render as 256%% full",
+    )
+    p.add_argument("--json", action="store_true",
+                   help="machine-readable output; the same tree, with every "
+                        "figure carrying its provenance")
+    p.set_defaults(func=cmd_context)
+
+
 def cmd_plan(args: argparse.Namespace) -> int:
     from .plan import plan_command
 
@@ -921,6 +974,7 @@ def trial_mod_default() -> str:
 _SUBPARSERS = {
     "safe": add_safe_subparser,
     "inspect": add_inspect_subparser,
+    "context": add_context_subparser,
     "plan": add_plan_subparser,
     "fork": add_fork_subparser,
     "recover": add_recover_subparser,
@@ -940,19 +994,19 @@ def build_parser(group: str | None = None) -> argparse.ArgumentParser:
     parses — and an auto-init writes to `~/.claude`, which a read-only command
     has no business triggering.
 
-    `group` narrows it to one subcommand, which is what makes the lazy imports
-    above worth anything. Registering a subparser is not free: several of them
-    read a default out of the module that implements the command, so building
-    all of them imports all of them — the proxy and the orchestrator-safe mode
-    included — and dispatching `inspect` would pull in the whole write path
-    again by the back door. Without a group every subcommand is registered,
-    which is what `winnow --help` and the tests want.
+    `group` narrows it to one subcommand. Registering a subparser is not free:
+    several of them read a default out of the module that implements the
+    command, so building all nine imports all nine — including the proxy and
+    the orchestrator-safe mode, which `winnow context` is required to leave out
+    of `sys.modules` altogether (05-recommendation.md's second guardrail).
+    Without a group every subcommand is registered, which is what `winnow
+    --help` and the tests want.
     """
     parser = argparse.ArgumentParser(
         prog="winnow",
         description="winnow — see docs/SPEC.md. Implemented: the "
-                    "orchestrator-safe mode, `inspect`, `plan`, `fork` and "
-                    "`recover`.",
+                    "orchestrator-safe mode, `inspect`, `context`, `plan`, "
+                    "`fork` and `recover`.",
     )
     sub = parser.add_subparsers(dest="group", required=True)
     for name, register in _SUBPARSERS.items():

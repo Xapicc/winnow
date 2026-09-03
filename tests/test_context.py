@@ -69,6 +69,7 @@ from winnow.context import (
     layout,
     ledger,
     on_anchored_chain,
+    own_faults,
     palette,
     priced_responses,
     render,
@@ -1997,3 +1998,51 @@ def test_no_empty_state_writes_anything_or_raises(tmp_path, monkeypatch):
 
     assert codes == [1, 1, 3, 0]
     assert {str(p): p.stat().st_mtime_ns for p in sorted(tmp_path.rglob("*"))} == before
+
+
+# ─── the tool's own known faults ─────────────────────────────────────────────
+
+
+def test_a_known_fault_is_confessed_once_and_not_once_per_row_it_is_about():
+    """07-mockup.md item 10, decided against putting these on the rows.
+
+    The mockup drew one `$ cd` and one `edited_text_file` annotated by hand, but
+    the tool draws every row of a class: on 939a04dc at `--depth 3` a per-row
+    note lands six times under `Bash results` and seven under `standing
+    configuration`. Both faults are properties of a key rather than of a row,
+    and the same sentence repeated N times reads as N findings.
+    """
+    results = Node(label="Bash results", tokens=90, kind="estimated")
+    results.children = [Node(label=f"$ {head}  ×3", tokens=30, kind="estimated")
+                        for head in ("cd", "grep", "git log")]
+    nodes = [Node(label="tool traffic", tokens=90, kind="estimated",
+                  children=[results])]
+
+    assert own_faults(nodes) == own_faults(nodes[:1] + [Node(
+        label="tool traffic", tokens=0, kind="estimated")])
+    assert len(own_faults(nodes)) == 1, "three rows, one fault"
+    assert "`bash_head` splits" in own_faults(nodes)[0]
+
+
+def test_a_fault_is_earned_by_the_tree_that_was_drawn():
+    """Neither is a standing disclaimer: a tree with no `$ head` row has no
+    `bash_head` fault to confess, and one with no attachment has no attachment
+    class to disclaim."""
+    heads = render(composition("compacted", depth=3), None)
+    attachments = render(composition("golden", depth=3), None)
+
+    assert "`bash_head` splits" in heads and "not keyed by provenance" not in heads
+    assert "not keyed by provenance" in attachments
+    assert "`bash_head` splits" not in attachments
+    assert "`bash_head` splits" not in render(composition("compacted"), None), \
+        "a `$ head` row is a level-three row and --depth 2 does not draw one"
+
+
+@pytest.mark.parametrize("name", ["compacted", "golden", "by_path"])
+def test_a_fault_is_a_rendering_and_never_reaches_the_document(name):
+    """§C5, and this run's constraint that `--json` is what it was. A fault is
+    true of a tree at a depth; `--json` is the composition."""
+    document = to_dict(composition(name, depth=3), None)
+
+    assert not any("bash_head" in note or "not keyed by provenance" in note
+                   for note in document["notes"])

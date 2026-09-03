@@ -2415,6 +2415,45 @@ def render(composition: Composition, window_argument: int | None,
     return "\n".join(lines)
 
 
+def own_faults(nodes: list[Node]) -> list[str]:
+    """The tool's own known faults with the keys it drew, once each.
+
+    07-mockup.md item 10 puts these on the rows — `$ cd ×34` carrying the
+    `bash_head` fault, `edited_text_file` carrying the attachment-class one —
+    and calls it "arguable in both directions: a readout that confesses on every
+    render is either the most honest thing here or the noisiest".
+
+    Rendered on 939a04dc at `--depth 3` it is the noisiest. The mockup drew one
+    row of each by hand; the tool draws every row of the class, so the same
+    sentence lands six times under `Bash results` and seven under `standing
+    configuration`, between rows whose own numbers are what the operator came
+    for. Both faults are properties of a *key*, not of a row, so a per-row note
+    would say the same thing N times and read as N findings — which is the one
+    thing neither of them is.
+
+    So they are declined as `Node.note` and printed in the footer, where this
+    readout already says what is true of the session rather than of a row. Each
+    is earned by the tree as drawn: no `$ head` row and there is no `bash_head`
+    fault to confess, no attachment and there is no class to disclaim. Earned
+    here rather than in `compose` because `--json` carries `composition.notes`
+    and this is a fact about a rendering, not about the session.
+    """
+    faults = []
+    if any(node.label.startswith("$ ") for node, _ in walk(nodes)):
+        faults.append(
+            "a `$ head` row is keyed on the first segment of the command line: "
+            "`bash_head` splits on `&&` and `|` (SPEC §4 B2), so a chained "
+            "command's whole result is counted under the head that opened it")
+    if any(node.label == "standing configuration" and node.children
+           for node in nodes):
+        faults.append(
+            "the children of `standing configuration` are the CLI's own "
+            "`attachment` type strings. They say what the material is, not who "
+            "asked for it, so they are the one level of this tree not keyed by "
+            "provenance (H1)")
+    return faults
+
+
 def derivation_lines(composition: Composition, window_argument: int | None,
                      style: Style, off_scale: bool) -> list[str]:
     """The foot of the readout: what each kind means, and every caveat earned.
@@ -2436,6 +2475,8 @@ def derivation_lines(composition: Composition, window_argument: int | None,
         # has no top — and is skipped here so it is said once.
         if note != NO_ANCHOR:
             lines.append(f"  note       {note}")
+    for fault in own_faults(composition.nodes):
+        lines.append(f"  note       {fault}")
     if window is not None and not window_argument:
         lines.append("  note       no '% of window full' is printed: nothing in a "
                      "transcript states the window size (§C7). Pass --window N to "

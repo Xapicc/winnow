@@ -1,0 +1,64 @@
+{
+  "session": "context_golden",
+  "records": 9,
+  "requests": 3,
+  "requests_in_window": 3,
+  "model": "claude-opus-5",
+  "chars_per_token": 2.6,
+  "window": {
+    "tokens": 5000,
+    "kind": "exact"
+  },
+  "fullness": null,
+  "compaction": {
+    "boundaries": 0,
+    "dropped": {
+      "tokens": 0,
+      "kind": "exact"
+    },
+    "last_boundary": null
+  },
+  "nodes": [
+    {
+      "label": "conversation",
+      "tokens": 1616,
+      "kind": "estimated",
+      "share": 0.3232,
+      "note": "",
+      "children": []
+    },
+    {
+      "label": "tool traffic",
+      "tokens": 81,
+      "kind": "estimated",
+      "share": 0.0162,
+      "note": "",
+      "children": []
+    },
+    {
+      "label": "standing configuration",
+      "tokens": 68,
+      "kind": "estimated",
+      "share": 0.0136,
+      "note": "",
+      "children": []
+    },
+    {
+      "label": "unattributed",
+      "tokens": 3235,
+      "kind": "residual",
+      "share": 0.647,
+      "note": "",
+      "children": []
+    }
+  ],
+  "notes": [
+    "a <persisted-output> wrapper is sized at the preview the model saw, not at the tool-results/ sidecar behind it (\u00a7C9)"
+  ],
+  "derivations": {
+    "exact": "read from usage.{input,cache_creation,cache_read}_tokens on the anchoring request",
+    "derived": "an exact number minus an estimate",
+    "estimated": "payload characters / 2.6 (01- \u00a72.3; the band is 2.4-3.0)",
+    "residual": "the window less everything above it; what no kind accounts for"
+  }
+}

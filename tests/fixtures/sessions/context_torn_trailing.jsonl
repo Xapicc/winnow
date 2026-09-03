@@ -1,0 +1,3 @@
+{"type":"user","uuid":"t-0","message":{"role":"user","content":"keep going"}}
+{"type":"assistant","uuid":"t-1","message":{"id":"msg_torn","model":"claude-opus-5","role":"assistant","usage":{"input_tokens":30,"cache_creation_input_tokens":0,"cache_read_input_tokens":5970,"output_tokens":11},"content":[{"type":"text","text":"Still going."}]}}
+{"type":"assistant","uuid":"t-2","message":{"id":"msg_half","content":[{"typ

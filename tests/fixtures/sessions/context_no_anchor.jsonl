@@ -1,0 +1,3 @@
+{"type":"user","uuid":"n-0","message":{"role":"user","content":"what is in this window"}}
+{"type":"assistant","uuid":"n-1","message":{"id":"msg_no_usage","model":"claude-opus-5","role":"assistant","content":[{"type":"text","text":"I cannot tell you, and neither can this file: no record here carries a usage block."}]}}
+{"type":"user","uuid":"n-2","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_absent","content":"a result whose call was never written down"}]}}

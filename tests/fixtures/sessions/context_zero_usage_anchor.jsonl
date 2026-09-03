@@ -1,0 +1,3 @@
+{"type":"user","uuid":"z-0","message":{"role":"user","content":"run it"}}
+{"type":"assistant","uuid":"z-1","message":{"id":"msg_real","model":"claude-opus-5","role":"assistant","usage":{"input_tokens":40,"cache_creation_input_tokens":0,"cache_read_input_tokens":7960,"output_tokens":9},"content":[{"type":"text","text":"Running."}]}}
+{"type":"assistant","uuid":"z-2","message":{"id":"msg_synthetic","model":"<synthetic>","role":"assistant","usage":{"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":0},"content":[{"type":"text","text":"API Error: Request was aborted."}]}}

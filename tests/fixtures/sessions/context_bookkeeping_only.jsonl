@@ -1,0 +1,7 @@
+{"type":"last-prompt","uuid":"b-0","content":"summarise the repository and then open a pull request"}
+{"type":"queue-operation","uuid":"b-1","operation":"enqueue","prompt":"summarise the repository and then open a pull request"}
+{"type":"queue-operation","uuid":"b-2","operation":"dequeue","prompt":"summarise the repository and then open a pull request"}
+{"type":"ai-title","uuid":"b-3","title":"Summarise the repository"}
+{"type":"mode","uuid":"b-4","mode":"default"}
+{"type":"file-history-snapshot","uuid":"b-5","snapshot":{"path":"/workspace/winnow/README.md","content":"a whole file, kept locally so that a revert can restore it, and never sent"}}
+{"type":"cost-state","uuid":"b-6","state":{"totalCostUsd":0.42}}

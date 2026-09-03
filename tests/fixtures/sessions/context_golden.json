@@ -143,10 +143,26 @@
       ]
     },
     {
+      "label": "retained reasoning",
+      "tokens": 63,
+      "kind": "derived",
+      "share": 0.0126,
+      "note": "2 thinking blocks over 2 responses, median 32 tokens per block in this session; the control is 0 responses with no thinking block, median 0 left over",
+      "children": []
+    },
+    {
+      "label": "prefix",
+      "tokens": 14,
+      "kind": "derived",
+      "share": 0.0028,
+      "note": "100 exact at the first request in this window, less 86 estimated visible before it \u2014 the system prompt and tool definitions, which no transcript records (--explain prefix)",
+      "children": []
+    },
+    {
       "label": "unattributed",
-      "tokens": 3235,
+      "tokens": 3158,
       "kind": "residual",
-      "share": 0.647,
+      "share": 0.6316,
       "note": "",
       "children": []
     }
@@ -159,5 +175,90 @@
     "derived": "an exact number minus an estimate",
     "estimated": "payload characters / 2.6 (01- \u00a72.3; the band is 2.4-3.0)",
     "residual": "the window less everything above it; what no kind accounts for"
+  },
+  "audit": {
+    "anchored": true,
+    "chars_per_token": 2.6,
+    "reconciliation": [
+      {
+        "label": "window at the last request",
+        "tokens": 5000,
+        "kind": "exact",
+        "share": 1.0
+      },
+      {
+        "label": "less conversation",
+        "tokens": -1616,
+        "kind": "estimated",
+        "share": -0.3232
+      },
+      {
+        "label": "less tool traffic",
+        "tokens": -81,
+        "kind": "estimated",
+        "share": -0.0162
+      },
+      {
+        "label": "less standing configuration",
+        "tokens": -68,
+        "kind": "estimated",
+        "share": -0.0136
+      },
+      {
+        "label": "less retained reasoning",
+        "tokens": -63,
+        "kind": "derived",
+        "share": -0.0126
+      },
+      {
+        "label": "less prefix",
+        "tokens": -14,
+        "kind": "derived",
+        "share": -0.0028
+      },
+      {
+        "label": "= unattributed",
+        "tokens": 3158,
+        "kind": "residual",
+        "share": 0.6316
+      }
+    ],
+    "prefix": {
+      "first_request_context": {
+        "tokens": 100,
+        "kind": "exact"
+      },
+      "visible_before": {
+        "tokens": 86,
+        "kind": "estimated"
+      },
+      "prefix": {
+        "tokens": 14,
+        "kind": "derived"
+      },
+      "claimed": true
+    },
+    "retained_reasoning": {
+      "responses": 2,
+      "thinking_blocks": 2,
+      "per_block_median": {
+        "tokens": 32,
+        "kind": "derived"
+      },
+      "control_responses": 0,
+      "control_median": {
+        "tokens": 0,
+        "kind": "derived"
+      },
+      "retained": {
+        "tokens": 63,
+        "kind": "derived"
+      }
+    },
+    "solved_constant": {
+      "chars_per_token": null,
+      "applied": false,
+      "why_not": "NOT APPLIED, and there is no flag that applies it. Fitting the constant to zero the residual would make the residual zero by construction and destroy the only self-check this tool has; worse, it would silently absorb any category the classifier missed and report perfect books over a wrong model. A residual that cannot be non-zero is not evidence (\u00a7C10)."
+    }
   }
 }

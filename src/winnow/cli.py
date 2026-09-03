@@ -367,6 +367,8 @@ def cmd_context(args: argparse.Namespace) -> int:
         window=args.window,
         depth=args.depth,
         by_path=args.by_path,
+        audit=args.audit,
+        explain_node=args.explain,
     )
     print(output, file=sys.stderr if code == EXIT_USAGE else sys.stdout)
     if code == EXIT_REFUSED:
@@ -425,9 +427,27 @@ def add_context_subparser(sub) -> None:
              "a 1M-context model reports 512,133 tokens, which a hardcoded "
              "200,000 would render as 256%% full",
     )
+    p.add_argument(
+        "--audit", action="store_true",
+        help="the full reconciliation beneath the tree: the window, everything "
+             "subtracted from it, the residual with its sign, how the prefix "
+             "and the retained-reasoning figures were derived, and the "
+             "chars-per-token constant that would zero this session's residual "
+             "— printed as a diagnostic and never applied. There is no flag "
+             "that applies it: a residual that cannot be non-zero is not "
+             "evidence",
+    )
+    p.add_argument(
+        "--explain", metavar="NODE", default=None,
+        help="print the arithmetic behind one node instead of the tree, matched "
+             "on its label. `--explain prefix` is three numbers and a "
+             "subtraction; an estimated node gives its character count, the "
+             "constant and the apportionment",
+    )
     p.add_argument("--json", action="store_true",
                    help="machine-readable output; the same tree, with every "
-                        "figure carrying its provenance")
+                        "figure carrying its provenance. With --audit it also "
+                        "carries the reconciliation and the unapplied constant")
     p.set_defaults(func=cmd_context)
 
 

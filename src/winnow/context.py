@@ -105,6 +105,10 @@ class Node:
     kind: str
     note: str = ""
     children: list[Node] = field(default_factory=list)
+    # The characters behind an estimated row, kept for `--explain` and kept out
+    # of `--json`, which is a document about tokens (§C5 — bytes are never an
+    # area, and characters are not a unit the readout trades in either).
+    chars: float = 0.0
 
 
 @dataclass
@@ -123,6 +127,8 @@ class Composition:
     depth: int = 1
     by_path: bool = False
     pooled: dict[str, float] = field(default_factory=dict)
+    floor: Floor | None = None
+    audit: Audit | None = None
 
 
 # ─── measurement ─────────────────────────────────────────────────────────────
@@ -132,42 +138,46 @@ def estimate(chars: float) -> float:
     return chars / CHARS_PER_TOKEN
 
 
-def payload_chars(block: dict) -> tuple[float, str]:
-    """Characters this content block puts on the wire, and a note if it is odd.
+def payload_chars(block: dict) -> tuple[float, float, str]:
+    """Characters on the wire, tokens on the wire, and a note if it is odd.
 
-    01- §2.4's table. Characters rather than tokens, so that one caller can
-    divide by the constant once — images are the exception and hand back a
-    character count that has already been multiplied by it, because they are
-    priced by area rather than by text (§C5).
+    01- §2.4's table. Two numbers rather than one because an image is priced by
+    area and not by text (§C5): its cost does not move when the chars-per-token
+    constant moves, and `--audit`'s solve for the constant that would zero this
+    session's residual has to hold it fixed while everything else scales.
+    Everything except an image returns zero in the second slot.
     """
     kind = block.get("type")
     if kind == "text":
-        return len(block.get("text") or ""), ""
+        return len(block.get("text") or ""), 0.0, ""
     if kind == "tool_use":
         rendered = json.dumps(block.get("input"), ensure_ascii=False)
-        return len(rendered) + len(block.get("name") or ""), ""
+        return len(rendered) + len(block.get("name") or ""), 0.0, ""
     if kind == "thinking":
         # Zero, always. The text is stripped on disk and the signature is 1.4-2.7
         # KB of opaque blob worth no tokens at all (01- §1.3). What the model
-        # retained of its own reasoning is priced from output_tokens, in M3.
-        return 0.0, ""
+        # retained of its own reasoning is priced from output_tokens, by
+        # `retained_reasoning` below, and lands in its own derived node.
+        return 0.0, 0.0, ""
     if kind == "image":
-        return image_chars(block)
+        tokens, note = image_tokens(block)
+        return 0.0, tokens, note
     if kind == "tool_result":
         content = block.get("content")
         if isinstance(content, str):
-            return len(content), spill_note(content)
+            return len(content), 0.0, spill_note(content)
         if isinstance(content, list):
-            total, notes = 0.0, []
+            total, fixed, notes = 0.0, 0.0, []
             for sub in content:
                 if not isinstance(sub, dict):
                     continue
-                chars, note = payload_chars(sub)
+                chars, tokens, note = payload_chars(sub)
                 total += chars
+                fixed += tokens
                 if note:
                     notes.append(note)
-            return total, "; ".join(n for n in notes if n)
-    return 0.0, ""
+            return total, fixed, "; ".join(n for n in notes if n)
+    return 0.0, 0.0, ""
 
 
 def spill_note(text: str) -> str:
@@ -218,12 +228,13 @@ def human_bytes(size: float) -> str:
     return f"{size:.1f} GB"
 
 
-def image_chars(block: dict) -> tuple[float, str]:
+def image_tokens(block: dict) -> tuple[float, str]:
     """§C5 — width x height / 750 from the header, never len(base64)/4.
 
     Sizing an image by its base64 length over-reports it by 14x (01- §2.5, four
     images measured). Where the header does not parse the block is zero and
     labelled, because a guess that looks like a measurement is worse than a gap.
+    Tokens directly: there is no character count behind this figure to divide.
     """
     source = block.get("source") or {}
     data = source.get("data") or ""
@@ -238,7 +249,7 @@ def image_chars(block: dict) -> tuple[float, str]:
         return 0.0, ("an image whose header did not parse is sized ZERO and "
                      "labelled, never at len(base64)/4 (§C5)")
     width, height = dimensions
-    return width * height / 750 * CHARS_PER_TOKEN, ""
+    return width * height / 750, ""
 
 
 def png_dimensions(head: bytes) -> tuple[int, int] | None:
@@ -411,6 +422,26 @@ def agent_label(tool_use_id: str | None, meta: dict | None) -> str:
 # ─── the walk ────────────────────────────────────────────────────────────────
 
 
+def block_identity(block: dict) -> str:
+    """A key equal for two copies of the same content block, and cheap.
+
+    `priced_responses` sees every JSONL line of one response and has to keep one
+    copy of each block. Serialising every block to compare them is the obvious
+    way and it is the expensive one on an 8 MB transcript, so a block that
+    already carries something unique is keyed on it: a `tool_use` has an `id`
+    and a `thinking` block has a 1.4-2.7 KB signature (01- §1.3). A `text` block
+    is its own text, which costs a hash and no serialisation.
+    """
+    kind = block.get("type")
+    if kind == "tool_use" and block.get("id"):
+        return f"tool_use:{block['id']}"
+    if kind == "thinking" and block.get("signature"):
+        return f"thinking:{block['signature']}"
+    if kind == "text":
+        return f"text:{block.get('text') or ''}"
+    return "other:" + json.dumps(block, sort_keys=True, ensure_ascii=False)
+
+
 def priced_responses(records: list[dict]) -> list[dict]:
     """One entry per API response, keyed on `message.id` (§C8).
 
@@ -428,14 +459,24 @@ def priced_responses(records: list[dict]) -> list[dict]:
         message_id, usage = message.get("id"), message.get("usage")
         if not message_id or not isinstance(usage, dict):
             continue
-        grouped.setdefault(message_id, {
+        entry = grouped.setdefault(message_id, {
             "index": index,
             "id": message_id,
             "model": message.get("model"),
             "context": ((usage.get("input_tokens") or 0)
                         + (usage.get("cache_creation_input_tokens") or 0)
                         + (usage.get("cache_read_input_tokens") or 0)),
+            "output_tokens": usage.get("output_tokens") or 0,
+            "blocks": {},
         })
+        # The blocks of one response arrive across those several lines and
+        # nothing in a line says which index it carries, so they are collected
+        # under the response and deduplicated on their own content. This is what
+        # makes `output_tokens` usable: it prices the whole response, so it can
+        # only be compared against the whole response's visible output.
+        for block in message.get("content") or []:
+            if isinstance(block, dict):
+                entry["blocks"][block_identity(block)] = block
     # A `<synthetic>` record — an interrupt, or an API error the CLI wrote in
     # the model's place — carries a usage object of all zeros. It is not a
     # priced request, and if it lands last it would anchor the readout at zero.
@@ -496,11 +537,21 @@ class Leaf:
     is the actionable half of H3 — and `spilled` is the bytes sitting behind a
     `<persisted-output>` preview, carried so the label can name what the node is
     deliberately *not* sized at (§C9).
+
+    Characters and fixed tokens are kept apart rather than collapsed into one
+    figure so that `--audit` can re-price the whole window at a different
+    chars-per-token constant without re-walking it, and without an image — which
+    is priced by area (§C5) — silently scaling with a constant it does not use.
     """
 
-    tokens: float = 0.0
+    chars: float = 0.0
+    fixed: float = 0.0
     count: int = 0
     spilled: float = 0.0
+
+    @property
+    def tokens(self) -> float:
+        return estimate(self.chars) + self.fixed
 
 
 @dataclass
@@ -602,8 +653,11 @@ def pool_paths(records: list[dict], start: int, stop: int,
             artefact = artefact_key(tool, tool_input)
             if not artefact:
                 continue
+            chars, fixed, _ = payload_chars(block)
             use = paths.setdefault(artefact, PathUse())
-            use.tokens += estimate(payload_chars(block)[0])
+            # `Read` on a PNG comes back as an image block inside the result, so
+            # a path node can carry area-priced tokens and no characters at all.
+            use.tokens += estimate(chars) + fixed
             use.tools[tool] = use.tools.get(tool, 0) + 1
     return paths
 
@@ -621,9 +675,10 @@ def classify(records: list[dict], start: int, stop: int, notes: list[str],
     delegations = Delegations()
 
     def add(key: tuple[str, ...], chars: float, note: str = "",
-            spilled: float = 0.0) -> None:
+            spilled: float = 0.0, fixed: float = 0.0) -> None:
         leaf = leaves.setdefault(key, Leaf())
-        leaf.tokens += estimate(chars)
+        leaf.chars += chars
+        leaf.fixed += fixed
         leaf.count += 1
         leaf.spilled += spilled
         # A block can raise several notes at once; dedupe the reasons rather
@@ -644,7 +699,8 @@ def classify(records: list[dict], start: int, stop: int, notes: list[str],
         if not isinstance(message, dict):
             continue
         if record.get("isCompactSummary"):
-            add(("compaction summary",), message_chars(message, notes))
+            summary_chars, summary_fixed = message_chars(message, notes)
+            add(("compaction summary",), summary_chars, fixed=summary_fixed)
             continue
         content = message.get("content")
         if isinstance(content, str):
@@ -673,9 +729,9 @@ def classify(records: list[dict], start: int, stop: int, notes: list[str],
         for block in content:
             if not isinstance(block, dict):
                 continue
-            chars, note = payload_chars(block)
+            chars, fixed, note = payload_chars(block)
             add(content_key(block, record, callers, agents, delegations, by_path),
-                chars, note, spilled_bytes(block))
+                chars, note, spilled_bytes(block), fixed)
 
     if delegations.count:
         notes.append(delegations.note())
@@ -728,23 +784,237 @@ def attachment_keys(attachment: dict) -> list[tuple[tuple[str, ...], float]]:
     return [(("standing configuration", kind), attachment_chars(attachment))]
 
 
-def message_chars(message: dict, notes: list[str]) -> float:
-    """Payload characters of one message's whole content, with §C9 notes kept."""
+def message_chars(message: dict, notes: list[str]) -> tuple[float, float]:
+    """Payload characters and fixed tokens of one message, with §C9 notes kept."""
     content = message.get("content")
     if isinstance(content, str):
-        return float(len(content))
+        return float(len(content)), 0.0
     if not isinstance(content, list):
-        return 0.0
-    total = 0.0
+        return 0.0, 0.0
+    total, fixed = 0.0, 0.0
     for block in content:
         if not isinstance(block, dict):
             continue
-        chars, note = payload_chars(block)
+        chars, block_fixed, note = payload_chars(block)
         total += chars
+        fixed += block_fixed
         for reason in note.split("; ") if note else ():
             if reason and reason not in notes:
                 notes.append(reason)
-    return total
+    return total, fixed
+
+
+# ─── the floor, priced (M3) ──────────────────────────────────────────────────
+#
+# Two blocks that are in every window and in no transcript, and neither is a
+# guess. `02-constraints.md`'s correction measures them at a median 24% and 14%
+# of the window, which is 38% of it that M1 and M2 had to leave in the residual.
+# Both are **derived** — an exact number the CLI wrote down, minus an estimate —
+# rather than estimated, so they survive the chars-per-token argument better
+# than anything else on the screen (§C2).
+
+
+def median(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[middle]
+    return (ordered[middle - 1] + ordered[middle]) / 2
+
+
+def response_output(entry: dict) -> tuple[float, int]:
+    """Characters this response wrote to disk, and its thinking-block count.
+
+    Text and `tool_use` only. A thinking block's text is stripped before the
+    line is written (01- §1.3) so it contributes nothing here, and that absence
+    is the entire instrument: `output_tokens` prices everything the model
+    emitted, two of the three kinds are on disk verbatim, and what the
+    subtraction leaves is the third.
+    """
+    chars, thinking = 0.0, 0
+    for block in entry["blocks"].values():
+        kind = block.get("type")
+        if kind == "text":
+            chars += len(block.get("text") or "")
+        elif kind == "tool_use":
+            chars += (len(json.dumps(block.get("input"), ensure_ascii=False))
+                      + len(block.get("name") or ""))
+        elif kind == "thinking":
+            thinking += 1
+            chars += len(block.get("thinking") or "")
+    return chars, thinking
+
+
+@dataclass
+class Floor:
+    """The two derived blocks, and every number they were derived from.
+
+    Kept whole rather than reduced to two totals because `--explain prefix` owes
+    the operator three numbers and a subtraction rather than a paragraph, and
+    because `--audit` re-prices the retained-reasoning sum at other constants.
+
+    `output` is one `(output_tokens, visible chars)` pair per response still
+    inside the window — which is the whole of H2, the per-turn dataset, built
+    here as a side effect of pricing reasoning. M4 would render it as
+    `--by-turn`; nothing here does.
+    """
+
+    first_context: int
+    first_index: int
+    visible_before_chars: float
+    visible_before_fixed: float
+    prefix: float
+    retained: float
+    thinking_blocks: int
+    thinking_responses: int
+    per_block_median: float
+    control_median: float
+    control_responses: int
+    output: list[tuple[int, float]] = field(default_factory=list)
+
+    @property
+    def visible_before_first(self) -> float:
+        return estimate(self.visible_before_chars) + self.visible_before_fixed
+
+    @property
+    def claims_prefix(self) -> bool:
+        """§C7 — measure the prefix per session, or do not claim one.
+
+        A subtraction that comes out at or below zero says the estimate of the
+        material before the first request exceeds what that request was priced
+        at. That is a statement about the estimator, not about the prefix, so
+        the node is not drawn and `--audit` says why.
+        """
+        return self.prefix > 0
+
+
+def visible_material(records: list[dict], start: int, stop: int,
+                     callers: dict[str, tuple[str, dict]]) -> tuple[float, float]:
+    """Characters and area-priced tokens in one slice of the transcript.
+
+    The prefix subtraction has to be in the tool's own units or the books do not
+    balance, so it runs the same classifier over the records before the first
+    priced request rather than a second, simpler walk that would drift from it
+    the first time either changed.
+    """
+    scratch: list[str] = []
+    leaves = classify(records, start, stop, scratch, callers, {}).values()
+    return (sum(leaf.chars for leaf in leaves),
+            sum(leaf.fixed for leaf in leaves))
+
+
+def price_floor(records: list[dict], priced: list[dict], start: int, stop: int,
+                callers: dict[str, tuple[str, dict]]) -> Floor | None:
+    """Prefix by first-request subtraction; reasoning by per-response subtraction.
+
+        prefix    = ctx(first request in this window) - est(visible before it)
+        retained  = Σ max(0, output_tokens - est(text + tool_use)) over responses
+                    still inside the window and before the anchoring one
+
+    The anchor is excluded from the sum because its own output was not in the
+    window it was priced for — the same reason `compose` stops the tree at it.
+    The clamp at zero is the prototype's and it is not free: a response the
+    estimator over-explains contributes nothing rather than a negative, which
+    biases `retained` upwards. It is kept because the alternative charges
+    reasoning for the estimator's error in the other direction, and because the
+    control below states what that error is on responses that did no reasoning.
+    """
+    in_window = [entry for entry in priced if start <= entry["index"] <= stop]
+    if not in_window:
+        return None
+    first = in_window[0]
+    before_chars, before_fixed = visible_material(records, start, first["index"],
+                                                  callers)
+
+    retained, blocks, per_block, control, output = 0.0, 0, [], [], []
+    for entry in in_window:
+        if entry["index"] >= stop or entry["output_tokens"] <= 0:
+            continue
+        chars, thinking = response_output(entry)
+        left = entry["output_tokens"] - estimate(chars)
+        output.append((entry["output_tokens"], chars))
+        retained += max(0.0, left)
+        if thinking:
+            blocks += thinking
+            per_block.append(left / thinking)
+        else:
+            control.append(left)
+
+    return Floor(
+        first_context=first["context"],
+        first_index=first["index"],
+        visible_before_chars=before_chars,
+        visible_before_fixed=before_fixed,
+        prefix=first["context"] - estimate(before_chars) - before_fixed,
+        retained=retained,
+        thinking_blocks=blocks,
+        thinking_responses=len(per_block),
+        per_block_median=median(per_block),
+        control_median=median(control),
+        control_responses=len(control),
+        output=output,
+    )
+
+
+@dataclass
+class Audit:
+    """The reconciliation, and the constant that would zero it — not applied.
+
+    §C10 is why this is a record and not a switch. The solved constant is a
+    diagnostic: fitting it would make the residual zero by construction and
+    destroy the tool's only self-check, and worse, it would silently absorb any
+    category the classifier missed and report perfect books over a wrong model.
+    There is deliberately no flag that applies it.
+    """
+
+    window: int
+    visible_chars: float
+    visible_fixed: float
+    prefix_chars: float
+    prefix_fixed: float
+    first_context: int
+    output: list[tuple[int, float]]
+    claims_prefix: bool
+
+    def parts_at(self, constant: float) -> tuple[float, float, float]:
+        """Visible, prefix and retained, re-priced at one chars-per-token value.
+
+        Images are in `*_fixed` and do not move: they are priced by area (§C5),
+        so a sweep that scaled them too would be sweeping a number that has no
+        characters behind it.
+        """
+        visible = self.visible_chars / constant + self.visible_fixed
+        prefix = self.first_context - self.prefix_chars / constant - self.prefix_fixed
+        retained = sum(max(0.0, out - chars / constant)
+                       for out, chars in self.output)
+        # Mirror what is drawn rather than what could be: a prefix this session
+        # does not claim is not in the tree, so it is not in the solve either.
+        return visible, (prefix if prefix > 0 else 0.0), retained
+
+    def residual_at(self, constant: float) -> float:
+        return self.window - sum(self.parts_at(constant))
+
+    def solve(self) -> float | None:
+        """Bisect for the constant that zeroes the residual, or `None`.
+
+        Bisection rather than algebra because the retained-reasoning term is
+        piecewise: each response's contribution is clamped at zero, so the
+        residual is continuous in the constant and not smooth. `None` when no
+        constant in the bracket balances the books, which is the honest answer
+        for a session whose residual has the same sign at both ends.
+        """
+        low, high = 0.5, 20.0
+        if self.residual_at(low) * self.residual_at(high) > 0:
+            return None
+        for _ in range(48):
+            middle = (low + high) / 2
+            if self.residual_at(low) * self.residual_at(middle) <= 0:
+                high = middle
+            else:
+                low = middle
+        return (low + high) / 2
 
 
 # ─── the tree ────────────────────────────────────────────────────────────────
@@ -756,6 +1026,7 @@ class Branch:
 
     key: str
     tokens: float = 0.0
+    chars: float = 0.0
     count: int = 0
     spilled: float = 0.0
     children: dict[str, Branch] = field(default_factory=dict)
@@ -769,6 +1040,7 @@ def build_tree(leaves: dict[tuple[str, ...], Leaf]) -> dict[str, Branch]:
         for part in key:
             branch = here.setdefault(part, Branch(key=part))
             branch.tokens += leaf.tokens
+            branch.chars += leaf.chars
             branch.spilled += leaf.spilled
             here = branch.children
         if branch is not None:
@@ -816,7 +1088,8 @@ def materialise(branches: dict[str, Branch], target: int, labels: dict, prefix: 
     for branch, amount in zip(ordered, apportion([b.tokens for b in ordered], target)):
         key = prefix + (branch.key,)
         node = Node(label=decorate(branch, labels.get(key), level),
-                    tokens=amount, kind="estimated", note=spill_label(branch))
+                    tokens=amount, kind="estimated", note=spill_label(branch),
+                    chars=branch.chars)
         node.children = materialise(branch.children, amount, labels, key,
                                     depth, level + 1)
         # §C9 belongs on the innermost row that is drawn: the sidecar figure is
@@ -918,16 +1191,24 @@ def compose(path: Path, records: list[dict], *, depth: int = 1,
             "session the last one is normally a record the CLI is still writing "
             "(§C8)")
 
-    nodes = [Node(label=label, tokens=round(tree[label].tokens), kind="estimated")
+    nodes = [Node(label=label, tokens=round(tree[label].tokens), kind="estimated",
+                  chars=tree[label].chars)
              for label in TOP_LEVEL if label in tree and round(tree[label].tokens)]
-    nodes.sort(key=lambda node: -node.tokens)
     for node in nodes:
         node.children = materialise(tree[node.label].children, node.tokens,
                                     labels, (node.label,), depth, level=2)
+
+    floor = price_floor(records, priced, start, stop, callers) if anchor else None
+    if floor is not None:
+        nodes.extend(floor_nodes(floor, notes))
+    nodes.sort(key=lambda node: -node.tokens)
     if window is not None:
         # Subtraction rather than addition, so that the rendered rows sum to the
         # exact window however the rounding falls. This node is the tool's
-        # confession and it is load-bearing (§C10).
+        # confession and it is load-bearing (§C10). It is allowed to be
+        # negative: over-explaining a window is what an unbiased estimator does
+        # on about a third of sessions, and hiding the sign would make the one
+        # number that audits the tool the one number the tool tidies up.
         nodes.append(Node(label="unattributed",
                           tokens=window - sum(node.tokens for node in nodes),
                           kind="residual"))
@@ -947,7 +1228,49 @@ def compose(path: Path, records: list[dict], *, depth: int = 1,
         depth=depth,
         by_path=by_path,
         pooled=pooled(paths),
+        floor=floor,
+        audit=None if floor is None or window is None else Audit(
+            window=window,
+            visible_chars=sum(leaf.chars for leaf in leaves.values()),
+            visible_fixed=sum(leaf.fixed for leaf in leaves.values()),
+            prefix_chars=floor.visible_before_chars,
+            prefix_fixed=floor.visible_before_fixed,
+            first_context=floor.first_context,
+            output=floor.output,
+            claims_prefix=floor.claims_prefix,
+        ),
     )
+
+
+def floor_nodes(floor: Floor, notes: list[str]) -> list[Node]:
+    """M3's two derived rows, and the note for a prefix this session cannot claim."""
+    nodes = []
+    if floor.claims_prefix:
+        nodes.append(Node(
+            label="prefix", tokens=round(floor.prefix), kind="derived",
+            note=(f"{floor.first_context:,} exact at the first request in this "
+                  f"window, less {round(floor.visible_before_first):,} estimated "
+                  "visible before it — the system prompt and tool definitions, "
+                  "which no transcript records (--explain prefix)")))
+    else:
+        notes.append(
+            f"no prefix node: the first request in this window was priced at "
+            f"{floor.first_context:,} and the transcript before it estimates to "
+            f"{round(floor.visible_before_first):,}, so the subtraction comes out "
+            f"at {round(floor.prefix):,}. That is a statement about the estimate "
+            "and not about the prefix, and §C7 says measure it per session or do "
+            "not claim one — so it stays in `unattributed`.")
+    if round(floor.retained):
+        nodes.append(Node(
+            label="retained reasoning", tokens=round(floor.retained),
+            kind="derived",
+            note=(f"{floor.thinking_blocks:,} thinking blocks over "
+                  f"{floor.thinking_responses:,} responses, median "
+                  f"{floor.per_block_median:,.0f} tokens per block in this "
+                  f"session; the control is {floor.control_responses:,} "
+                  f"responses with no thinking block, median "
+                  f"{floor.control_median:,.0f} left over")))
+    return nodes
 
 
 def dropped_tokens(boundaries: list[dict]) -> int:
@@ -967,7 +1290,18 @@ _HEAD_COLUMNS = BAR_COLUMNS + LABEL_COLUMNS + 4
 
 
 def bar(share: float) -> str:
-    filled = int(share * BAR_COLUMNS)
+    """The magnitude, in a glyph that says which side of zero it is on.
+
+    A negative residual is normal rather than exceptional — the estimator
+    over-explains the window on roughly a third of sessions (02-, and 60 of 162
+    on this run's own sweep) — and `03-option-a`'s mock readout does not
+    contemplate one. Drawn hatched and leading with a minus so that
+    over-explained reads differently from under-explained at a glance, rather
+    than as an empty row that looks like a rounding artefact.
+    """
+    filled = min(BAR_COLUMNS, int(abs(share) * BAR_COLUMNS))
+    if share < 0:
+        return "-" + "▒" * min(BAR_COLUMNS - 1, filled)
     if filled:
         return "█" * filled
     return "▏" if share > 0 else " "
@@ -1066,20 +1400,245 @@ def render(composition: Composition, window_argument: int | None) -> str:
         lines.append("  note       no '% of window full' is printed: nothing in a "
                      "transcript states the window size (§C7). Pass --window N to "
                      "state the denominator yourself.")
-    if window is not None:
-        lines.append("  note       no prefix node and no retained-reasoning node "
-                     "yet (M3), so both sit inside `unattributed`.")
+    if any(node.kind == "residual" and node.tokens < 0 for node in composition.nodes):
+        lines.append("  note       the residual is negative: this readout explains "
+                     "more of the window than there is. That is what an unbiased "
+                     "estimator does on roughly a third of sessions and it is "
+                     "printed with its sign rather than clamped (§C10).")
     if composition.depth < 3:
         lines.append(f"  note       drawn to --depth {composition.depth}; "
                      "--depth 3 reaches the file paths and Bash command heads.")
     return "\n".join(lines)
 
 
+# ─── the audit ───────────────────────────────────────────────────────────────
+
+NOT_APPLIED = (
+    "NOT APPLIED, and there is no flag that applies it. Fitting the constant to "
+    "zero the residual would make the residual zero by construction and destroy "
+    "the only self-check this tool has; worse, it would silently absorb any "
+    "category the classifier missed and report perfect books over a wrong model. "
+    "A residual that cannot be non-zero is not evidence (§C10)."
+)
+
+
+def audit_rows(composition: Composition) -> list[tuple[str, int, str]]:
+    """The reconciliation, as `(what, tokens, kind)` in subtraction order.
+
+    Every top-level node, signed the way the arithmetic reads: the window, less
+    each thing that claims part of it, leaving the residual.
+    """
+    rows = [("window at the last request", composition.window or 0, "exact")]
+    for node in composition.nodes:
+        if node.kind == "residual":
+            continue
+        rows.append((f"less {node.label}", -node.tokens, node.kind))
+    residual = next((n for n in composition.nodes if n.kind == "residual"), None)
+    if residual is not None:
+        rows.append(("= unattributed", residual.tokens, "residual"))
+    return rows
+
+
+def render_audit(composition: Composition) -> str:
+    """`--audit` — the full reconciliation, and the constant it does not apply."""
+    audit, floor, window = composition.audit, composition.floor, composition.window
+    lines = ["", "audit — the reconciliation, at "
+             f"{CHARS_PER_TOKEN} chars/token"]
+    if audit is None or floor is None or not window:
+        lines.append("  there is no exact anchor in this session, so there are no "
+                     "books to balance. " + NO_ANCHOR)
+        return "\n".join(lines)
+
+    for label, tokens, kind in audit_rows(composition):
+        share = tokens / window
+        lines.append(f"  {label:<{_HEAD_COLUMNS - 2}}{tokens:>9,}  "
+                     f"{100 * share:5.1f}%  {kind}")
+
+    lines.append("")
+    lines.append("  the prefix, by first-request subtraction")
+    lines.append(f"    {floor.first_context:>12,}   context at the first request "
+                 "in this window, exact")
+    lines.append(f"    {round(floor.visible_before_first):>12,}   estimated visible "
+                 f"in the transcript before it "
+                 f"({round(floor.visible_before_chars):,} chars / {CHARS_PER_TOKEN})")
+    lines.append(f"    {round(floor.prefix):>12,}   = prefix"
+                 + ("" if floor.claims_prefix else
+                    "  — not claimed, and not drawn: §C7"))
+
+    lines.append("")
+    lines.append("  retained reasoning, by per-response subtraction")
+    lines.append(f"    {len(floor.output):>12,}   responses inside the window and "
+                 "before the anchoring one")
+    lines.append(f"    {floor.thinking_blocks:>12,}   thinking blocks over "
+                 f"{floor.thinking_responses:,} of them, median "
+                 f"{floor.per_block_median:,.0f} tokens each")
+    lines.append(f"    {floor.control_responses:>12,}   responses with no thinking "
+                 f"block — the control — median {floor.control_median:,.0f} left "
+                 "over")
+    lines.append(f"    {round(floor.retained):>12,}   = retained reasoning")
+    lines.append("    the control is the estimator's own error, measured on this "
+                 "session: a response")
+    lines.append("    that emitted no reasoning should be explained by its own "
+                 "visible output to within it.")
+
+    solved = audit.solve()
+    lines.append("")
+    lines.append("  the chars-per-token constant that would zero this session's "
+                 "residual")
+    if solved is None:
+        lines.append("    none in 0.5-20.0 balances these books, so the residual "
+                     "here is not the constant's")
+    else:
+        lines.append(f"    {solved:.3f} chars/token  (shipped: {CHARS_PER_TOKEN}, "
+                     f"corpus median 2.57, IQR 2.41-2.75)")
+        lines.append(f"    {NOT_APPLIED}")
+    return "\n".join(lines)
+
+
+# ─── --explain ───────────────────────────────────────────────────────────────
+
+
+def find_nodes(composition: Composition, target: str) -> list[Node]:
+    """Every node whose label matches, exact before prefix before substring."""
+    wanted = " ".join(target.split()).lower()
+    nodes = [node for node, _ in walk(composition.nodes)]
+    for match in (lambda label: label == wanted,
+                  lambda label: label.startswith(wanted),
+                  lambda label: wanted in label):
+        found = [node for node in nodes if match(node.label.lower())]
+        if found:
+            return found
+    return []
+
+
+def explain(composition: Composition, target: str) -> tuple[int, str]:
+    """The derivation of one node, in the arithmetic that produced it.
+
+    Not a paragraph. `04-comparison.md` scores option B above A on exactly two
+    rows and this flag buys the first of them — floor honesty — for a small
+    fraction of B's build, but only if it answers with numbers.
+    """
+    found = find_nodes(composition, target)
+    if not found:
+        labels = sorted({node.label for node, _ in walk(composition.nodes)})
+        return 1, (f"winnow: no node matching {target!r} in this readout. "
+                   f"There are {len(labels)}: " + ", ".join(labels[:12])
+                   + (", …" if len(labels) > 12 else ""))
+    if len(found) > 1:
+        return 1, (f"winnow: {target!r} matches {len(found)} nodes: "
+                   + ", ".join(sorted({node.label for node in found})[:12]))
+
+    node = found[0]
+    window = composition.window
+    header = [f"{node.label} — {node.kind}, {node.tokens:,} tokens"
+              + (f" ({100 * node.tokens / window:.1f}% of the window)"
+                 if window else "")]
+    return 0, "\n".join(header + [""] + explain_body(composition, node))
+
+
+def explain_body(composition: Composition, node: Node) -> list[str]:
+    floor, window = composition.floor, composition.window
+    if node.label == "prefix" and floor is not None:
+        # Three numbers and a subtraction, which is what the operator asked of
+        # the largest single block in most readouts. A paragraph here would be
+        # the tool explaining itself instead of showing its working.
+        return [
+            f"  {floor.first_context:>12,}   context at the first priced request "
+            f"in this window (record {floor.first_index}), exact from usage",
+            f"− {round(floor.visible_before_first):>12,}   everything the "
+            "transcript holds before that request, estimated",
+            f"= {round(floor.prefix):>12,}   prefix — the system prompt and the "
+            "tool definitions, which no transcript records",
+        ]
+    if node.label == "retained reasoning" and floor is not None:
+        return [
+            "  per response: output_tokens (exact) − est(text + tool_use chars), "
+            "clamped at zero,",
+            f"  summed over the {len(floor.output):,} responses inside the window "
+            "and before the anchoring one.",
+            "",
+            f"  {floor.thinking_blocks:>12,}   thinking blocks, over "
+            f"{floor.thinking_responses:,} responses",
+            f"  {floor.per_block_median:>12,.0f}   median tokens per block in "
+            "this session",
+            f"  {floor.control_median:>12,.0f}   median left over on the "
+            f"{floor.control_responses:,} responses with no thinking block — "
+            "the control",
+            f"  {round(floor.retained):>12,}   = retained reasoning",
+        ]
+    if node.kind == "residual":
+        claimed = sum(other.tokens for other in composition.nodes
+                      if other.kind != "residual")
+        sign = ("this readout explains more of the window than there is; the "
+                "sign is printed rather than clamped"
+                if node.tokens < 0 else
+                "what no category claims, which is what is left rather than "
+                "what is hidden")
+        return [
+            f"  {window or 0:>12,}   the exact window, from usage",
+            f"− {claimed:>12,}   every node above, summed",
+            f"= {node.tokens:>12,}   unattributed — {sign} (§C10)",
+        ]
+    return [
+        f"  {round(node.chars):>12,}   payload characters counted on the wire "
+        "(01- §2.4; §C4's exclusions already removed)",
+        f"÷ {CHARS_PER_TOKEN:>12}   chars per token, shipped fixed and never "
+        "fitted (01- §2.3, band 2.4-3.0)",
+        f"= {node.tokens:>12,}   apportioned by largest remainder inside the "
+        "exact total, so this row and its siblings sum to it",
+    ] + ([""] + [f"  its {len(node.children)} children are drawn beneath it; "
+                 f"the largest is {node.children[0].label!r} at "
+                 f"{node.children[0].tokens:,}"] if node.children else [])
+
+
 def _figure(tokens: int, kind: str) -> dict:
     return {"tokens": tokens, "kind": kind}
 
 
-def to_dict(composition: Composition, window_argument: int | None) -> dict:
+def audit_dict(composition: Composition) -> dict:
+    """`--audit --json`: the reconciliation and the constant, machine-readable.
+
+    The constant carries `applied: false` as a field rather than only as prose,
+    because the sweep that measures this tool reads this document and a reader
+    that only sees a number would be entitled to use it (§C10).
+    """
+    audit, floor, window = composition.audit, composition.floor, composition.window
+    if audit is None or floor is None or not window:
+        return {"anchored": False, "note": NO_ANCHOR}
+    solved = audit.solve()
+    return {
+        "anchored": True,
+        "chars_per_token": CHARS_PER_TOKEN,
+        "reconciliation": [
+            {"label": label, "tokens": tokens, "kind": kind,
+             "share": round(tokens / window, 6)}
+            for label, tokens, kind in audit_rows(composition)
+        ],
+        "prefix": {
+            "first_request_context": _figure(floor.first_context, "exact"),
+            "visible_before": _figure(round(floor.visible_before_first),
+                                      "estimated"),
+            "prefix": _figure(round(floor.prefix), "derived"),
+            "claimed": floor.claims_prefix,
+        },
+        "retained_reasoning": {
+            "responses": floor.thinking_responses + floor.control_responses,
+            "thinking_blocks": floor.thinking_blocks,
+            "per_block_median": _figure(round(floor.per_block_median), "derived"),
+            "control_responses": floor.control_responses,
+            "control_median": _figure(round(floor.control_median), "derived"),
+            "retained": _figure(round(floor.retained), "derived"),
+        },
+        "solved_constant": {
+            "chars_per_token": None if solved is None else round(solved, 4),
+            "applied": False,
+            "why_not": NOT_APPLIED,
+        },
+    }
+
+
+def to_dict(composition: Composition, window_argument: int | None,
+            audit: bool = False) -> dict:
     """The `--json` shape, which is the real interface (05-, M1).
 
     Every token figure is an object carrying its own `kind`, so that a consumer
@@ -1100,7 +1659,7 @@ def to_dict(composition: Composition, window_argument: int | None) -> dict:
 
     boundaries = composition.boundaries
     last = boundaries[-1] if boundaries else {}
-    return {
+    document = {
         "session": composition.path.stem,
         "path": str(composition.path),
         "records": composition.records,
@@ -1143,6 +1702,9 @@ def to_dict(composition: Composition, window_argument: int | None) -> dict:
         "notes": composition.notes,
         "derivations": DERIVATION,
     }
+    if audit:
+        document["audit"] = audit_dict(composition)
+    return document
 
 
 # ─── the command ─────────────────────────────────────────────────────────────
@@ -1150,7 +1712,8 @@ def to_dict(composition: Composition, window_argument: int | None) -> dict:
 
 def context_command(session: str, *, as_json: bool = False,
                     window: int | None = None, depth: int = 3,
-                    by_path: bool = False) -> tuple[int, str]:
+                    by_path: bool = False, audit: bool = False,
+                    explain_node: str | None = None) -> tuple[int, str]:
     """`(exit code, output)`. 1 usage error, 3 refused — no anchor, no shares.
 
     Exit 3 rather than 0 when no assistant record carries `usage`: the readout
@@ -1168,6 +1731,14 @@ def context_command(session: str, *, as_json: bool = False,
 
     records = [record for _, record, _ in load_messages(path)]
     composition = compose(path, records, depth=depth, by_path=by_path)
-    payload = (json.dumps(to_dict(composition, window), indent=2) if as_json
-               else render(composition, window))
-    return (0 if composition.window is not None else 3), payload
+    refused = 0 if composition.window is not None else 3
+
+    if explain_node is not None:
+        code, text = explain(composition, explain_node)
+        return (code or refused), text
+    if as_json:
+        return refused, json.dumps(to_dict(composition, window, audit), indent=2)
+    readout = render(composition, window)
+    if audit:
+        readout += "\n" + render_audit(composition)
+    return refused, readout

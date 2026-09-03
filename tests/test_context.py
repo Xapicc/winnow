@@ -324,8 +324,14 @@ def test_the_json_tree_is_the_committed_golden():
     Misattribution conserves the total, so moving tokens between categories
     leaves the residual untouched and the readout looking exactly as correct as
     before. Regenerate this file deliberately when the classifier changes.
+
+    Taken with `--audit` because M3's two derived blocks are where a silent move
+    is now most likely: the prefix and retained reasoning are each an exact
+    number minus an estimate, and a change to what the classifier counts as
+    visible moves tokens between them and the tree without moving the total.
+    The audit document pins both derivations and the unapplied constant.
     """
-    code, output = context_command(fixture("golden"), as_json=True)
+    code, output = context_command(fixture("golden"), as_json=True, audit=True)
     assert code == 0
     document = json.loads(output)
     document.pop("path")
@@ -373,7 +379,15 @@ def test_one_response_over_several_lines_is_counted_once():
 
 def test_the_accumulator_resets_at_the_compaction_boundary():
     """§C6, on a fixture whose pre-boundary result is 5,200 characters — 2,000
-    estimated tokens that are not in the final window."""
+    estimated tokens that are not in the final window.
+
+    The prefix is subtracted from the first request *in this window*, which is
+    the one after the boundary, not the one at the top of the file — so a
+    compacted session gets a prefix priced against a request whose context
+    already contains the summary. Anchoring it on the file's first request
+    instead would price the pre-compaction prefix and then subtract it from a
+    window that no longer holds it.
+    """
     comp = composition("compacted")
 
     assert comp.window == 12_000
@@ -381,7 +395,9 @@ def test_the_accumulator_resets_at_the_compaction_boundary():
     assert tokens(comp, "compaction summary") == 1_000
     assert tokens(comp, "tool traffic") == 508, "the post-boundary Bash only"
     assert tokens(comp, "conversation") == 8
-    assert tokens(comp, "unattributed") == 10_484
+    assert comp.floor.first_context == 9_000, "the first request after the boundary"
+    assert tokens(comp, "prefix") == 8_000, "9,000 less the 1,000 summary before it"
+    assert tokens(comp, "unattributed") == 2_476
     assert sum(node.tokens for node in comp.nodes) == 12_000
 
 

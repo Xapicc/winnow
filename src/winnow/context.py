@@ -1229,16 +1229,30 @@ def compose(path: Path, records: list[dict], *, depth: int = 1,
         by_path=by_path,
         pooled=pooled(paths),
         floor=floor,
-        audit=None if floor is None or window is None else Audit(
-            window=window,
-            visible_chars=sum(leaf.chars for leaf in leaves.values()),
-            visible_fixed=sum(leaf.fixed for leaf in leaves.values()),
-            prefix_chars=floor.visible_before_chars,
-            prefix_fixed=floor.visible_before_fixed,
-            first_context=floor.first_context,
-            output=floor.output,
-            claims_prefix=floor.claims_prefix,
-        ),
+        audit=books(window, leaves, floor),
+    )
+
+
+def books(window: int | None, leaves: dict[tuple[str, ...], Leaf],
+          floor: Floor | None) -> Audit | None:
+    """What `--audit` needs to re-price the window at another constant.
+
+    Characters and area-priced tokens rather than the totals the tree drew,
+    because a token count cannot be swept and this is the only place the two
+    have to be kept apart. `None` with no anchor: there is no window to
+    reconcile against, so there are no books.
+    """
+    if window is None or floor is None:
+        return None
+    return Audit(
+        window=window,
+        visible_chars=sum(leaf.chars for leaf in leaves.values()),
+        visible_fixed=sum(leaf.fixed for leaf in leaves.values()),
+        prefix_chars=floor.visible_before_chars,
+        prefix_fixed=floor.visible_before_fixed,
+        first_context=floor.first_context,
+        output=floor.output,
+        claims_prefix=floor.claims_prefix,
     )
 
 

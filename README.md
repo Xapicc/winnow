@@ -83,7 +83,8 @@ mistake the measurement exists to catch.
 | `src/winnow/inspect.py`, `report.py` | `winnow inspect` — the reading, the byte accounting, the cache readout and `T*`. About 600 lines with 54 tests. Its `--json` output is pinned byte-for-byte in `tests/fixtures/inspect_golden.json`, because milestone 1's deliverable is a number and a number should not move by accident |
 | `src/winnow/plan.py` | `winnow plan` — the dry run: which results a fork would replace, the pointer that would replace each, what the pointers cost, the net, and `T*` for the cut. Guard G4 is decided here rather than at write time, so `plan` and `fork` agree. About 450 lines with 53 tests |
 | `src/winnow/fork.py` | `winnow fork` and `winnow recover` — the writer and the round trip. Consumes `plan`'s list rather than reclassifying, so the dry run is the fork you get. About 700 lines with 66 tests |
-| `src/winnow/cli.py`, `orchestrator_safe.py` | The `safe`, `inspect`, `plan`, `fork` and `recover` groups, and orchestrator-safe mode, about 1,450 lines with its tests |
+| `src/winnow/context.py` | `winnow context` — what is actually in one session's context window, by provenance, with the total taken exactly from `usage` and the parts apportioned inside it. Milestone M1 of [proposals/ContextTreemap](proposals/ContextTreemap/05-recommendation.md): the walking skeleton, six rows and a residual. About 500 lines with 30 tests |
+| `src/winnow/cli.py`, `orchestrator_safe.py` | The `safe`, `inspect`, `context`, `plan`, `fork` and `recover` groups, and orchestrator-safe mode, about 1,450 lines with its tests |
 | `src/winnow/validate/` | The harnesses for milestone 2's three unanswered criteria: the 100-fork resume test, the stratified blind label with its sampler and scorer, and the disk-cost series. Not imported by any `winnow` command — a measurement that could change what it measures is not a measurement — and none of it runs in the suite except through its own fixtures. About 1,900 lines with 76 tests |
 | `src/winnow/legacy/`, `plugin/`, `tests/` | The tree inherited from Cozempic 1.8.39, about 21,700 lines. Renamed into winnow by [docs/FORK.md](docs/FORK.md) phase 1; still not installed and not started |
 | `packaging/README.md` | The record of the six package channels, the npm shim and the PyPI release workflow that phase 2 deleted. **Winnow publishes to no channel**; installing means a checkout |
@@ -158,6 +159,84 @@ being part of that ceiling.
 operator's actual selection with the pointers priced in, so its `T*` is the longer and the honest of
 the two. `fork` prints the same arithmetic under its own heading, because it consumes `plan`'s list
 rather than reclassifying: the dry run is the fork you get.
+
+### `winnow context` — what is in the window, and how much of it is not in the file
+
+`inspect` answers "what is this transcript carrying and would pruning it pay". `context` answers a
+different question: **what is in the context window right now, and where did it come from.** The
+total is not estimated — it is `input_tokens + cache_creation + cache_read` from the last priced
+request, read out of `usage` — and the estimate is apportioned *inside* that total, so the shares
+always sum to a number that is correct by construction and the error lives entirely in where the
+tokens were attributed rather than in how many there are.
+
+```sh
+python -m winnow context <session-id>            # the readout, writes nothing
+python -m winnow context <session-id> --json     # the same tree; this is the real interface
+python -m winnow context <session-id> --window 200000   # …and then a "% full" figure
+python -m winnow context <session-id> --depth 1  # provenance only; 2 adds the tool, 3 the artefact
+python -m winnow context <session-id> --by-path  # one node per file, pooled across the tools
+python -m winnow context <session-id> --audit    # the reconciliation, and the constant it will not apply
+python -m winnow context <session-id> --explain prefix   # the arithmetic behind one node
+```
+
+**The five modes, and they compose.** The default is the provenance tree. `--by-path` re-keys its
+`tool traffic` subtree artefact-first. `--audit` appends the full reconciliation beneath the tree and
+changes no number in it. `--explain <node>` prints one node's arithmetic *instead of* the tree.
+`--json` serialises whichever of those you asked for, and carries the audit document too when
+`--audit` is given. `--depth` and `--window` are modifiers rather than modes and apply throughout.
+
+The drill-down is the reason the command exists. Three levels: who put this here, then which tool
+or attachment class, then **which artefact** — the file path with the number of times it landed in
+the window, the Bash command head, the MCP tool, the memory file, one sub-agent's return. Sorted
+biggest-first at every level, with no "17 more, each smaller" bin, so the terminal tree and `--json`
+carry exactly the same nodes.
+
+`--by-path` re-keys the `tool traffic` subtree artefact-first, so a file read twice and edited once
+is one row marked `×3 (Read ×2, Edit)` rather than two rows in two subtrees. That is not cosmetic:
+on session `f6ea2591` the share of `Read`/`Edit`/`Write` output coming from paths touched more than
+once is **33.5%** pooled and **16.8%** keyed tool-first, over the same 211,557 characters. A result
+with no path — Bash output is the largest such node in most sessions — keeps its command head as its
+own key and is never binned as "other".
+
+Two things it shows and never adds up. A sub-agent's return is sized at **what came back**, with the
+sub-agent's own window printed beside it as a separate figure: adding them produces a number that is
+not the size of any window that ever existed. A `<persisted-output>` node is sized at the ~2 KB
+preview the model actually saw, with the size of the sidecar behind it named in the row.
+
+Every figure carries one of four labels and a test walks `--json` to enforce it: `exact` is lifted
+from something the CLI wrote down, `derived` is an exact number minus an estimate, `estimated` is
+payload characters over 2.6, and `residual` is reserved for the single `unattributed` node.
+
+**Two of the largest rows are in no transcript and neither is a guess.** The `prefix` — the system
+prompt and the tool definitions, a median 25% of the window — is the first priced request of the
+window minus what the transcript holds before it. `retained reasoning`, a median 14%, is
+`output_tokens − est(text + tool_use)` summed per response, which is one exact number minus two small
+estimates; the control is the responses that emitted no reasoning, where the same subtraction has to
+come out near zero and does. Both are `derived` rather than `estimated`, and `--explain prefix` is
+three numbers and a subtraction rather than a paragraph. Over an even 200-file sweep of
+`~/.claude/projects` on 2026-09-03 (163 qualifying sessions) this leaves a **median `unattributed` of
+0.6%**, against 43.9% for the same tree with only the visible material priced.
+
+`--audit` reconciles the whole window row by row and then solves for the chars-per-token constant
+that *would* zero this session's residual — and prints, beside it, that it was **not applied**. There
+is no flag that applies it. A residual fitted to zero is zero by construction, which destroys the
+only self-check the tool has and silently absorbs whatever category the classifier missed. The
+residual is also allowed to be **negative** and is drawn with its sign: over-explaining the window is
+what an unbiased estimator does, on 67 of those 163 sessions.
+
+Three things it refuses to do. It prints **no "% of window full"** unless you supply the denominator
+with `--window`: nothing in a transcript states the window size, and session `72acbacd` reports
+512,133 tokens on a nominally 200,000-token model because it is a `[1m]` session. It prints **no
+percentages at all**, and exits non-zero, when no assistant record carries a `usage` block — there is
+no anchor, and a share of an estimated total is not a measurement. And it never sums a compacted
+session from the top: the accumulator resets at the last `compact_boundary`, so `2551cd0c` reports
+its real 116,030-token window rather than the 416,774 a walk from record zero produces, and states
+the 444,326 tokens compaction has dropped as a separate exact figure above the tree.
+
+**This is milestones M1 through M3.** M4 — `--watch` and `--by-turn` — is not built and is gated on
+a usage diary rather than on effort. `proposals/ContextTreemap/05-recommendation.md` is the plan and
+its non-goals bind: no "reclaimable space" figure, no cross-session view, no writes of any kind, and
+no claim of parity with `/context`.
 
 **`--explain` prints tool arguments verbatim, on `plan` and on `fork` alike, and a transcript
 routinely contains credentials pasted into a Bash command** ([docs/SPEC.md](docs/SPEC.md) §10).

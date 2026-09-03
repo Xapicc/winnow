@@ -198,6 +198,12 @@ to cap.
 - Given a session, when `--explain prefix` runs, then it prints the first-request context, the
   estimated visible tokens before it, and the subtraction — the three numbers, not a paragraph.
 
+**Built and measured on 2026-09-03. `08-m3-measurements.md` records the run.** Median
+`unattributed` **0.6%** against the prototype's 1.0% over 163 and 162 qualifying sessions of one
+200-file sweep; within ±15% 149/162 against 148/162 paired. Prefix and retained reasoning came out
+at 25.1% and 14.2% of the median window, against the ~24% and ~14% `02-constraints.md` predicted.
+The residual kill criterion did not fire.
+
 ### M4 — live, and the turn view (days 10–12, ~25%)
 
 - `--watch`: incremental read from a byte offset at a 250 ms poll (`01-` §4.4 — poll, do not

@@ -173,6 +173,24 @@ def to_dict(report: Report, tier: str) -> dict:
     }
 
 
+# proposals/ContextTreemap 05-, non-goal 10: this command is not repaired in
+# that appetite, it is labelled. The figure named below is the one that forced
+# the label — `cache_read_input_tokens` here is a lifetime sum over every
+# assistant record in the file, and on session e698739e it reads 18,378,780
+# against a window that was 219,485 at the last request, an 84x over-report of
+# the thing a reader will take it for. Printed beside a byte-share breakdown it
+# is exactly the misreading `winnow context` exists to prevent.
+DEPRECATION = (
+    "deprecated: prefer `winnow context <session>`, which reports the context\n"
+    "  window itself. Every token figure below is a LIFETIME SUM over every\n"
+    "  assistant record in this file, not a window: `cache_read_input_tokens`\n"
+    "  reads 18,378,780 on a session whose window was 219,485. The byte shares\n"
+    "  are shares of the file, and a byte is not a token (a thinking block is\n"
+    "  2,784 bytes for zero of them). This command is kept for the filter\n"
+    "  arithmetic below it and is not being repaired."
+)
+
+
 def render(report: Report, tier: str) -> str:
     """The human readout. Useful whether or not anything is ever stripped."""
     total = report.message_content_bytes
@@ -181,6 +199,8 @@ def render(report: Report, tier: str) -> str:
 
     add(f"session {report.session_id}")
     add(f"  {report.path}")
+    add("")
+    add(DEPRECATION)
     add("")
     add(f"records          {report.records:>10,}   "
         f"unrecognised {report.unrecognised_records:,}   "
@@ -247,6 +267,9 @@ def render(report: Report, tier: str) -> str:
     if usage.turns:
         add(f"cache economics ({usage.turns:,} assistant turns, "
             f"write class {usage.write_class})")
+        add("  summed over every assistant record in the file — a lifetime, not "
+            "a window.")
+        add("  For the window, `winnow context " f"{report.session_id[:8]}`.")
         add(f"  cache_read_input_tokens      {usage.cache_read:>14,}")
         add(f"  cache_creation_input_tokens  {usage.cache_creation:>14,}")
         add(f"    ephemeral_1h               {usage.ephemeral_1h:>14,}")

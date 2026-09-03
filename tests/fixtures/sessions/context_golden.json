@@ -1,0 +1,264 @@
+{
+  "session": "context_golden",
+  "records": 9,
+  "requests": 3,
+  "requests_in_window": 3,
+  "model": "claude-opus-5",
+  "chars_per_token": 2.6,
+  "depth": 3,
+  "by_path": false,
+  "pooled_by_path": {
+    "tools": [
+      "Edit",
+      "NotebookEdit",
+      "Read",
+      "Write"
+    ],
+    "paths": 1,
+    "repeated_paths": 0,
+    "tokens": {
+      "tokens": 56,
+      "kind": "estimated"
+    },
+    "repeated": {
+      "tokens": 0,
+      "percent": 0.0,
+      "kind": "estimated"
+    }
+  },
+  "window": {
+    "tokens": 5000,
+    "kind": "exact"
+  },
+  "fullness": null,
+  "compaction": {
+    "boundaries": 0,
+    "dropped": {
+      "tokens": 0,
+      "kind": "exact"
+    },
+    "last_boundary": null
+  },
+  "nodes": [
+    {
+      "label": "conversation",
+      "tokens": 1616,
+      "kind": "estimated",
+      "share": 0.3232,
+      "note": "",
+      "children": [
+        {
+          "label": "images",
+          "tokens": 1586,
+          "kind": "estimated",
+          "share": 0.3172,
+          "note": "",
+          "children": []
+        },
+        {
+          "label": "user turns",
+          "tokens": 18,
+          "kind": "estimated",
+          "share": 0.0036,
+          "note": "",
+          "children": []
+        },
+        {
+          "label": "assistant text",
+          "tokens": 12,
+          "kind": "estimated",
+          "share": 0.0024,
+          "note": "",
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "tool traffic",
+      "tokens": 81,
+      "kind": "estimated",
+      "share": 0.0162,
+      "note": "",
+      "children": [
+        {
+          "label": "Read results",
+          "tokens": 56,
+          "kind": "estimated",
+          "share": 0.0112,
+          "note": "",
+          "children": [
+            {
+              "label": "/workspace/winnow/src/winnow/orchestrator.ts",
+              "tokens": 56,
+              "kind": "estimated",
+              "share": 0.0112,
+              "note": "",
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "tool_use inputs",
+          "tokens": 25,
+          "kind": "estimated",
+          "share": 0.005,
+          "note": "",
+          "children": [
+            {
+              "label": "Read",
+              "tokens": 25,
+              "kind": "estimated",
+              "share": 0.005,
+              "note": "",
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "standing configuration",
+      "tokens": 68,
+      "kind": "estimated",
+      "share": 0.0136,
+      "note": "",
+      "children": [
+        {
+          "label": "nested_memory",
+          "tokens": 68,
+          "kind": "estimated",
+          "share": 0.0136,
+          "note": "",
+          "children": [
+            {
+              "label": "~/.claude/CLAUDE.md",
+              "tokens": 68,
+              "kind": "estimated",
+              "share": 0.0136,
+              "note": "",
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "retained reasoning",
+      "tokens": 63,
+      "kind": "derived",
+      "share": 0.0126,
+      "note": "2 thinking blocks over 2 responses, median 32 tokens per block in this session; the control is 0 responses with no thinking block, median 0 left over",
+      "children": []
+    },
+    {
+      "label": "prefix",
+      "tokens": 14,
+      "kind": "derived",
+      "share": 0.0028,
+      "note": "100 exact at the first request in this window, less 86 estimated visible before it \u2014 the system prompt and tool definitions, which no transcript records (--explain prefix)",
+      "children": []
+    },
+    {
+      "label": "unattributed",
+      "tokens": 3158,
+      "kind": "residual",
+      "share": 0.6316,
+      "note": "",
+      "children": []
+    }
+  ],
+  "notes": [
+    "a <persisted-output> wrapper is sized at the preview the model saw, not at the tool-results/ sidecar behind it (\u00a7C9)"
+  ],
+  "derivations": {
+    "exact": "read from usage.{input,cache_creation,cache_read}_tokens on the anchoring request",
+    "derived": "an exact number minus an estimate",
+    "estimated": "payload characters / 2.6 (01- \u00a72.3; the band is 2.4-3.0)",
+    "residual": "the window less everything above it; what no kind accounts for"
+  },
+  "audit": {
+    "anchored": true,
+    "chars_per_token": 2.6,
+    "reconciliation": [
+      {
+        "label": "window at the last request",
+        "tokens": 5000,
+        "kind": "exact",
+        "share": 1.0
+      },
+      {
+        "label": "less conversation",
+        "tokens": -1616,
+        "kind": "estimated",
+        "share": -0.3232
+      },
+      {
+        "label": "less tool traffic",
+        "tokens": -81,
+        "kind": "estimated",
+        "share": -0.0162
+      },
+      {
+        "label": "less standing configuration",
+        "tokens": -68,
+        "kind": "estimated",
+        "share": -0.0136
+      },
+      {
+        "label": "less retained reasoning",
+        "tokens": -63,
+        "kind": "derived",
+        "share": -0.0126
+      },
+      {
+        "label": "less prefix",
+        "tokens": -14,
+        "kind": "derived",
+        "share": -0.0028
+      },
+      {
+        "label": "= unattributed",
+        "tokens": 3158,
+        "kind": "residual",
+        "share": 0.6316
+      }
+    ],
+    "prefix": {
+      "first_request_context": {
+        "tokens": 100,
+        "kind": "exact"
+      },
+      "visible_before": {
+        "tokens": 86,
+        "kind": "estimated"
+      },
+      "prefix": {
+        "tokens": 14,
+        "kind": "derived"
+      },
+      "claimed": true
+    },
+    "retained_reasoning": {
+      "responses": 2,
+      "thinking_blocks": 2,
+      "per_block_median": {
+        "tokens": 32,
+        "kind": "derived"
+      },
+      "control_responses": 0,
+      "control_median": {
+        "tokens": 0,
+        "kind": "derived"
+      },
+      "retained": {
+        "tokens": 63,
+        "kind": "derived"
+      }
+    },
+    "solved_constant": {
+      "chars_per_token": null,
+      "applied": false,
+      "why_not": "NOT APPLIED, and there is no flag that applies it. Fitting the constant to zero the residual would make the residual zero by construction and destroy the only self-check this tool has; worse, it would silently absorb any category the classifier missed and report perfect books over a wrong model. A residual that cannot be non-zero is not evidence (\u00a7C10)."
+    }
+  }
+}

@@ -20,11 +20,16 @@ import sys
 from pathlib import Path
 
 from . import fork as fork_mod
-from . import orchestrator_safe as safe
 from . import plan as plan_mod
-from . import proxy as proxy_mod
 from . import rules as rules_mod
 from . import savings as savings_mod
+
+# `orchestrator_safe` and `proxy` are imported inside the handlers and subparser
+# builders that need them, not here. `context` is a read-only command that must
+# not reach pruning policy at all — 05-recommendation.md's guardrail is that
+# `winnow.proxy` and `winnow.orchestrator_safe` are absent from `sys.modules`
+# after it returns — and `build_parser` only registers the group being
+# dispatched, so an eager import here would defeat both.
 
 EXIT_OK = 0
 EXIT_USAGE = 1
@@ -84,6 +89,8 @@ def _say(message: str) -> None:
 
 def _require_mode() -> str | None:
     """The reason the mode is not on, or None."""
+    from . import orchestrator_safe as safe
+
     try:
         if safe.is_enabled():
             return None
@@ -96,6 +103,8 @@ def _require_mode() -> str | None:
 
 
 def cmd_check(args: argparse.Namespace) -> int:
+    from . import orchestrator_safe as safe
+
     findings = safe.check()
     violations = [f for f in findings if not f.ok]
     if args.json:
@@ -115,6 +124,8 @@ def cmd_check(args: argparse.Namespace) -> int:
 
 
 def cmd_env(args: argparse.Namespace) -> int:
+    from . import orchestrator_safe as safe
+
     if args.json:
         print(json.dumps(
             {
@@ -130,6 +141,8 @@ def cmd_env(args: argparse.Namespace) -> int:
 
 
 def cmd_plugin_dir(args: argparse.Namespace) -> int:
+    from . import orchestrator_safe as safe
+
     reason = _require_mode()
     if reason:
         _say(reason)
@@ -149,6 +162,8 @@ def cmd_plugin_dir(args: argparse.Namespace) -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
+    from . import orchestrator_safe as safe
+
     reason = _require_mode()
     if reason:
         _say(reason)
@@ -179,6 +194,8 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def cmd_checkpoint(args: argparse.Namespace) -> int:
+    from . import orchestrator_safe as safe
+
     reason = _require_mode()
     if reason:
         _say(reason)
@@ -200,6 +217,8 @@ def cmd_checkpoint(args: argparse.Namespace) -> int:
 
 
 def cmd_post_compact(args: argparse.Namespace) -> int:
+    from . import orchestrator_safe as safe
+
     reason = _require_mode()
     if reason:
         _say(reason)
@@ -236,6 +255,8 @@ def add_safe_subparser(sub: argparse._SubParsersAction) -> None:
     )
     p_check.add_argument("--json", action="store_true")
     p_check.set_defaults(func=cmd_check)
+
+    from . import orchestrator_safe as safe
 
     p_env = actions.add_parser(
         "env", help="the environment overlay, as shell exports or JSON with reasons"
@@ -335,6 +356,99 @@ def add_inspect_subparser(sub) -> None:
     )
     p.add_argument("--json", action="store_true", help="machine-readable output")
     p.set_defaults(func=cmd_inspect)
+
+
+def cmd_context(args: argparse.Namespace) -> int:
+    from .context import context_command
+
+    code, output = context_command(
+        session=args.session,
+        as_json=args.json,
+        window=args.window,
+        depth=args.depth,
+        by_path=args.by_path,
+        audit=args.audit,
+        explain_node=args.explain,
+    )
+    print(output, file=sys.stderr if code == EXIT_USAGE else sys.stdout)
+    if code == EXIT_REFUSED:
+        _say("no exact anchor in this session: the tree is estimated and no "
+             "share or percentage is printed. See the readout's note.")
+    return code
+
+
+def add_context_subparser(sub) -> None:
+    """Register `winnow context` — proposals/ContextTreemap, milestone M1.
+
+    Beside `inspect` rather than under `safe`, for the reason `inspect` gives:
+    it has no write path at all, so orchestrator-safe mode has nothing to
+    withhold from it and an operator should not need an environment variable to
+    read their own transcript.
+
+    The residual is large because the two blocks that would shrink it — the
+    prefix and retained reasoning — are derived rather than estimated and are
+    the next slice (M3).
+    """
+    p = sub.add_parser(
+        "context",
+        help="what is actually in one session's context window; writes nothing",
+        description="Take the exact window total from the last priced request "
+                    "and apportion an estimate of the transcript inside it, by "
+                    "provenance, down to the file path or Bash command head. "
+                    "The total is exact by construction and every figure says "
+                    "whether it was read, derived or estimated. Writes nothing, "
+                    "anywhere.",
+    )
+    p.add_argument("session", help="session ID, path, or unambiguous ID prefix")
+    p.add_argument(
+        "--depth", type=int, default=3, metavar="N",
+        help="how many levels to draw: 1 is provenance alone, 2 adds the tool "
+             "or attachment class, 3 adds the artefact — the file path with "
+             "its repeat count, the Bash command head, the MCP tool, the "
+             "sub-agent. Default 3. The tree and --json are drawn identically "
+             "and neither rolls the tail up into an 'other' bin",
+    )
+    p.add_argument(
+        "--by-path", action="store_true",
+        help="re-key the `tool traffic` subtree artefact-first, so one file "
+             "read twice and edited once is one node marked with its per-tool "
+             "counts rather than two nodes in two subtrees. On session "
+             "f6ea2591 that is the difference between 16.8%% and 33.2%% of "
+             "Read/Edit/Write output coming from paths touched more than once. "
+             "A result with no path — Bash output is the largest — keeps its "
+             "command-head key and is never binned as 'other'",
+    )
+    p.add_argument(
+        "--window", type=int, default=None, metavar="N",
+        # argparse %-expands a help string, so every literal percent is doubled.
+        help="the context window size, in tokens, so that a '%% full' figure "
+             "can be printed. There is no default and there will not be one: "
+             "nothing in a transcript states the window size, and a session on "
+             "a 1M-context model reports 512,133 tokens, which a hardcoded "
+             "200,000 would render as 256%% full",
+    )
+    p.add_argument(
+        "--audit", action="store_true",
+        help="the full reconciliation beneath the tree: the window, everything "
+             "subtracted from it, the residual with its sign, how the prefix "
+             "and the retained-reasoning figures were derived, and the "
+             "chars-per-token constant that would zero this session's residual "
+             "— printed as a diagnostic and never applied. There is no flag "
+             "that applies it: a residual that cannot be non-zero is not "
+             "evidence",
+    )
+    p.add_argument(
+        "--explain", metavar="NODE", default=None,
+        help="print the arithmetic behind one node instead of the tree, matched "
+             "on its label. `--explain prefix` is three numbers and a "
+             "subtraction; an estimated node gives its character count, the "
+             "constant and the apportionment",
+    )
+    p.add_argument("--json", action="store_true",
+                   help="machine-readable output; the same tree, with every "
+                        "figure carrying its provenance. With --audit it also "
+                        "carries the reconciliation and the unapplied constant")
+    p.set_defaults(func=cmd_context)
 
 
 def cmd_plan(args: argparse.Namespace) -> int:
@@ -675,6 +789,7 @@ def _filter_rules(args: argparse.Namespace) -> tuple[frozenset[str], tuple[str, 
 
 def cmd_filter(args: argparse.Namespace) -> int:
     from . import filter as filter_mod
+    from . import proxy as proxy_mod
 
     if not proxy_mod.is_enabled() and not args.force:
         _say("intake filter is off. Set WINNOW_FILTER=1, or pass --force to run "
@@ -734,6 +849,7 @@ def add_filter_subparser(sub) -> None:
     would be indistinguishable from one that was asked to.
     """
     from . import filter as filter_mod
+    from . import proxy as proxy_mod
 
     p = sub.add_parser(
         "filter",
@@ -894,7 +1010,20 @@ def trial_mod_default() -> str:
     return str(trial_mod.DEFAULT_ARMS)
 
 
-def build_parser() -> argparse.ArgumentParser:
+_SUBPARSERS = {
+    "safe": add_safe_subparser,
+    "inspect": add_inspect_subparser,
+    "context": add_context_subparser,
+    "plan": add_plan_subparser,
+    "fork": add_fork_subparser,
+    "recover": add_recover_subparser,
+    "filter": add_filter_subparser,
+    "savings": add_savings_subparser,
+    "trial": add_trial_subparser,
+}
+
+
+def build_parser(group: str | None = None) -> argparse.ArgumentParser:
     """A parser for the groups implemented in this tree.
 
     `winnow`'s full parser is `winnow.legacy.cli.build_parser`, which registers
@@ -903,35 +1032,37 @@ def build_parser() -> argparse.ArgumentParser:
     the problem but whose `main()` does an update ping and an auto-init before it
     parses — and an auto-init writes to `~/.claude`, which a read-only command
     has no business triggering.
+
+    `group` narrows it to one subcommand. Registering a subparser is not free:
+    several of them read a default out of the module that implements the
+    command, so building all nine imports all nine — including the proxy and
+    the orchestrator-safe mode, which `winnow context` is required to leave out
+    of `sys.modules` altogether (05-recommendation.md's second guardrail).
+    Without a group every subcommand is registered, which is what `winnow
+    --help` and the tests want.
     """
     parser = argparse.ArgumentParser(
         prog="winnow",
         description="winnow — see docs/SPEC.md. Implemented: the "
-                    "orchestrator-safe mode, `inspect`, `plan`, `fork` and "
-                    "`recover`.",
+                    "orchestrator-safe mode, `inspect`, `context`, `plan`, "
+                    "`fork` and `recover`.",
     )
     sub = parser.add_subparsers(dest="group", required=True)
-    add_safe_subparser(sub)
-    add_inspect_subparser(sub)
-    add_plan_subparser(sub)
-    add_fork_subparser(sub)
-    add_recover_subparser(sub)
-    add_filter_subparser(sub)
-    add_savings_subparser(sub)
-    add_trial_subparser(sub)
+    for name, register in _SUBPARSERS.items():
+        if group is None or group == name:
+            register(sub)
     return parser
 
 
 # Groups this tree owns. Everything else falls through to the inherited CLI.
-_OWN_GROUPS = ("safe", "inspect", "plan", "fork", "recover", "filter", "savings",
-               "trial")
+_OWN_GROUPS = tuple(_SUBPARSERS)
 
 
 def main(argv: list[str] | None = None) -> int:
     """The `winnow` entry point: this tree's groups here, everything else inherited."""
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv[:1] and argv[0] in _OWN_GROUPS:
-        args = build_parser().parse_args(argv)
+        args = build_parser(argv[0]).parse_args(argv)
         return args.func(args)
     from .legacy.cli import main as legacy_main
 

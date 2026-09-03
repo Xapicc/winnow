@@ -259,7 +259,18 @@ NOT_A_WINDOW_CLAIM = frozenset({
     # and the two figures that do (`pooled_by_path.tokens` and `.repeated`)
     # carry their kind.
     "$.depth", "$.pooled_by_path.paths", "$.pooled_by_path.repeated_paths",
-})
+    # M3's, all inside `--audit`. The reconciliation rows carry their kind, so
+    # only the `share` beside each is bare, and a share of an exactly-known
+    # total is arithmetic on a labelled figure rather than a claim of its own.
+    # The rest are counts — of responses, of thinking blocks — and the two
+    # constants: the one the estimator ships and the one it solved for and
+    # deliberately did not apply.
+    "$.audit.chars_per_token",
+    "$.audit.retained_reasoning.responses",
+    "$.audit.retained_reasoning.thinking_blocks",
+    "$.audit.retained_reasoning.control_responses",
+    "$.audit.solved_constant.chars_per_token",
+} | {f"$.audit.reconciliation[{index}].share" for index in range(12)})
 
 
 def walk_numbers(document) -> tuple[list[tuple[str, dict]], list[str]]:
@@ -292,6 +303,7 @@ def walk_numbers(document) -> tuple[list[tuple[str, dict]], list[str]]:
     return labelled, bare
 
 
+@pytest.mark.parametrize("audit", [False, True], ids=["tree", "audit"])
 @pytest.mark.parametrize("name,window_argument", [
     ("golden", None),
     ("golden", 200_000),
@@ -304,15 +316,22 @@ def walk_numbers(document) -> tuple[list[tuple[str, dict]], list[str]]:
     ("zero_usage_anchor", None),
     ("bookkeeping_only", None),
     ("empty", None),
+    ("over_explained", None),
+    ("prefix_underwater", None),
 ])
-def test_every_rendered_number_carries_a_provenance_label(name, window_argument):
+def test_every_rendered_number_carries_a_provenance_label(name, window_argument,
+                                                          audit):
     """§C2, and the success-criteria row whose target is zero unlabelled numbers.
 
     Walked rather than reviewed, so that a figure added later without a label
     fails the build. Both directions: every labelled figure's kind is one of the
     four, and every bare number is one the exemption list names.
+
+    Run over the audit document too, because that is where M3 put most of its
+    new figures and an unlabelled one there is the same failure as an unlabelled
+    one in the tree.
     """
-    document = to_dict(composition(name, depth=3), window_argument)
+    document = to_dict(composition(name, depth=3), window_argument, audit)
     labelled, bare = walk_numbers(document)
 
     for path, figure in labelled:

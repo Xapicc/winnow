@@ -175,7 +175,15 @@ python -m winnow context <session-id> --json     # the same tree; this is the re
 python -m winnow context <session-id> --window 200000   # …and then a "% full" figure
 python -m winnow context <session-id> --depth 1  # provenance only; 2 adds the tool, 3 the artefact
 python -m winnow context <session-id> --by-path  # one node per file, pooled across the tools
+python -m winnow context <session-id> --audit    # the reconciliation, and the constant it will not apply
+python -m winnow context <session-id> --explain prefix   # the arithmetic behind one node
 ```
+
+**The five modes, and they compose.** The default is the provenance tree. `--by-path` re-keys its
+`tool traffic` subtree artefact-first. `--audit` appends the full reconciliation beneath the tree and
+changes no number in it. `--explain <node>` prints one node's arithmetic *instead of* the tree.
+`--json` serialises whichever of those you asked for, and carries the audit document too when
+`--audit` is given. `--depth` and `--window` are modifiers rather than modes and apply throughout.
 
 The drill-down is the reason the command exists. Three levels: who put this here, then which tool
 or attachment class, then **which artefact** — the file path with the number of times it landed in
@@ -199,6 +207,23 @@ Every figure carries one of four labels and a test walks `--json` to enforce it:
 from something the CLI wrote down, `derived` is an exact number minus an estimate, `estimated` is
 payload characters over 2.6, and `residual` is reserved for the single `unattributed` node.
 
+**Two of the largest rows are in no transcript and neither is a guess.** The `prefix` — the system
+prompt and the tool definitions, a median 25% of the window — is the first priced request of the
+window minus what the transcript holds before it. `retained reasoning`, a median 14%, is
+`output_tokens − est(text + tool_use)` summed per response, which is one exact number minus two small
+estimates; the control is the responses that emitted no reasoning, where the same subtraction has to
+come out near zero and does. Both are `derived` rather than `estimated`, and `--explain prefix` is
+three numbers and a subtraction rather than a paragraph. Over an even 200-file sweep of
+`~/.claude/projects` on 2026-09-03 (163 qualifying sessions) this leaves a **median `unattributed` of
+0.6%**, against 43.9% for the same tree with only the visible material priced.
+
+`--audit` reconciles the whole window row by row and then solves for the chars-per-token constant
+that *would* zero this session's residual — and prints, beside it, that it was **not applied**. There
+is no flag that applies it. A residual fitted to zero is zero by construction, which destroys the
+only self-check the tool has and silently absorbs whatever category the classifier missed. The
+residual is also allowed to be **negative** and is drawn with its sign: over-explaining the window is
+what an unbiased estimator does, on 67 of those 163 sessions.
+
 Three things it refuses to do. It prints **no "% of window full"** unless you supply the denominator
 with `--window`: nothing in a transcript states the window size, and session `72acbacd` reports
 512,133 tokens on a nominally 200,000-token model because it is a `[1m]` session. It prints **no
@@ -208,11 +233,10 @@ session from the top: the accumulator resets at the last `compact_boundary`, so 
 its real 116,030-token window rather than the 416,774 a walk from record zero produces, and states
 the 444,326 tokens compaction has dropped as a separate exact figure above the tree.
 
-**This is milestones M1 and M2.** It has no `prefix` node and no `retained reasoning` node yet, so
-both sit inside `unattributed`, which is why that row is 30–65% of the window rather than the ~1%
-the full decomposition reaches. `proposals/ContextTreemap/05-recommendation.md` is the plan and its non-goals
-bind: no "reclaimable space" figure, no cross-session view, no writes of any kind, and no claim of
-parity with `/context`.
+**This is milestones M1 through M3.** M4 — `--watch` and `--by-turn` — is not built and is gated on
+a usage diary rather than on effort. `proposals/ContextTreemap/05-recommendation.md` is the plan and
+its non-goals bind: no "reclaimable space" figure, no cross-session view, no writes of any kind, and
+no claim of parity with `/context`.
 
 **`--explain` prints tool arguments verbatim, on `plan` and on `fork` alike, and a transcript
 routinely contains credentials pasted into a Bash command** ([docs/SPEC.md](docs/SPEC.md) §10).

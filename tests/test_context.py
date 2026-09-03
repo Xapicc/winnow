@@ -31,6 +31,8 @@ import pytest
 from winnow.context import (
     KINDS,
     Node,
+    attachment_chars,
+    attachment_keys,
     compose,
     context_command,
     priced_responses,
@@ -770,6 +772,51 @@ def _walk(nodes, level=1):
     for node in nodes:
         yield node, level
         yield from _walk(node.children, level + 1)
+
+
+def test_standing_configuration_names_the_memory_file_it_loaded():
+    """05- M2: `standing configuration` → attachment class → memory-file path.
+
+    "What is my standing cost before I type anything" is only actionable if the
+    answer names the file, and `nested_memory` carries one.
+    """
+    node = descend(composition("golden", depth=3),
+                   "standing configuration", "nested_memory")
+
+    assert [c.label for c in node.children] == ["~/.claude/CLAUDE.md"]
+    assert node.children[0].tokens == node.tokens
+
+
+def test_two_mcp_servers_split_one_attachment_by_their_own_blocks():
+    """05- M2's other named leaf. `mcp_instructions_delta` carries one prose
+    block per server, so a server takes its own block's share rather than an
+    equal one — and the shares still sum to the attachment they came from."""
+    attachment = {
+        "type": "mcp_instructions_delta",
+        "addedNames": ["alpha", "beta"],
+        "addedBlocks": ["## alpha" + "a" * 90, "## beta" + "b" * 10],
+        "removedNames": [],
+    }
+    keys = attachment_keys(attachment)
+
+    assert [key[-1] for key, _ in keys] == ["alpha", "beta"]
+    assert sum(chars for _, chars in keys) == attachment_chars(attachment)
+    assert keys[0][1] > 4 * keys[1][1], "by block length, not equally"
+
+
+def test_an_mcp_delta_that_names_servers_without_blocks_stays_one_node():
+    """The split needs both halves to be there and to line up. Where they do
+    not, the attachment is one node — a wrong split is worse than no split."""
+    for attachment in (
+        {"type": "mcp_instructions_delta", "addedNames": ["x"], "addedBlocks": []},
+        {"type": "mcp_instructions_delta", "addedNames": [], "addedBlocks": ["b"]},
+        {"type": "mcp_instructions_delta", "addedNames": ["x", "y"],
+         "addedBlocks": ["only one"]},
+    ):
+        keys = attachment_keys(attachment)
+        assert [key for key, _ in keys] == \
+               [("standing configuration", "mcp_instructions_delta")]
+        assert keys[0][1] == attachment_chars(attachment)
 
 
 def test_a_depth_below_one_is_a_usage_error():

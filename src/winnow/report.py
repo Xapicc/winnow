@@ -44,6 +44,21 @@ def _human(n: int) -> str:
     return f"{n} B"
 
 
+class AmbiguousSession(LookupError):
+    """A prefix that names more than one transcript, and which ones.
+
+    A `LookupError` so that every existing caller — which catches that and
+    prints the message — keeps the behaviour and the exit code it had. The
+    matches are carried as well because `winnow context` draws them as a screen
+    rather than a sentence, and re-globbing to find out what the message already
+    knew would be reading the projects directory twice for one refusal.
+    """
+
+    def __init__(self, message: str, matches: list[Path]) -> None:
+        super().__init__(message)
+        self.matches = matches
+
+
 def resolve_session(argument: str) -> Path:
     """A session ID, a path, or a prefix long enough to be unambiguous.
 
@@ -82,9 +97,10 @@ def resolve_session(argument: str) -> Path:
         raise LookupError(f"no session matches {argument!r}")
     if len(matches) > 1:
         names = ", ".join(sorted(m.stem for m in matches)[:4])
-        raise LookupError(
+        raise AmbiguousSession(
             f"{argument!r} matches {len(matches)} sessions ({names}…); "
-            "use a longer prefix"
+            "use a longer prefix",
+            sorted(matches, key=lambda m: m.stem),
         )
     return matches[0]
 

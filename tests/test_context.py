@@ -33,14 +33,18 @@ from winnow.context import (
     BAR_GLYPH,
     CHARS_PER_TOKEN,
     COLOR_CHOICES,
+    FACT_RULE,
+    FACT_WARN,
     FIXED_COLUMNS,
     KINDS,
+    NO_CAUSE,
     LABEL_COLUMNS,
     LEDGER_GLYPH,
     OFF_SCALE,
     OVERHANG_OPEN,
     PALETTE_16,
     PALETTE_256,
+    SHED_HEADING,
     SHED_ROW,
     WIDEST_BAR,
     WIDEST_LABEL,
@@ -191,8 +195,8 @@ def test_no_percent_full_without_a_stated_denominator(real_claude_dir):
                    None)["fullness"] is None
 
     _, with_denominator = context_command(str(path), window=1_000_000)
-    assert "of a --window of 1,000,000" in with_denominator
-    assert "51.2% full" in with_denominator
+    assert "of the 1,000,000 stated by --window" in with_denominator
+    assert "51.2%" in with_denominator
 
 
 def test_no_usage_anchor_refuses_rather_than_guesses():
@@ -1314,13 +1318,17 @@ def test_the_shed_lines_are_above_the_tree_with_the_cause_the_file_names():
     """
     readout = render(composition("shedding"), None)
     heading = next(line for line in readout.splitlines()
-                   if line.startswith("shed with no compaction boundary"))
+                   if SHED_HEADING in line)
 
     assert "(2 events)" in heading and "9,000" in heading and "exact" in heading
     assert readout.index(heading) < readout.index("unattributed")
-    assert "at request 3 of 5 (record 6): 30,000 -> 22,000, 8,000 gone" in readout
-    assert "cause: deferred_tools_delta" in readout
-    assert "cause: nothing in the file names a cause" in readout
+    # 07-mockup.md's figure 2 puts the magnitude in the number column and the
+    # cause in a warned note beneath, and the row is a fact rather than prose.
+    assert re.search(r"at request 3 \(record 6\): 30,000 -> 22,000 +8,000 +— +exact",
+                     readout)
+    assert f"{FACT_WARN} cause: deferred_tools_delta" in readout
+    assert NO_CAUSE not in readout, \
+        "five rows each saying nothing explains them is not five facts"
     assert "less shed 9,000" in readout, "the by-kind line still adds up"
 
 

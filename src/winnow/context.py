@@ -42,6 +42,7 @@ import os
 import re
 import shutil
 import sys
+import textwrap
 from dataclasses import dataclass, field
 from itertools import groupby, pairwise
 from pathlib import Path
@@ -1443,6 +1444,9 @@ def shed_events(in_window: list[dict], records: list[dict]) -> list[Shed]:
 SYNTHETIC_CAUSE = "<synthetic> response (interrupt or API error)"
 
 
+NO_CAUSE = "nothing in the file names a cause"
+
+
 def shed_cause(records: list[dict], start: int, stop: int) -> str:
     """The best pointer the file offers at what took material out, or nothing.
 
@@ -1461,7 +1465,7 @@ def shed_cause(records: list[dict], start: int, stop: int) -> str:
         if ((record.get("message") or {}).get("model") == "<synthetic>"
                 and SYNTHETIC_CAUSE not in seen):
             seen.append(SYNTHETIC_CAUSE)
-    return ", ".join(seen) if seen else "nothing in the file names a cause"
+    return ", ".join(seen) if seen else NO_CAUSE
 
 
 def shed_tokens(events: list[Shed]) -> int:
@@ -1974,6 +1978,69 @@ def ledger_lines(led: Ledger, style: Style) -> list[str]:
     return lines
 
 
+# ─── the exact facts, above the tree ─────────────────────────────────────────
+
+# 07-mockup.md draws this block with a 3px left border in the `exact` colour and
+# nothing else — no box, no heading. The border is the whole grouping, and it is
+# the exact colour because everything inside it is exact: these are the only
+# numbers in the readout that were read rather than apportioned. A heading
+# saying so would repeat the kind word every row already prints.
+#
+# A half-block rather than `│`, for the mockup's own weight — `3px solid`, not a
+# hairline — and because `│` is already the track's zero line. Two rules in one
+# readout meaning two different things have to be told apart by ink, since a
+# terminal that is piped has no other channel to tell them apart by.
+FACT_RULE = "▌"
+# The mockup's `.factnote.warn::before { content: "! " }`, which it uses on the
+# shed notes. It gets no colour of its own: the palette has four hues and all
+# four mean provenance, and a fifth meaning "look at this" would be the one
+# thing that breaks the grammar. The mark is the marker.
+FACT_WARN, FACT_NOTE = "!", "·"
+
+
+@dataclass(frozen=True)
+class Fact:
+    """One line of the block above the tree: a number the transcript stated.
+
+    `value` and `percent` are strings because two of them are not numbers —
+    `unanchored` where a window would be, and the `—` a fact with no share
+    prints — and formatting them at the call site keeps this a layout.
+    """
+
+    label: str
+    value: str
+    percent: str = "—"
+    kind: str = "exact"
+    note: str = ""
+    warn: bool = False
+
+
+def fact_lines(facts: list[Fact], style: Style) -> list[str]:
+    """The block, behind its rule, with the numbers under the tree's own column.
+
+    The column arithmetic is the tree row's: two for the rule and its space,
+    then the label, then nine for the count, two, six for the share, two. A fact
+    and a row of the tree line their numbers up because the block is the same
+    readout as the tree and not a preamble to it.
+    """
+    rule = style.paint(FACT_RULE, "exact")
+    room = style.head_columns - 2
+    lines = []
+    for fact in facts:
+        lines.append(f"{rule} {fact.label:<{room}}"
+                     f"{fact.value:>9}  {fact.percent:>6}  {style.word(fact.kind)}")
+        if not fact.note:
+            continue
+        # Wrapped, which nothing else in this readout is. The rule down the left
+        # is the only thing grouping these lines, and a note that ran past the
+        # tree beneath it would be a line escaping the frame it is inside.
+        marker = FACT_WARN if fact.warn else FACT_NOTE
+        wrapped = textwrap.wrap(fact.note, max(24, room - 4)) or [""]
+        lines.append(f"{rule}   {marker} {wrapped[0]}")
+        lines.extend(f"{rule}     {line}" for line in wrapped[1:])
+    return lines
+
+
 # How many shedding events get a line of their own before the rest are rolled
 # into one. Five covers 186 of the 192 shedding sessions in ~/.claude/projects
 # whole; the worst is 57 events, which is a session to name rather than a list
@@ -1981,34 +2048,87 @@ def ledger_lines(led: Ledger, style: Style) -> list[str]:
 SHED_EVENTS_SHOWN = 5
 
 
-def shed_lines(events: list[Shed], style: Style) -> list[str]:
-    """The exact falls, above the tree, with the request each was measured at.
+SHED_HEADING = "shed with no compaction boundary"
+
+
+def shed_facts(events: list[Shed]) -> list[Fact]:
+    """The exact falls, as facts, with the request each was measured at.
 
     06-spike-findings calls this "the single cheapest honesty fix available":
     without it a session that lost a third of its window reads as an estimator
     that cannot count. Above the tree rather than in it, because what left is
     not in the window and drawing it as a row would be putting it back.
 
-    The largest five get a line each, in file order so they read as a sequence;
-    the rest are one line. The total is every event, whatever is printed.
+    07-mockup.md's figure 2 gives each fall a row of its own with its magnitude
+    in the number column and its cause in a warned note beneath. The mockup drew
+    a session with two falls; five is the cap here, and at five the note stops
+    being a note if every row carries one — so the warned note is kept for the
+    falls the file names something for, and the rows that nothing explains say
+    that by having nothing to say. The footer states once, for the session, that
+    nothing in a transcript records what left (§C6).
+
+    The largest five get a row each, in file order so they read as a sequence;
+    the rest are one row. The total is every event, whatever is drawn.
     """
     if not events:
         return []
     total = shed_tokens(events)
     largest = sorted(events, key=lambda event: -event.tokens)[:SHED_EVENTS_SHOWN]
     shown = sorted(largest, key=lambda event: event.at_record)
-    plural = "" if len(events) == 1 else "s"
-    heading = f"shed with no compaction boundary ({len(events)} event{plural})"
-    lines = [(f"{heading:<{style.head_columns}}{total:>9,}       —  "
-              f"{style.word('exact')}")]
-    for event in shown:
-        lines.append(f"  at {event.where}: {event.before:,} -> {event.after:,}, "
-                     f"{event.tokens:,} gone; cause: {event.cause}")
+
+    def when(event: Shed) -> str:
+        return (f"at request {event.at_request:,} (record {event.at_record:,}): "
+                f"{event.before:,} -> {event.after:,}")
+
+    if len(events) == 1:
+        note = f"{when(shown[0])}; cause: {shown[0].cause}"
+        return [Fact(SHED_HEADING, f"{total:,}", note=note, warn=True)]
+
+    facts = [Fact(f"{SHED_HEADING} ({len(events)} events)", f"{total:,}")]
+    facts.extend(Fact(f"  {when(event)}", f"{event.tokens:,}",
+                      note="" if event.cause == NO_CAUSE else f"cause: {event.cause}",
+                      warn=True)
+                 for event in shown)
     if len(shown) < len(events):
         rest = total - sum(event.tokens for event in shown)
-        lines.append(f"  and {len(events) - len(shown)} more, each smaller, "
-                     f"{rest:,} tokens between them")
-    return lines
+        facts.append(Fact(f"  and {len(events) - len(shown)} more, each smaller",
+                          f"{rest:,}"))
+    return facts
+
+
+def exact_facts(composition: Composition,
+                window_argument: int | None) -> list[Fact]:
+    """Everything above the tree that was read rather than apportioned.
+
+    Four kinds of fact and they are the four the proposal accumulated: the
+    window at the last request (`05-` §M1), the denominator the operator stated
+    (§C7 — nothing in a transcript states one), what compaction dropped, and what
+    left with no boundary to record it (`06-` §6). Every one of them is a
+    subtraction over numbers the CLI wrote down, which is why they share a block
+    and why the rule beside it is the `exact` colour.
+    """
+    window = composition.window
+    if window is None:
+        # No anchor is a fact about the window too, and it belongs where the
+        # window would have been rather than in a footnote at the bottom: it is
+        # the reason every share below is missing. The refusal is `unknown` —
+        # the one kind with no colour — because there is no number here.
+        return [Fact("window at the last request", "unanchored", kind="unknown",
+                     note=NO_ANCHOR, warn=True)]
+
+    facts = [Fact("window at the last request", f"{window:,}", "100.0%")]
+    if window_argument:
+        facts.append(Fact(f"of the {window_argument:,} stated by --window",
+                          f"{window:,}", f"{100 * window / window_argument:.1f}%"))
+    if composition.boundaries:
+        last = composition.boundaries[-1]
+        facts.append(Fact(
+            "dropped by compaction (cumulative)",
+            f"{dropped_tokens(composition.boundaries):,}",
+            note=f"last boundary: {last.get('trigger')} compaction, "
+                 f"{last.get('preTokens') or 0:,} -> "
+                 f"{last.get('postTokens') or 0:,}"))
+    return facts + shed_facts(composition.shed)
 
 
 def render(composition: Composition, window_argument: int | None,
@@ -2044,25 +2164,7 @@ def render(composition: Composition, window_argument: int | None,
     if style.in_colour:
         lines.append(key_line(style))
 
-    if window is None:
-        lines.append(f"{'window at the last request':<{style.head_columns}}"
-                     f"{'unanchored':>9}       —  —")
-    else:
-        lines.append(f"{'window at the last request':<{style.head_columns}}"
-                     f"{window:>9,}  100.0%  {style.word('exact')}")
-    if composition.boundaries:
-        last = composition.boundaries[-1]
-        lines.append(f"{'dropped by compaction (cumulative)':<{style.head_columns}}"
-                     f"{dropped_tokens(composition.boundaries):>9,}       —  "
-                     f"{style.word('exact')}")
-        lines.append(f"  last boundary: {last.get('trigger')} compaction, "
-                     f"pre/post {last.get('preTokens') or 0:,} / "
-                     f"{last.get('postTokens') or 0:,}")
-    if window is not None and window_argument:
-        lines.append(f"{f'of a --window of {window_argument:,}':<{style.head_columns}}"
-                     f"{100 * window / window_argument:8.1f}% full  "
-                     f"{style.word('exact')}")
-    lines.extend(shed_lines(composition.shed, style))
+    lines.extend(fact_lines(exact_facts(composition, window_argument), style))
     led = ledger(composition)
     if led is not None:
         lines.append("")
@@ -2105,7 +2207,12 @@ def render(composition: Composition, window_argument: int | None,
         if any(node.kind == kind for node in composition.nodes) or kind == "exact":
             lines.append(f"  {style.paint(f'{kind:<10s}', kind)} {DERIVATION[kind]}")
     for note in composition.notes:
-        lines.append(f"  note       {note}")
+        # `NO_ANCHOR` is printed at the top, where the window would have been,
+        # because it is the reason every share is missing rather than a footnote
+        # about one. It stays in `composition.notes` — and so in `--json`, which
+        # has no top — and is skipped here so it is said once.
+        if note != NO_ANCHOR:
+            lines.append(f"  note       {note}")
     if window is not None and not window_argument:
         lines.append("  note       no '% of window full' is printed: nothing in a "
                      "transcript states the window size (§C7). Pass --window N to "

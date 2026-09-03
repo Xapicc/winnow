@@ -1083,3 +1083,56 @@ def test_the_audit_model_reproduces_the_residual_the_tree_drew(real_claude_dir):
 
         assert abs(drawn - comp.audit.residual_at(CHARS_PER_TOKEN)) < 5, \
             f"{prefix}: the audit models a different tree than the one drawn"
+
+
+def test_the_derived_prefix_measures_what_prefix_facts_measures(tmp_path):
+    """`filter.py:728 prefix_facts` is the only cross-check on the derived prefix.
+
+    `04-comparison.md` scores keeping the command in this repository partly on
+    this: `prefix_facts` sizes the system prompt and the tool definitions
+    exactly, from a live Messages API request body. It cannot be pointed at a
+    transcript — the two regions it reads are the two a transcript never holds,
+    which is the whole reason the prefix has to be derived at all — so it cannot
+    be run against a real session here and no assertion pretending otherwise
+    would mean anything.
+
+    What it *can* check is that both instruments measure the same quantity in
+    the same units. This builds a request body, prices it the way the API would,
+    writes the transcript that request would leave behind, and asserts the
+    subtraction recovers `prefix_facts`'s two regions to the token. If the
+    classifier ever starts counting something into `visible` that belongs to the
+    prefix, or the reverse, this fails and the residual does not.
+    """
+    from winnow.context import estimate
+    from winnow.filter import prefix_facts
+
+    body = {
+        "model": "claude-opus-5",
+        "system": [{"type": "text", "text": "S" * 40_000}],
+        "tools": [{"name": "Read", "description": "D" * 20_000, "input_schema": {}}],
+        "messages": [{"role": "user", "content": "hello"}],
+    }
+    facts = prefix_facts(body)
+    prefix_tokens = estimate(facts["system_bytes"] + facts["tools_bytes"])
+    opening = body["messages"][0]["content"]
+
+    path = tmp_path / "cccccccc-1111-2222-3333-444444444444.jsonl"
+    path.write_text("\n".join(json.dumps(record) for record in [
+        {"type": "user", "message": {"role": "user", "content": opening}},
+        {"type": "assistant", "message": {
+            "id": "msg_1", "model": "claude-opus-5", "role": "assistant",
+            "usage": {"input_tokens": round(prefix_tokens + estimate(len(opening))),
+                      "cache_creation_input_tokens": 0,
+                      "cache_read_input_tokens": 0, "output_tokens": 5},
+            "content": [{"type": "text", "text": "hi"}]}},
+        {"type": "user", "message": {"role": "user", "content": "again"}},
+        {"type": "assistant", "message": {
+            "id": "msg_2", "model": "claude-opus-5", "role": "assistant",
+            "usage": {"input_tokens": 10, "cache_creation_input_tokens": 0,
+                      "cache_read_input_tokens": 24_000, "output_tokens": 4},
+            "content": [{"type": "text", "text": "bye"}]}},
+    ]) + "\n")
+    comp = compose(path, [record for _, record, _ in load_messages(path)])
+
+    assert round(comp.floor.visible_before_first) == round(estimate(len(opening)))
+    assert tokens(comp, "prefix") == round(prefix_tokens) == 23_110

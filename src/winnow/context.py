@@ -1356,6 +1356,51 @@ class Shed:
                 f"(record {self.at_record:,})")
 
 
+def anchored_chain(records: list[dict], anchor: int) -> set[str] | None:
+    """The uuids the anchoring request descends from, or `None` if unknowable.
+
+    A transcript is a tree, not a list. Edit-and-retry writes the retried turn
+    as a sibling of the one it replaced, and both branches stay in the file, so
+    two records adjacent in file order can belong to prompts that never saw each
+    other. `parentUuid` is what says which is which, and this walks it back from
+    the anchoring response to the root.
+
+    `None` when the file cannot answer — a record with no `uuid`, a parent whose
+    record is not in this file — because absence of branch information is not
+    evidence of a branch, and the caller should then read the file in the order
+    it is written rather than exclude on a guess.
+    """
+    by_uuid = {record["uuid"]: record for record in records if record.get("uuid")}
+    node, chain = records[anchor], set()
+    while node is not None:
+        uuid = node.get("uuid")
+        if not uuid:
+            return None
+        if uuid in chain:
+            break  # a cycle: the file is malformed, and the walk has all it can get
+        chain.add(uuid)
+        parent = node.get("parentUuid")
+        node = by_uuid.get(parent) if parent else None
+    return chain
+
+
+def on_anchored_chain(in_window: list[dict], records: list[dict]) -> list[dict]:
+    """The in-window priced requests the anchoring one actually descends from.
+
+    Everything else in the file is a branch the anchor's prompt never contained,
+    and pairing across it manufactures falls that never happened: on d57c1426,
+    98 of 258 in-window requests are off-chain, and reading the file in order
+    reports 57 falls worth 458,994 tokens — more than the whole window — on a
+    session that shed nothing at all. 12 of the 911 anchored sessions on this
+    machine carry off-chain requests and three of them shed only spuriously.
+    """
+    chain = anchored_chain(records, in_window[-1]["index"]) if in_window else None
+    if chain is None:
+        return in_window
+    return [entry for entry in in_window
+            if records[entry["index"]].get("uuid") in chain]
+
+
 def shed_events(in_window: list[dict], records: list[dict]) -> list[Shed]:
     """Every fall in the window between consecutive priced requests (§C6's gap).
 
@@ -1367,21 +1412,26 @@ def shed_events(in_window: list[dict], records: list[dict]) -> list[Shed]:
     moving tool schemas behind `ToolSearch`; 06-spike-findings §2 item 2 measured
     17 of 164 sampled sessions shedding this way, median 36,714 tokens.
 
+    "Consecutive" means consecutive on the anchor's own branch, which is why the
+    pairing runs over `on_anchored_chain` rather than over the file.
+
     No size threshold, unlike the spike's 2,000 tokens. Over the 911 anchored
-    sessions in `~/.claude/projects` on this machine the 833 falls run smoothly
-    from 1 token to 458,935 with no gap to cut at, and a 2,000-token floor
-    discards 4.7% of every shed token and silences three sessions outright —
-    2ef56c0b sheds 7,310 tokens (4.5% of its window) and c2f96a57 6,702, none of
-    it in a piece that large. A fall is exact whatever its size.
+    sessions in `~/.claude/projects` on this machine the 753 falls run smoothly
+    from 3 tokens to 339,518 with no gap to cut at, and a 2,000-token floor
+    discards 5.0% of every shed token and silences 70 of the 190 shedding
+    sessions outright — 2ef56c0b sheds 7,310 tokens (4.5% of its window) and
+    c2f96a57 6,702, none of it in a piece that large. A fall is exact whatever
+    its size.
     """
+    on_chain = on_anchored_chain(in_window, records)
     events = []
-    for position, (earlier, later) in enumerate(pairwise(in_window), start=2):
+    for position, (earlier, later) in enumerate(pairwise(on_chain), start=2):
         if later["context"] >= earlier["context"]:
             continue
         events.append(Shed(
             at_record=later["index"],
             at_request=position,
-            of_requests=len(in_window),
+            of_requests=len(on_chain),
             before=earlier["context"],
             after=later["context"],
             cause=shed_cause(records, earlier["index"], later["index"])))
@@ -2101,16 +2151,16 @@ NOT_APPLIED = (
 # The re-derivation available is the same subtraction taken at the first request
 # after the last fall: ctx(that request), less the estimate of everything the
 # transcript recorded before it, less the reasoning retained from those
-# responses. Its books balance well — over the 192 shedding sessions in
+# responses. Its books balance well — over the 190 shedding sessions in
 # ~/.claude/projects it puts the residual at a median +0.1% and every one of
-# them inside ±15%, against −7.7% and 139 of 192 today. Two things are wrong
-# with it. The number is not a prefix: the estimate it subtracts includes
-# material that has since left, so on 42 of those 192 it comes out negative,
-# −71,067 at the worst, and §C7 already reads a subtraction at or below zero as
-# a statement about the estimate rather than about the prefix. And it balances
-# the books by moving the anchor: the residual would then audit only the
-# requests after the last fall instead of the whole window, which is the one
-# self-check this tool has (§C10).
+# them inside ±15%, against −7.5% and 138 of 190 before any of this. Two things
+# are wrong with it. The number is not a prefix: the estimate it subtracts
+# includes material that has since left, so on 42 of those 190 it comes out
+# negative, −65,648 at the worst, and §C7 already reads a subtraction at or
+# below zero as a statement about the estimate rather than about the prefix.
+# And it balances the books by moving the anchor: the residual would then audit
+# only the requests after the last fall instead of the whole window, which is
+# the one self-check this tool has (§C10).
 #
 # Re-deriving it correctly needs something no transcript holds: a record of
 # *what* left the window, or the prompt's own composition at each request. Until
@@ -2120,7 +2170,7 @@ NO_REDERIVATION = (
     "the prefix above was measured at the first request in this window and is",
     "not re-derived here: after a shed the same subtraction returns the prefix",
     "less an estimate of material that has left, which is negative on 42 of the",
-    "192 shedding sessions on this machine. It is labelled with the request it",
+    "190 shedding sessions on this machine. It is labelled with the request it",
     "was measured at instead (§C6, §C7).",
 )
 

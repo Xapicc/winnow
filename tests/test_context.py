@@ -48,6 +48,7 @@ from winnow.context import (
     ZERO_RULE,
     Node,
     Style,
+    anchored_chain,
     attachment_chars,
     attachment_keys,
     audit_rows,
@@ -58,6 +59,7 @@ from winnow.context import (
     key_line,
     layout,
     ledger,
+    on_anchored_chain,
     palette,
     priced_responses,
     render,
@@ -1204,16 +1206,50 @@ def test_a_shed_window_is_measured_exactly_and_labelled_with_its_request():
 def test_a_fall_is_counted_at_any_size_and_not_only_past_a_threshold():
     """The spike ignored anything under 2,000 tokens; this ships no floor.
 
-    Over the 911 anchored sessions in `~/.claude/projects` the 833 falls run
-    smoothly from 1 token to 458,935 with no gap to cut at, and a 2,000-token
-    floor discards 4.7% of every shed token and silences three sessions that
-    shed thousands in small pieces and nothing in one piece. The 1,000-token
-    event in this fixture is the one the spike would have dropped.
+    Over the 911 anchored sessions in `~/.claude/projects` the 753 falls run
+    smoothly from 3 tokens to 339,518 with no gap to cut at, and a 2,000-token
+    floor discards 5.0% of every shed token and silences 70 of the 190 shedding
+    sessions entirely — they shed thousands in small pieces and nothing in one
+    piece. The 1,000-token event in this fixture is one the spike would drop.
     """
     comp = composition("shedding")
     small = [event for event in comp.shed if event.tokens < 2_000]
 
     assert [event.tokens for event in small] == [1_000]
+
+
+def test_a_fall_across_an_abandoned_branch_is_not_a_shed():
+    """A transcript is a tree and edit-and-retry leaves both branches in it.
+
+    `context_branched.jsonl` reads 12,000 / 30,000 / 18,000 / 34,000 in file
+    order and appears to fall by 12,000; on the branch the anchor descends from
+    it reads 12,000 / 30,000 / 34,000 and never falls. Pairing across the file
+    instead reports 57 falls worth 458,994 tokens on d57c1426 — more than that
+    session's whole window — for a session that shed nothing.
+    """
+    comp = composition("branched")
+
+    assert comp.shed == []
+    assert comp.requests_in_window == 4, "the abandoned branch is still priced"
+    assert sum(node.tokens for node in comp.nodes) == comp.window
+    assert not any(row[0] == SHED_ROW for row in audit_rows(comp))
+
+
+def test_a_file_that_cannot_name_its_branches_is_read_in_its_own_order():
+    """Absence of branch information is not evidence of a branch.
+
+    A record with no `uuid` makes the walk unanswerable, and the honest reading
+    is then the order the file is written in — not an exclusion on a guess.
+    """
+    path = FIXTURES / "context_shedding.jsonl"
+    records = [record for _, record, _ in load_messages(path)]
+    stripped = [{k: v for k, v in record.items() if k != "uuid"}
+                for record in records]
+
+    assert anchored_chain(records, len(records) - 1) is not None
+    assert anchored_chain(stripped, len(stripped) - 1) is None
+    priced = priced_responses(stripped)
+    assert len(on_anchored_chain(priced, stripped)) == len(priced)
 
 
 def test_the_shed_leaves_the_residual_rather_than_being_buried_in_it():
@@ -1256,9 +1292,9 @@ def test_the_reconciliation_names_the_shed_as_a_row_of_its_own():
 
 
 def test_a_session_that_sheds_nothing_carries_no_shed_row_at_all():
-    """The other half: 719 of the 911 anchored sessions on this machine never
+    """The other half: 721 of the 911 anchored sessions on this machine never
     shed, and their books must read exactly as they did before."""
-    for name in ("golden", "over_explained", "compacted"):
+    for name in ("golden", "over_explained", "compacted", "branched"):
         comp = composition(name)
 
         assert comp.shed == []

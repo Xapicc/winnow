@@ -2475,7 +2475,9 @@ def derivation_lines(composition: Composition, window_argument: int | None,
         # has no top — and is skipped here so it is said once.
         if note != NO_ANCHOR:
             lines.append(f"  note       {note}")
-    for fault in own_faults(composition.nodes):
+    # Earned by the rows that were drawn, so the screen that draws no tree
+    # confesses nothing about keys it did not print.
+    for fault in own_faults([] if too_thin(composition) else composition.nodes):
         lines.append(f"  note       {fault}")
     if window is not None and not window_argument:
         lines.append("  note       no '% of window full' is printed: nothing in a "

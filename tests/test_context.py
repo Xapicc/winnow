@@ -2038,6 +2038,35 @@ def test_a_fault_is_earned_by_the_tree_that_was_drawn():
         "a `$ head` row is a level-three row and --depth 2 does not draw one"
 
 
+def test_a_screen_that_draws_no_tree_confesses_nothing_about_the_rows_it_kept(
+        tmp_path):
+    """A fault is earned by the rows drawn, and the too-thin screen draws none.
+
+    Its composition still has the nodes — nothing is withheld from `--json` —
+    so the earning has to be on what reached the page, or the one screen that
+    prints no tree would carry a footnote about a level of it.
+    """
+    one_request = tmp_path / "thin.jsonl"
+    one_request.write_text("\n".join(json.dumps(record) for record in [
+        {"type": "attachment",
+         "attachment": {"type": "skill_listing", "content": "y" * 9800}},
+        {"type": "user", "message": {"role": "user", "content": "go"}},
+        {"type": "assistant", "requestId": "r1",
+         "message": {"id": "m1", "role": "assistant", "model": "claude-opus-5",
+                     "content": [{"type": "text", "text": "ok"}],
+                     "usage": {"input_tokens": 12, "cache_read_input_tokens": 33_883,
+                               "cache_creation_input_tokens": 0,
+                               "output_tokens": 4}}},
+    ]))
+    comp = compose(one_request,
+                   [record for _, record, _ in load_messages(one_request)],
+                   depth=2)
+
+    assert too_thin(comp)
+    assert own_faults(comp.nodes), "the tree it did not draw has the class in it"
+    assert "not keyed by provenance" not in render(comp, None)
+
+
 @pytest.mark.parametrize("name", ["compacted", "golden", "by_path"])
 def test_a_fault_is_a_rendering_and_never_reaches_the_document(name):
     """§C5, and this run's constraint that `--json` is what it was. A fault is

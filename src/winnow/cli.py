@@ -369,6 +369,7 @@ def cmd_context(args: argparse.Namespace) -> int:
         by_path=args.by_path,
         audit=args.audit,
         explain_node=args.explain,
+        color=args.color,
     )
     print(output, file=sys.stderr if code == EXIT_USAGE else sys.stdout)
     if code == EXIT_REFUSED:
@@ -444,10 +445,21 @@ def add_context_subparser(sub) -> None:
              "subtraction; an estimated node gives its character count, the "
              "constant and the apportionment",
     )
+    p.add_argument(
+        "--color", choices=("auto", "always", "never"), default="auto",
+        help="colour the bar and the kind word by provenance — exact, derived, "
+             "estimated, residual — and nothing else; the numbers stay plain so "
+             "the columns still read as a table. 'auto', the default, colours "
+             "only when stdout is a terminal, NO_COLOR is unset and TERM is not "
+             "'dumb', so a piped or redirected readout is clean ASCII. Every "
+             "row prints its own kind word beside the colour, so nothing is "
+             "lost without it",
+    )
     p.add_argument("--json", action="store_true",
                    help="machine-readable output; the same tree, with every "
                         "figure carrying its provenance. With --audit it also "
-                        "carries the reconciliation and the unapplied constant")
+                        "carries the reconciliation and the unapplied constant. "
+                        "Never coloured, whatever --color says")
     p.set_defaults(func=cmd_context)
 
 

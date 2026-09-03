@@ -233,3 +233,74 @@ from `shutil.get_terminal_size()` rather than the hardcoded 22 and 54, clamped
 so it never goes below those two together and never past a 32-column bar or a
 72-column label. With no terminal and no `COLUMNS` it is exactly 22 and 54, which
 is why the piped output is unchanged.
+
+---
+
+## Postscript, 2026-09-03 — items 2 and 3 shipped, and what drawing them settled
+
+**Items 2 and 3 above are now in `src/winnow/context.py`.** The colour slice
+above shipped item 4 alone and said so; this one adds the two marks that carry
+the shape of the readout. Both were flagged there as decisions nobody had
+reviewed, and both are now decided by having been built and looked at rather
+than by argument. Item 1's remaining scope — the page, the caption strips, the
+empty states — is still not in the terminal.
+
+**The ledger strip (item 3), as shipped.** `derived` and `estimated` stacked
+proportionally above the tree against a `┃` rule at the exact window, with a
+`└──┘` bracket under the overhang in the residual colour and one line naming the
+overrun in tokens. The rule sits at the window's share of `max(window, parts)`,
+so on a session that fits it lands at the right-hand end and on one that does
+not it moves left and there is an outside to it. That is the mockup's refusal to
+normalise, kept: nothing is rescaled to fit inside the window.
+
+It is built from `audit_rows()` rather than from the tree. That is the only
+condition it exists under — `--audit` prints the window less every claim leaving
+the residual, and a strip that could disagree with those rows would be a second
+opinion about a subtraction with one answer. A test asserts the two equal on
+every fixture.
+
+**The diverging track (item 2), as shipped.** One scale for every row, a `│`
+zero line, a quarter of the bar column for the deficit and the rest for the
+positive side — the mockup's 60px against 180px, in columns.
+
+*The hatch is dropped.* `bar()` led a negative with `-` and drew it in `▒`;
+that was standing in for an axis, and once there is one it works against the
+mark. The same glyph on both sides is what makes them read as one quantity
+pointing two ways, where a hatched left side reads as a different quantity. The
+sign is carried four other ways: the side of the zero line, the printed number,
+the `residual` word and the hue.
+
+*The quarter is measured rather than guessed.* Sweeping the 1,052 transcripts in
+`~/.claude/projects`, 922 have an exact anchor and **423 of those — 46% — have a
+negative residual**, which settles `02-`'s "roughly a third" upwards on a larger
+corpus. Their median is **−2.6%**, the 95th percentile **−27.4%**, the worst
+**−51.6%**. A quarter of 22 columns holds everything out to −31%, so 16 of the
+423 clip; they are drawn to the edge, marked `«`, and a footer note says only the
+drawing was shortened. Half the column would hold all 423 and spend the other
+half of every row on a direction 54% of sessions never go.
+
+**What looking at it changed, again.** Three things.
+
+- **The strip is capped at the terminal, and the tree row is not.** A tree row
+  that wraps at `COLUMNS=80` is ugly; a *proportion* that wraps is not a
+  proportion. So the strip takes the tree row's width or the terminal's,
+  whichever is smaller, and at 80 columns it is visibly shorter than the rows
+  beneath it. That mismatch is the price of the mark staying a mark.
+- **A sub-column overrun still gets a column.** 90% of negative residuals are
+  smaller than 0.4% of their window and round to nothing at any width. One
+  column of the strip is drawn on the wrong side of the rule anyway, because the
+  fact the mark exists to state is that there *is* an outside to the rule; the
+  sentence beneath says it was one token when it was one token.
+- **`░` for the positive residual is the faintest thing on the page, and that
+  is right.** The four glyphs are a density ramp down the honesty ladder —
+  `█ ▓ ▒ ░` for exact, derived, estimated, residual — so `--color never` tells
+  the segments apart by ink as well as by hue. Room left over in the window
+  drawn as the palest block reads as what it is. It is also never the mark that
+  has to shout: when the residual is the thing that matters it is negative, and
+  then it is the bracket and the sentence, both in solid ink.
+
+**One line of the postscript above is now dated.** `winnow context <id> | cat` is
+no longer byte-for-byte M1's readout: it has the strip in it. Everything that
+claim was protecting still holds — no escape byte, every row still printing its
+own provenance word, `--json` identical under all three `--color` choices, and
+`--audit`'s reconciliation unchanged.

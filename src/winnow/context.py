@@ -2146,6 +2146,17 @@ MATCHES_SHOWN = 6
 THIN_REQUESTS = 2
 
 
+def count(number: int, noun: str, plural: str | None = None) -> str:
+    """`1 request`, `2 requests`. The screens are read one at a time.
+
+    Worth the four lines because the header sits directly above the too-thin
+    screen, whose whole subject is that there is exactly one request.
+    """
+    if number == 1:
+        return f"1 {noun}"
+    return f"{number:,} {plural or noun + 's'}"
+
+
 def prose_lines(text: str, style: Style) -> list[str]:
     """A paragraph under a screen, at the width the tree beside it would take.
 
@@ -2357,12 +2368,14 @@ def render(composition: Composition, window_argument: int | None,
     style = style or Style()
     lines: list[str] = []
     window = composition.window
-    compaction = (f"{len(composition.boundaries)} compaction boundaries"
-                  if composition.boundaries else "no compaction")
     lines.append(
-        f"session {composition.path.stem}  ·  {composition.records:,} records  ·  "
-        f"{composition.requests} requests ({composition.requests_in_window} in the "
-        f"window)  ·  {composition.model or 'no model recorded'}  ·  {compaction}"
+        f"session {composition.path.stem}  ·  "
+        f"{count(composition.records, 'record')}  ·  "
+        f"{count(composition.requests, 'request')} "
+        f"({composition.requests_in_window} in the window)  ·  "
+        f"{composition.model or 'no model recorded'}  ·  "
+        + (count(len(composition.boundaries), "compaction boundary", "boundaries")
+           if composition.boundaries else "no compaction")
     )
     if style.in_colour:
         lines.append(key_line(style))

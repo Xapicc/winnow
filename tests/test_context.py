@@ -29,17 +29,34 @@ from pathlib import Path
 import pytest
 
 from winnow.context import (
+    BAR_COLUMNS,
     CHARS_PER_TOKEN,
+    COLOR_CHOICES,
+    FIXED_COLUMNS,
     KINDS,
+    LABEL_COLUMNS,
+    PALETTE_16,
+    PALETTE_256,
+    WIDEST_BAR,
+    WIDEST_LABEL,
     Node,
+    Style,
     attachment_chars,
     attachment_keys,
     audit_rows,
     compose,
     context_command,
+    explain,
+    indent,
+    key_line,
+    layout,
+    palette,
     priced_responses,
     render,
+    render_audit,
+    resolve_style,
     to_dict,
+    wants_colour,
 )
 from winnow.legacy.session import load_messages
 from winnow.report import resolve_session
@@ -1136,3 +1153,177 @@ def test_the_derived_prefix_measures_what_prefix_facts_measures(tmp_path):
 
     assert round(comp.floor.visible_before_first) == round(estimate(len(opening)))
     assert tokens(comp, "prefix") == round(prefix_tokens) == 23_110
+
+
+# ─── colour, the key and the width ───────────────────────────────────────────
+
+
+def test_the_readout_is_clean_ascii_when_nothing_is_watching():
+    """`winnow context <id> | cat` must not produce one escape byte.
+
+    pytest's stdout is not a terminal, which is the same condition a pipe puts
+    the command in, so `--color auto` is under test here rather than mocked.
+    """
+    code, readout = context_command(fixture("golden"), depth=3, audit=True)
+    assert code == 0
+    assert "\x1b" not in readout
+
+
+def test_plain_output_is_what_it_was_before_there_was_a_palette():
+    """The width work is allowed to use a terminal; it is not allowed to move a
+    piped readout. With no terminal and no COLUMNS, the layout is M1's 22 and
+    54, which is what every committed assertion about this text was written
+    against."""
+    assert layout(0) == (BAR_COLUMNS, LABEL_COLUMNS)
+    assert resolve_style("never", columns=0) == Style()
+
+
+@pytest.mark.parametrize("kind", KINDS)
+def test_colour_lands_on_the_bar_and_the_kind_word_and_on_no_number(kind):
+    """07-mockup.md item 4: colour means provenance and nothing else.
+
+    Asserted by finding the kind word painted and every figure on its row bare,
+    because a palette that crept onto the numbers would make the column stop
+    reading as a table — which is the reason the mockup gives for keeping the
+    provenance word beside the chip in the first place.
+    """
+    style = resolve_style("always", columns=120)
+    comp = composition("golden")
+    comp.nodes = [Node(label="a node", tokens=1_234, kind=kind)]
+    row = next(line for line in render(comp, None, style).splitlines()
+               if "a node" in line)
+    open_sequence = f"\x1b[{style.palette[kind]}m"
+
+    assert row.startswith(f"  {open_sequence}█"), "the bar is not painted"
+    assert row.endswith(f"{open_sequence}{kind}\x1b[0m"), "the kind is not painted"
+    # Everything between the label and the kind word is the numeric block, and
+    # the only escape sequence left in it should be the one that opens the kind.
+    numbers, _, _ = row.split("a node", 1)[1].partition("\x1b")
+    assert "1,234" in numbers and "%" in numbers
+    # Two sequences opened, two reset: the bar and the word, and nothing else.
+    assert row.count("\x1b") == 4, "colour reached something other than the pair"
+
+
+def test_the_key_names_every_kind_and_gives_unknown_no_mark():
+    """The key is the whole grammar, so it is printed rather than documented.
+
+    `unknown` is in it by name and out of the palette by design: a thing with no
+    size has no length to draw, and the absence has to read as a decision.
+    """
+    style = resolve_style("always", columns=120)
+    key = key_line(style)
+
+    for kind in KINDS:
+        assert f"\x1b[{style.palette[kind]}m█\x1b[0m {kind}" in key
+    assert "unknown" in key
+    assert style.paint("█", "unknown") == "█"
+
+
+def test_the_key_is_printed_once_near_the_top_and_only_when_there_is_colour():
+    """In plain mode the key would name four hues that are not on the page, and
+    the `how each kind was derived` block at the foot already names the kinds.
+    The key says which colour; the footer says how the number was got."""
+    comp = composition("golden", depth=2)
+    coloured = render(comp, None, resolve_style("always", columns=120)).splitlines()
+    plain = render(comp, None, resolve_style("never", columns=120)).splitlines()
+
+    assert coloured.count(key_line(resolve_style("always", columns=120))) == 1
+    assert coloured[1].startswith("colour is provenance:")
+    assert not any(line.startswith("colour is provenance:") for line in plain)
+
+
+@pytest.mark.parametrize("choice,no_color,term,isatty,wanted", [
+    ("auto", None, "xterm-256color", True, True),
+    ("auto", None, "xterm-256color", False, False),
+    ("auto", None, "dumb", True, False),
+    ("auto", "1", "xterm-256color", True, False),
+    ("auto", "", "xterm-256color", True, True),
+    ("never", None, "xterm-256color", True, False),
+    ("never", "1", "xterm-256color", True, False),
+    ("always", "1", "dumb", False, True),
+])
+def test_no_color_beats_auto_and_loses_to_always(monkeypatch, choice, no_color,
+                                                 term, isatty, wanted):
+    """The NO_COLOR spec's own rule: any non-empty value suppresses colour that
+    the tool added by itself, and an explicit request from the operator still
+    wins. An empty NO_COLOR is not set, which is the spec's wording too."""
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    if no_color is not None:
+        monkeypatch.setenv("NO_COLOR", no_color)
+    monkeypatch.setenv("TERM", term)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: isatty, raising=False)
+
+    assert wants_colour(choice) is wanted
+
+
+def test_the_palette_falls_back_to_four_hues_a_16_colour_terminal_has(monkeypatch):
+    monkeypatch.delenv("COLORTERM", raising=False)
+    monkeypatch.setenv("TERM", "xterm")
+    assert palette() == PALETTE_16
+
+    monkeypatch.setenv("TERM", "screen-256color")
+    assert palette() == PALETTE_256
+
+    monkeypatch.setenv("TERM", "xterm")
+    monkeypatch.setenv("COLORTERM", "truecolor")
+    assert palette() == PALETTE_256
+
+
+@pytest.mark.parametrize("columns", [0, 40, 80, 100, 108, 109, 120, 160, 200, 400])
+def test_the_layout_uses_the_terminal_without_ever_going_below_M1s_columns(columns):
+    """Never narrower than 22 and 54 together, never past the caps, and never
+    wider than the terminal it was given once it is above the floor."""
+    bar_columns, label_columns = layout(columns)
+
+    assert bar_columns >= BAR_COLUMNS and label_columns >= LABEL_COLUMNS
+    assert bar_columns <= WIDEST_BAR and label_columns <= WIDEST_LABEL
+    if bar_columns + label_columns > BAR_COLUMNS + LABEL_COLUMNS:
+        assert bar_columns + label_columns + FIXED_COLUMNS <= columns
+
+
+@pytest.mark.parametrize("columns", [80, 120, 200])
+def test_a_wider_terminal_shows_more_of_a_path_and_moves_no_number(columns):
+    """What the extra width is for: `indent` still truncates from the left, so
+    the leaf — the actionable part of a path — is what the room buys."""
+    label = "/workspace/winnow/src/winnow/" + "deeply/" * 6 + "context.py"
+    _, label_columns = layout(columns)
+    drawn = indent(label, 3, label_columns)
+
+    # The indent is spent out of the label's own room, so a row is exactly as
+    # wide at level 3 as at level 1 and the numbers stay in one column.
+    assert len(drawn) == label_columns
+    assert drawn.rstrip().endswith("context.py")
+    if columns > 108:
+        assert len(drawn) > LABEL_COLUMNS
+
+
+def test_json_is_the_same_bytes_whatever_color_says():
+    """§C5's document is for a machine, and a machine's pipe is not a terminal.
+    Byte-identical under every choice, including one that forces colour on."""
+    payloads = [context_command(fixture("golden"), as_json=True, audit=True,
+                                depth=3, color=choice)
+                for choice in COLOR_CHOICES]
+
+    assert payloads[0] == payloads[1] == payloads[2]
+    assert "\x1b" not in payloads[0][1]
+
+
+def test_an_unknown_color_choice_is_a_usage_error_rather_than_a_guess():
+    code, message = context_command(fixture("golden"), color="sometimes")
+
+    assert code == 1
+    assert "--color must be one of auto, always, never" in message
+    assert "'sometimes'" in message
+
+
+def test_the_audit_and_explain_are_coloured_by_the_same_style():
+    """05- names `--audit` and `--explain <node>` as part of the same readout, so
+    a kind word means the same thing and looks the same in all three."""
+    style = resolve_style("always", columns=120)
+    comp = composition("golden", depth=3)
+
+    assert style.word("exact") in render_audit(comp, style)
+    code, text = explain(comp, "prefix", style)
+    assert code == 0
+    assert style.word("derived") in text
+    assert "\x1b" not in explain(comp, "prefix")[1]

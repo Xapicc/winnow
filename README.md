@@ -83,7 +83,8 @@ mistake the measurement exists to catch.
 | `src/winnow/inspect.py`, `report.py` | `winnow inspect` — the reading, the byte accounting, the cache readout and `T*`. About 600 lines with 54 tests. Its `--json` output is pinned byte-for-byte in `tests/fixtures/inspect_golden.json`, because milestone 1's deliverable is a number and a number should not move by accident |
 | `src/winnow/plan.py` | `winnow plan` — the dry run: which results a fork would replace, the pointer that would replace each, what the pointers cost, the net, and `T*` for the cut. Guard G4 is decided here rather than at write time, so `plan` and `fork` agree. About 450 lines with 53 tests |
 | `src/winnow/fork.py` | `winnow fork` and `winnow recover` — the writer and the round trip. Consumes `plan`'s list rather than reclassifying, so the dry run is the fork you get. About 700 lines with 66 tests |
-| `src/winnow/cli.py`, `orchestrator_safe.py` | The `safe`, `inspect`, `plan`, `fork` and `recover` groups, and orchestrator-safe mode, about 1,450 lines with its tests |
+| `src/winnow/context.py` | `winnow context` — what is actually in one session's context window, by provenance, with the total taken exactly from `usage` and the parts apportioned inside it. Milestone M1 of [proposals/ContextTreemap](proposals/ContextTreemap/05-recommendation.md): the walking skeleton, six rows and a residual. About 500 lines with 30 tests |
+| `src/winnow/cli.py`, `orchestrator_safe.py` | The `safe`, `inspect`, `context`, `plan`, `fork` and `recover` groups, and orchestrator-safe mode, about 1,450 lines with its tests |
 | `src/winnow/validate/` | The harnesses for milestone 2's three unanswered criteria: the 100-fork resume test, the stratified blind label with its sampler and scorer, and the disk-cost series. Not imported by any `winnow` command — a measurement that could change what it measures is not a measurement — and none of it runs in the suite except through its own fixtures. About 1,900 lines with 76 tests |
 | `src/winnow/legacy/`, `plugin/`, `tests/` | The tree inherited from Cozempic 1.8.39, about 21,700 lines. Renamed into winnow by [docs/FORK.md](docs/FORK.md) phase 1; still not installed and not started |
 | `packaging/README.md` | The record of the six package channels, the npm shim and the PyPI release workflow that phase 2 deleted. **Winnow publishes to no channel**; installing means a checkout |
@@ -158,6 +159,41 @@ being part of that ceiling.
 operator's actual selection with the pointers priced in, so its `T*` is the longer and the honest of
 the two. `fork` prints the same arithmetic under its own heading, because it consumes `plan`'s list
 rather than reclassifying: the dry run is the fork you get.
+
+### `winnow context` — what is in the window, and how much of it is not in the file
+
+`inspect` answers "what is this transcript carrying and would pruning it pay". `context` answers a
+different question: **what is in the context window right now, and where did it come from.** The
+total is not estimated — it is `input_tokens + cache_creation + cache_read` from the last priced
+request, read out of `usage` — and the estimate is apportioned *inside* that total, so the shares
+always sum to a number that is correct by construction and the error lives entirely in where the
+tokens were attributed rather than in how many there are.
+
+```sh
+python -m winnow context <session-id>            # the readout, writes nothing
+python -m winnow context <session-id> --json     # the same tree; this is the real interface
+python -m winnow context <session-id> --window 200000   # …and then a "% full" figure
+```
+
+Every figure carries one of four labels and a test walks `--json` to enforce it: `exact` is lifted
+from something the CLI wrote down, `derived` is an exact number minus an estimate, `estimated` is
+payload characters over 2.6, and `residual` is reserved for the single `unattributed` node.
+
+Three things it refuses to do. It prints **no "% of window full"** unless you supply the denominator
+with `--window`: nothing in a transcript states the window size, and session `72acbacd` reports
+512,133 tokens on a nominally 200,000-token model because it is a `[1m]` session. It prints **no
+percentages at all**, and exits non-zero, when no assistant record carries a `usage` block — there is
+no anchor, and a share of an estimated total is not a measurement. And it never sums a compacted
+session from the top: the accumulator resets at the last `compact_boundary`, so `2551cd0c` reports
+its real 116,030-token window rather than the 416,774 a walk from record zero produces, and states
+the 444,326 tokens compaction has dropped as a separate exact figure above the tree.
+
+**This is milestone M1 and it looks like one.** It has no drill-down, so it cannot yet answer *which*
+Bash; and it has no `prefix` node and no `retained reasoning` node, so both sit inside
+`unattributed`, which is why that row is 30–65% of the window rather than the ~1% the full
+decomposition reaches. `proposals/ContextTreemap/05-recommendation.md` is the plan and its non-goals
+bind: no "reclaimable space" figure, no cross-session view, no writes of any kind, and no claim of
+parity with `/context`.
 
 **`--explain` prints tool arguments verbatim, on `plan` and on `fork` alike, and a transcript
 routinely contains credentials pasted into a Bash command** ([docs/SPEC.md](docs/SPEC.md) §10).

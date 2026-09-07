@@ -168,12 +168,13 @@ accumulated forks measured over a week rather than estimated.
 >
 > **Update, 2026-09-07 — the resume test was attempted and the corpus is not the problem.**
 > Results in [MILESTONE-2-RESULTS.md](MILESTONE-2-RESULTS.md) §1. The run was blocked by its
-> environment before a single fork was written: the corpus was mounted read-only, and the
-> `claude` it spawns could not authenticate or reach the API, which would have recorded 100
-> non-zero exits as 100 unresumable forks. So the guardrail is still unmeasured. What the run
-> *did* settle is the third kill criterion above: the dry run walked all 1,087 sessions of
+> environment before a single fork was written: the corpus was mounted read-only, so both the
+> dry run and the real `--forks 100` exited 4 having called no model at all. The `claude` it
+> spawns could not have authenticated either, which in a half-fixed environment would record
+> 100 non-zero exits as 100 unresumable forks. So the guardrail is still unmeasured. What it
+> *did* settle is the third kill criterion above: it walked all 1,089 sessions of
 > `~/.claude/projects` and **212 of them were forkable against a target of 100**, with
-> `cold-age` refusing 5 — 0.5%, not "nearly every real resume". The refusal path has a
+> `cold-age` refusing 7 — 0.6%, not "nearly every real resume". The refusal path has a
 > population, and nobody running this next has any reason to touch `--min-cold-age`.
 
 ## Milestone 3a — the frozen task set

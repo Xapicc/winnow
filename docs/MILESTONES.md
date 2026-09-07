@@ -165,6 +165,16 @@ accumulated forks measured over a week rather than estimated.
 > and states a rate only once that series spans seven days. Run the command above now and
 > again a week later against the same `--series` file; the difference is the measurement. Any
 > disk-cost figure found in these documents before that second run was fabricated.
+>
+> **Update, 2026-09-07 — the resume test was attempted and the corpus is not the problem.**
+> Results in [MILESTONE-2-RESULTS.md](MILESTONE-2-RESULTS.md) §1. The run was blocked by its
+> environment before a single fork was written: the corpus was mounted read-only, and the
+> `claude` it spawns could not authenticate or reach the API, which would have recorded 100
+> non-zero exits as 100 unresumable forks. So the guardrail is still unmeasured. What the run
+> *did* settle is the third kill criterion above: the dry run walked all 1,087 sessions of
+> `~/.claude/projects` and **212 of them were forkable against a target of 100**, with
+> `cold-age` refusing 5 — 0.5%, not "nearly every real resume". The refusal path has a
+> population, and nobody running this next has any reason to touch `--min-cold-age`.
 
 ## Milestone 3a — the frozen task set
 

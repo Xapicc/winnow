@@ -70,7 +70,7 @@ mistake the measurement exists to catch.
 
 | | |
 |---|---|
-| [docs/SPEC.md](docs/SPEC.md) | The specification. Content split by class, the classification rules and what they cannot decide, the six universal guards, the retrieval path, the CLI surface, and success criteria whose primary metric is deliberately not token reduction. **Not yet reconciled against the vendored code**; [docs/COZEMPIC.md](docs/COZEMPIC.md) is that reconciliation |
+| [docs/SPEC.md](docs/SPEC.md) | The specification. Content split by class, the classification rules and what they cannot decide, the five universal guards, the retrieval path, the CLI surface, and success criteria whose primary metric is deliberately not token reduction. **Not yet reconciled against the vendored code**; [docs/COZEMPIC.md](docs/COZEMPIC.md) is that reconciliation |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | Eight decisions with the alternatives rejected and the cost of being wrong, plus §0, which decides what Cozempic is doing in this repository |
 | [docs/MILESTONES.md](docs/MILESTONES.md) | Ten working days in three milestones, and the kill criteria, decided in advance while nobody is attached to the outcome |
 | [docs/MILESTONE-2-VALIDATION.md](docs/MILESTONE-2-VALIDATION.md) | The procedure for milestone 2's three unanswered criteria, written for a session with no memory of the one that built the harnesses: the commands in order, the corpus each needs, the bar each has to clear, and the kill criteria restated where the person running them will see them |

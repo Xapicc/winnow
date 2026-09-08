@@ -415,7 +415,7 @@ def add_context_subparser(sub) -> None:
         help="re-key the `tool traffic` subtree artefact-first, so one file "
              "read twice and edited once is one node marked with its per-tool "
              "counts rather than two nodes in two subtrees. On session "
-             "f6ea2591 that is the difference between 16.8%% and 33.2%% of "
+             "f6ea2591 that is the difference between 16.8%% and 33.5%% of "
              "Read/Edit/Write output coming from paths touched more than once. "
              "A result with no path — Bash output is the largest — keeps its "
              "command-head key and is never binned as 'other'",

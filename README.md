@@ -196,9 +196,10 @@ carry exactly the same nodes.
 `--by-path` re-keys the `tool traffic` subtree artefact-first, so a file read twice and edited once
 is one row marked `×3 (Read ×2, Edit)` rather than two rows in two subtrees. That is not cosmetic:
 on session `f6ea2591` the share of `Read`/`Edit`/`Write` output coming from paths touched more than
-once is **33.5%** pooled and **16.8%** keyed tool-first, over the same 211,557 characters. A result
-with no path — Bash output is the largest such node in most sessions — keeps its command head as its
-own key and is never binned as "other".
+once is **33.5%** pooled and **16.8%** keyed tool-first, over the same 211,557 characters. Both are
+what the command itself computes on that session — 33.5078% and 16.7910%, measured 2026-09-08 — and
+`winnow context --help` quotes the same pair. A result with no path — Bash output is the largest
+such node in most sessions — keeps its command head as its own key and is never binned as "other".
 
 Two things it shows and never adds up. A sub-agent's return is sized at **what came back**, with the
 sub-agent's own window printed beside it as a separate figure: adding them produces a number that is

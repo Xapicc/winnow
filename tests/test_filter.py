@@ -10,6 +10,7 @@ credentials) cannot be checked any other way.
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import socket
 import threading
@@ -635,6 +636,81 @@ def test_the_response_streams_through_intact(wired):
     base, _, _ = wired
     _, payload = _post(base, body(*turn("a", "Bash", {"command": "ls -la"})))
     assert payload == b"event: a\nevent: b\nevent: done\n"
+
+
+PING = b'event: ping\ndata: {"type": "ping"}\n\n'
+
+
+class _HeldUpstream(BaseHTTPRequestHandler):
+    """Sends one small event, then holds the stream open until released — the
+    shape of a long generation, where the next event may be minutes away."""
+
+    protocol_version = "HTTP/1.1"
+    release: typing.ClassVar[threading.Event] = threading.Event()
+
+    def log_message(self, *a):
+        pass
+
+    def do_POST(self):
+        self.rfile.read(int(self.headers.get("content-length") or 0))
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Transfer-Encoding", "chunked")
+        self.end_headers()
+        self._chunk(PING)
+        type(self).release.wait(timeout=30)
+        self._chunk(b"event: message_stop\ndata: {}\n\n")
+        self.wfile.write(b"0\r\n\r\n")
+        self.wfile.flush()
+
+    def _chunk(self, data: bytes) -> None:
+        self.wfile.write(b"%X\r\n%s\r\n" % (len(data), data))
+        self.wfile.flush()
+
+
+@pytest.fixture
+def held(tmp_path):
+    """A filter proxy in front of an upstream that is still generating."""
+    _HeldUpstream.release = threading.Event()
+    upstream = ThreadingHTTPServer(("127.0.0.1", 0), _HeldUpstream)
+    threading.Thread(target=upstream.serve_forever, daemon=True).start()
+    config = Config(
+        upstream=f"http://127.0.0.1:{upstream.server_address[1]}",
+        ledger=tmp_path / "ledger.jsonl",
+    )
+    handler = type("_Bound", (_Handler,),
+                   {"config": config, "stats": Stats(), "watch": PrefixWatch()})
+    proxy = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=proxy.serve_forever, daemon=True).start()
+    yield proxy.server_address[1]
+    _HeldUpstream.release.set()
+    proxy.shutdown()
+    upstream.shutdown()
+
+
+def test_an_event_is_relayed_before_the_next_one_exists(held):
+    """Relayed in 8 KB reads, a sparse stream reached the client only once 8 KB
+    had piled up — so the pings of a long generation never arrived, and Claude
+    Code's 300-second idle watchdog aborted a turn the API was still producing.
+    Every retry of that turn was the same turn, and died the same way."""
+    conn = http.client.HTTPConnection("127.0.0.1", held, timeout=5)
+    try:
+        conn.request("POST", "/v1/messages",
+                     body=json.dumps(body(*turn("a", "Bash", {"command": "ls"}))),
+                     headers={"content-type": "application/json"})
+        response = conn.getresponse()
+        received = b""
+        while len(received) < len(PING):
+            try:
+                piece = response.read1(65536)
+            except TimeoutError:
+                pytest.fail("the first event was held back until more arrived")
+            if not piece:
+                break
+            received += piece
+        assert received == PING
+    finally:
+        conn.close()
 
 
 def test_credentials_are_relayed_and_never_altered(wired):

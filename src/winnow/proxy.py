@@ -455,9 +455,14 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
 
             # Chunked, unbuffered: a streamed response has to arrive as it is
-            # produced or the first token waits for the last.
+            # produced or the first token waits for the last. `read1`, never
+            # `read`: on a chunked body `read(8192)` keeps reading chunks until
+            # 8 KB have arrived, so a sparse stream — the pings of a long
+            # generation — reached the client in 8 KB lumps or not at all, and
+            # Claude Code's 300-second idle watchdog aborted turns the API was
+            # still producing.
             while True:
-                chunk = upstream.read(8192)
+                chunk = upstream.read1(8192)
                 if not chunk:
                     break
                 self.wfile.write(b"%X\r\n%s\r\n" % (len(chunk), chunk))
